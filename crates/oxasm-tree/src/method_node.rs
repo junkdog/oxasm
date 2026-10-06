@@ -2,7 +2,7 @@
 
 use oxasm::constant::{Constant, FrameValue};
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassVisitor, FrameKind, Handle, JavaArcStr, JavaStr, Label,
+    AnnotationVisitor, Attribute, ClassVisitor, FrameKind, Handle, JavaCompactStr, JavaStr, Label,
     MethodVisitor, Type, TypePath, TypeReference,
 };
 
@@ -38,13 +38,13 @@ pub struct MethodNode {
     /// method is synthetic and/or deprecated.
     pub access: u32,
     /// The method's name.
-    pub name: JavaArcStr,
+    pub name: JavaCompactStr,
     /// The method's descriptor.
-    pub desc: JavaArcStr,
+    pub desc: JavaCompactStr,
     /// The method's signature, or `None`.
-    pub signature: Option<JavaArcStr>,
+    pub signature: Option<JavaCompactStr>,
     /// The internal names of the method's exception classes.
-    pub exceptions: Vec<JavaArcStr>,
+    pub exceptions: Vec<JavaCompactStr>,
     /// The method parameter info (access flags and name).
     pub parameters: Vec<ParameterNode>,
     /// The runtime visible annotations of this method.
@@ -95,10 +95,10 @@ impl MethodNode {
     /// Constructs a new method node, with no content.
     pub fn new(
         access: u32,
-        name: impl Into<JavaArcStr>,
-        descriptor: impl Into<JavaArcStr>,
-        signature: Option<JavaArcStr>,
-        exceptions: Vec<JavaArcStr>,
+        name: impl Into<JavaCompactStr>,
+        descriptor: impl Into<JavaCompactStr>,
+        signature: Option<JavaCompactStr>,
+        exceptions: Vec<JavaCompactStr>,
     ) -> MethodNode {
         MethodNode {
             access,
@@ -328,8 +328,8 @@ impl MethodNode {
     }
 }
 
-/// A method node visited on its own stores a new allocation for each visited string (a class
-/// node shares them, see [`PooledMethodNode`]).
+/// A method node visited on its own stores a new allocation for each visited string longer
+/// than 23 bytes (a [`ClassNode`](crate::ClassNode) shares them).
 impl MethodVisitor for MethodNode {
     fn visit_parameter(&mut self, name: Option<&JavaStr>, access: u32) {
         self.add_parameter(&mut Unshared, name, access);

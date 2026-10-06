@@ -2,8 +2,8 @@
 
 use oxasm::constant::Constant;
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassVisitor, FieldVisitor, JavaArcStr, JavaStr, MethodVisitor,
-    ModuleVisitor, RecordComponentVisitor, TypePath, TypeReference,
+    AnnotationVisitor, Attribute, ClassVisitor, FieldVisitor, JavaCompactStr, JavaStr,
+    MethodVisitor, ModuleVisitor, RecordComponentVisitor, TypePath, TypeReference,
 };
 
 use crate::annotation_node::{AnnotationNode, TypeAnnotationNode};
@@ -19,10 +19,11 @@ use crate::strings::{StringPool, Strings};
 /// A node that represents a class.
 ///
 /// A class reader fills it by visiting it, and [`accept`](Self::accept) replays it into any
-/// class visitor. While it is visited, equal strings are shared: the nodes of a class hold one
-/// [`JavaArcStr`] per distinct name, descriptor or signature of the class and of its fields and
-/// methods, and of the instructions, local variables and try catch blocks of its methods (much
-/// as ASM's nodes share the strings of its class reader).
+/// class visitor. Its strings are [`JavaCompactStr`]s: those of up to 23 bytes are stored
+/// inline, and while the class is visited, the longer ones are shared, one allocation per
+/// distinct name, descriptor or signature of the class and of its fields and methods, and of
+/// the instructions, local variables and try catch blocks of its methods (much as ASM's nodes
+/// share the strings of its class reader).
 ///
 /// ```
 /// # fn main() -> Result<(), oxasm::error::ReadError> {
@@ -46,29 +47,29 @@ pub struct ClassNode {
     /// class is deprecated (`ACC_DEPRECATED`) or a record (`ACC_RECORD`).
     pub access: u32,
     /// The internal name of this class.
-    pub name: JavaArcStr,
+    pub name: JavaCompactStr,
     /// The signature of this class, or `None`.
-    pub signature: Option<JavaArcStr>,
+    pub signature: Option<JavaCompactStr>,
     /// The internal name of the super class. For interfaces, the super class is
     /// `java/lang/Object`. `None` only for the `java/lang/Object` class.
-    pub super_name: Option<JavaArcStr>,
+    pub super_name: Option<JavaCompactStr>,
     /// The internal names of the interfaces directly implemented by this class.
-    pub interfaces: Vec<JavaArcStr>,
+    pub interfaces: Vec<JavaCompactStr>,
     /// The name of the source file from which this class was compiled, or `None`.
-    pub source_file: Option<JavaArcStr>,
+    pub source_file: Option<JavaCompactStr>,
     /// The correspondence between source and compiled elements of this class, or `None`.
-    pub source_debug: Option<JavaArcStr>,
+    pub source_debug: Option<JavaCompactStr>,
     /// The module stored in this class, or `None`.
     pub module: Option<ModuleNode>,
     /// The internal name of the enclosing class of this class (see `visit_outer_class`), or
     /// `None`.
-    pub outer_class: Option<JavaArcStr>,
+    pub outer_class: Option<JavaCompactStr>,
     /// The name of the method that contains this class, or `None` if this class is not enclosed
     /// in a method.
-    pub outer_method: Option<JavaArcStr>,
+    pub outer_method: Option<JavaCompactStr>,
     /// The descriptor of the method that contains this class, or `None` if this class is not
     /// enclosed in a method.
-    pub outer_method_desc: Option<JavaArcStr>,
+    pub outer_method_desc: Option<JavaCompactStr>,
     /// The runtime visible annotations of this class.
     pub visible_annotations: Vec<AnnotationNode>,
     /// The runtime invisible annotations of this class.
@@ -82,11 +83,11 @@ pub struct ClassNode {
     /// The inner classes of this class.
     pub inner_classes: Vec<InnerClassNode>,
     /// The internal name of the nest host class of this class, or `None`.
-    pub nest_host_class: Option<JavaArcStr>,
+    pub nest_host_class: Option<JavaCompactStr>,
     /// The internal names of the nest members of this class.
-    pub nest_members: Vec<JavaArcStr>,
+    pub nest_members: Vec<JavaCompactStr>,
     /// The internal names of the permitted subclasses of this class.
-    pub permitted_subclasses: Vec<JavaArcStr>,
+    pub permitted_subclasses: Vec<JavaCompactStr>,
     /// The record components of this class.
     pub record_components: Vec<RecordComponentNode>,
     /// The fields of this class.

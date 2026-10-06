@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::jstr::{JavaArcStr, JavaStr};
+use crate::jstr::{JavaCompactStr, JavaStr};
 use crate::opcodes::HandleKind;
 
 /// A reference to a field or a method (a `CONSTANT_MethodHandle_info`).
@@ -14,11 +14,11 @@ pub struct Handle {
     /// The kind of field or method designated by this handle.
     tag: HandleKind,
     /// The internal name of the class that owns the field or method designated by this handle.
-    owner: JavaArcStr,
+    owner: JavaCompactStr,
     /// The name of the field or method designated by this handle.
-    name: JavaArcStr,
+    name: JavaCompactStr,
     /// The descriptor of the field or method designated by this handle.
-    descriptor: JavaArcStr,
+    descriptor: JavaCompactStr,
     /// Whether the owner is an interface or not.
     is_interface: bool,
 }
@@ -34,9 +34,9 @@ impl Handle {
     #[must_use]
     pub fn new(
         tag: HandleKind,
-        owner: impl Into<JavaArcStr>,
-        name: impl Into<JavaArcStr>,
-        descriptor: impl Into<JavaArcStr>,
+        owner: impl Into<JavaCompactStr>,
+        name: impl Into<JavaCompactStr>,
+        descriptor: impl Into<JavaCompactStr>,
         is_interface: bool,
     ) -> Handle {
         Handle {

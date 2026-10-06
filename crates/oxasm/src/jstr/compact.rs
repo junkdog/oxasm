@@ -1,4 +1,4 @@
-//! [`JavaArcStr`]: an immutable Java string that is cheap to clone.
+//! [`JavaCompactStr`]: an immutable Java string that is cheap to clone.
 
 use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
@@ -18,13 +18,13 @@ const INLINE_CAP: usize = 23;
 /// bytes is stored inline, without an allocation, and a longer one is a reference-counted
 /// `Arc<JavaStr>`, so a clone never copies more than 24 bytes. Most of the names and descriptors
 /// of a class are short (two thirds of those of the JDK's `java.base` are 23 bytes or less); the
-/// tree nodes hold them as `JavaArcStr`s, and share the long ones.
+/// tree nodes hold them as `JavaCompactStr`s, and share the long ones.
 ///
 /// It dereferences to [`JavaStr`], and compares, orders and hashes like it (and like the other
 /// string types it compares to), whatever its representation, so it can be looked up by
 /// `&JavaStr` in hash maps and sets.
 #[derive(Clone)]
-pub struct JavaArcStr(Repr);
+pub struct JavaCompactStr(Repr);
 
 #[derive(Clone)]
 enum Repr {
@@ -57,24 +57,24 @@ impl InlineLen {
     };
 }
 
-const _: () = assert!(size_of::<JavaArcStr>() == 24);
-const _: () = assert!(size_of::<Option<JavaArcStr>>() == 24);
+const _: () = assert!(size_of::<JavaCompactStr>() == 24);
+const _: () = assert!(size_of::<Option<JavaCompactStr>>() == 24);
 
-impl JavaArcStr {
+impl JavaCompactStr {
     /// A copy of the given string: inline if it is short enough, otherwise a new allocation.
     #[inline]
     #[must_use]
-    pub fn new(s: &JavaStr) -> JavaArcStr {
+    pub fn new(s: &JavaStr) -> JavaCompactStr {
         let src = s.as_bytes();
         if src.len() <= INLINE_CAP {
             let mut bytes = [0; INLINE_CAP];
             bytes[..src.len()].copy_from_slice(src);
-            JavaArcStr(Repr::Inline {
+            JavaCompactStr(Repr::Inline {
                 len: InlineLen::ALL[src.len()],
                 bytes,
             })
         } else {
-            JavaArcStr(Repr::Heap(Arc::from(s)))
+            JavaCompactStr(Repr::Heap(Arc::from(s)))
         }
     }
 
@@ -108,19 +108,19 @@ impl JavaArcStr {
     }
 }
 
-impl Default for JavaArcStr {
+impl Default for JavaCompactStr {
     /// The empty string (inline).
-    fn default() -> JavaArcStr {
-        JavaArcStr(Repr::Inline {
+    fn default() -> JavaCompactStr {
+        JavaCompactStr(Repr::Inline {
             len: InlineLen::L0,
             bytes: [0; INLINE_CAP],
         })
     }
 }
 
-impl PartialEq for JavaArcStr {
+impl PartialEq for JavaCompactStr {
     #[inline]
-    fn eq(&self, other: &JavaArcStr) -> bool {
+    fn eq(&self, other: &JavaCompactStr) -> bool {
         if let (Repr::Heap(a), Repr::Heap(b)) = (&self.0, &other.0)
             && Arc::ptr_eq(a, b)
         {
@@ -130,23 +130,23 @@ impl PartialEq for JavaArcStr {
     }
 }
 
-impl Eq for JavaArcStr {}
+impl Eq for JavaCompactStr {}
 
-impl PartialOrd for JavaArcStr {
+impl PartialOrd for JavaCompactStr {
     #[inline]
-    fn partial_cmp(&self, other: &JavaArcStr) -> Option<Ordering> {
+    fn partial_cmp(&self, other: &JavaCompactStr) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for JavaArcStr {
+impl Ord for JavaCompactStr {
     #[inline]
-    fn cmp(&self, other: &JavaArcStr) -> Ordering {
+    fn cmp(&self, other: &JavaCompactStr) -> Ordering {
         self.as_java_str().cmp(other.as_java_str())
     }
 }
 
-impl Hash for JavaArcStr {
+impl Hash for JavaCompactStr {
     #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         // Must match `JavaStr`'s derived `Hash` (`Borrow<JavaStr>`).
@@ -154,7 +154,7 @@ impl Hash for JavaArcStr {
     }
 }
 
-impl Deref for JavaArcStr {
+impl Deref for JavaCompactStr {
     type Target = JavaStr;
 
     #[inline]
@@ -163,108 +163,108 @@ impl Deref for JavaArcStr {
     }
 }
 
-impl Borrow<JavaStr> for JavaArcStr {
+impl Borrow<JavaStr> for JavaCompactStr {
     #[inline]
     fn borrow(&self) -> &JavaStr {
         self.as_java_str()
     }
 }
 
-impl AsRef<JavaStr> for JavaArcStr {
+impl AsRef<JavaStr> for JavaCompactStr {
     #[inline]
     fn as_ref(&self) -> &JavaStr {
         self.as_java_str()
     }
 }
 
-impl AsRef<[u8]> for JavaArcStr {
+impl AsRef<[u8]> for JavaCompactStr {
     #[inline]
     fn as_ref(&self) -> &[u8] {
         self.as_java_str().as_bytes()
     }
 }
 
-impl fmt::Display for JavaArcStr {
+impl fmt::Display for JavaCompactStr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self.as_java_str(), f)
     }
 }
 
-impl fmt::Debug for JavaArcStr {
+impl fmt::Debug for JavaCompactStr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(self.as_java_str(), f)
     }
 }
 
-impl From<&JavaStr> for JavaArcStr {
+impl From<&JavaStr> for JavaCompactStr {
     #[inline]
-    fn from(s: &JavaStr) -> JavaArcStr {
-        JavaArcStr::new(s)
+    fn from(s: &JavaStr) -> JavaCompactStr {
+        JavaCompactStr::new(s)
     }
 }
 
-impl From<&str> for JavaArcStr {
+impl From<&str> for JavaCompactStr {
     #[inline]
-    fn from(s: &str) -> JavaArcStr {
-        JavaArcStr::from(JavaStr::from_str(s))
+    fn from(s: &str) -> JavaCompactStr {
+        JavaCompactStr::from(JavaStr::from_str(s))
     }
 }
 
-impl From<String> for JavaArcStr {
+impl From<String> for JavaCompactStr {
     #[inline]
-    fn from(s: String) -> JavaArcStr {
-        JavaArcStr::from(JavaStr::from_str(&s))
+    fn from(s: String) -> JavaCompactStr {
+        JavaCompactStr::from(JavaStr::from_str(&s))
     }
 }
 
-impl From<&String> for JavaArcStr {
+impl From<&String> for JavaCompactStr {
     #[inline]
-    fn from(s: &String) -> JavaArcStr {
-        JavaArcStr::from(JavaStr::from_str(s))
+    fn from(s: &String) -> JavaCompactStr {
+        JavaCompactStr::from(JavaStr::from_str(s))
     }
 }
 
-impl From<JavaString> for JavaArcStr {
+impl From<JavaString> for JavaCompactStr {
     #[inline]
-    fn from(s: JavaString) -> JavaArcStr {
-        JavaArcStr::from(s.as_java_str())
+    fn from(s: JavaString) -> JavaCompactStr {
+        JavaCompactStr::from(s.as_java_str())
     }
 }
 
-impl From<&JavaString> for JavaArcStr {
+impl From<&JavaString> for JavaCompactStr {
     #[inline]
-    fn from(s: &JavaString) -> JavaArcStr {
-        JavaArcStr::from(s.as_java_str())
+    fn from(s: &JavaString) -> JavaCompactStr {
+        JavaCompactStr::from(s.as_java_str())
     }
 }
 
-impl From<Cow<'_, JavaStr>> for JavaArcStr {
+impl From<Cow<'_, JavaStr>> for JavaCompactStr {
     #[inline]
-    fn from(s: Cow<'_, JavaStr>) -> JavaArcStr {
-        JavaArcStr::from(&*s)
+    fn from(s: Cow<'_, JavaStr>) -> JavaCompactStr {
+        JavaCompactStr::from(&*s)
     }
 }
 
-impl From<&JavaArcStr> for JavaArcStr {
+impl From<&JavaCompactStr> for JavaCompactStr {
     /// Another reference to the same string.
     #[inline]
-    fn from(s: &JavaArcStr) -> JavaArcStr {
+    fn from(s: &JavaCompactStr) -> JavaCompactStr {
         s.clone()
     }
 }
 
-impl From<Arc<JavaStr>> for JavaArcStr {
+impl From<Arc<JavaStr>> for JavaCompactStr {
     /// The given string, shared (not inline, even if it is short).
     #[inline]
-    fn from(s: Arc<JavaStr>) -> JavaArcStr {
-        JavaArcStr(Repr::Heap(s))
+    fn from(s: Arc<JavaStr>) -> JavaCompactStr {
+        JavaCompactStr(Repr::Heap(s))
     }
 }
 
-impl From<JavaArcStr> for Arc<JavaStr> {
+impl From<JavaCompactStr> for Arc<JavaStr> {
     /// The shared string, or a new allocation for an inline one.
     #[inline]
-    fn from(s: JavaArcStr) -> Arc<JavaStr> {
+    fn from(s: JavaCompactStr) -> Arc<JavaStr> {
         match s.0 {
             Repr::Inline { .. } => Arc::from(s.as_java_str()),
             Repr::Heap(s) => s,
@@ -272,9 +272,9 @@ impl From<JavaArcStr> for Arc<JavaStr> {
     }
 }
 
-impl From<JavaArcStr> for JavaString {
+impl From<JavaCompactStr> for JavaString {
     #[inline]
-    fn from(s: JavaArcStr) -> JavaString {
+    fn from(s: JavaCompactStr) -> JavaString {
         s.as_java_str().to_owned()
     }
 }
@@ -291,14 +291,14 @@ mod tests {
     fn inline_up_to_23_bytes() {
         for len in 0..=40 {
             let string = "x".repeat(len);
-            let s = JavaArcStr::from(string.as_str());
+            let s = JavaCompactStr::from(string.as_str());
             assert_eq!(s.is_inline(), len <= INLINE_CAP);
             assert_eq!(s, string.as_str());
             assert_eq!(s.as_java_str().as_bytes(), string.as_bytes());
             assert_eq!(s.clone(), s);
         }
-        assert!(JavaArcStr::default().is_inline());
-        assert_eq!(JavaArcStr::default(), "");
+        assert!(JavaCompactStr::default().is_inline());
+        assert_eq!(JavaCompactStr::default(), "");
     }
 
     #[test]
@@ -309,7 +309,7 @@ mod tests {
         short.push_java(crate::jstr::JavaCodePoint::from_u32(0xD800).unwrap());
         let long = short.clone() + "0123456789abcdef";
         for s in [short, long] {
-            let arc = JavaArcStr::from(&s);
+            let arc = JavaCompactStr::from(&s);
             assert_eq!(arc, s);
             assert_eq!(format!("{arc:?}"), format!("{s:?}"));
         }
@@ -317,8 +317,8 @@ mod tests {
 
     #[test]
     fn eq_ord_hash_ignore_representation() {
-        let inline = JavaArcStr::from("java/lang/Object");
-        let heap = JavaArcStr::from(Arc::<JavaStr>::from(jstr!("java/lang/Object")));
+        let inline = JavaCompactStr::from("java/lang/Object");
+        let heap = JavaCompactStr::from(Arc::<JavaStr>::from(jstr!("java/lang/Object")));
         assert!(inline.is_inline() && !heap.is_inline());
         assert_eq!(inline, heap);
         assert_eq!(inline.cmp(&heap), Ordering::Equal);
@@ -328,19 +328,22 @@ mod tests {
             hasher.hash_one(&inline),
             hasher.hash_one(jstr!("java/lang/Object"))
         );
-        let set: HashSet<JavaArcStr> = [inline].into_iter().collect();
+        let set: HashSet<JavaCompactStr> = [inline].into_iter().collect();
         assert!(set.contains(jstr!("java/lang/Object")));
-        let (short, long) = (JavaArcStr::from("a"), JavaArcStr::from("b".repeat(30)));
+        let (short, long) = (
+            JavaCompactStr::from("a"),
+            JavaCompactStr::from("b".repeat(30)),
+        );
         assert_eq!(short.cmp(&long), Ordering::Less);
     }
 
     #[test]
     fn arc_round_trip() {
         let long: Arc<JavaStr> = Arc::from(jstr!("Ljava/lang/invoke/MethodHandles$Lookup;"));
-        let s = JavaArcStr::from(long.clone());
+        let s = JavaCompactStr::from(long.clone());
         assert!(Arc::ptr_eq(&Arc::<JavaStr>::from(s.clone()), &long));
         assert_eq!(
-            *Arc::<JavaStr>::from(JavaArcStr::from("()V")),
+            *Arc::<JavaStr>::from(JavaCompactStr::from("()V")),
             *jstr!("()V")
         );
     }

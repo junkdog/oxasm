@@ -1,10 +1,10 @@
 //! [`ModuleNode`] and its parts: ASM's `ModuleNode`, `ModuleRequireNode`, `ModuleExportNode`,
 //! `ModuleOpenNode` and `ModuleProvideNode`.
 
-use oxasm::{ClassVisitor, JavaArcStr, JavaStr, ModuleVisitor};
+use oxasm::{ClassVisitor, JavaCompactStr, JavaStr, ModuleVisitor};
 
 /// The elements of a list of strings, as the `&[&JavaStr]` a visitor takes.
-fn as_strs(strings: &[JavaArcStr]) -> Vec<&JavaStr> {
+fn as_strs(strings: &[JavaCompactStr]) -> Vec<&JavaStr> {
     strings.iter().map(|s| &**s).collect()
 }
 
@@ -12,15 +12,15 @@ fn as_strs(strings: &[JavaArcStr]) -> Vec<&JavaStr> {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModuleNode {
     /// The fully qualified name (using dots) of this module.
-    pub name: JavaArcStr,
+    pub name: JavaCompactStr,
     /// The module's access flags, among `ACC_OPEN`, `ACC_SYNTHETIC` and `ACC_MANDATED`.
     pub access: u32,
     /// The version of this module, or `None`.
-    pub version: Option<JavaArcStr>,
+    pub version: Option<JavaCompactStr>,
     /// The internal name of the main class of this module, or `None`.
-    pub main_class: Option<JavaArcStr>,
+    pub main_class: Option<JavaCompactStr>,
     /// The internal names of the packages declared by this module.
-    pub packages: Vec<JavaArcStr>,
+    pub packages: Vec<JavaCompactStr>,
     /// The dependencies of this module.
     pub requires: Vec<ModuleRequireNode>,
     /// The packages exported by this module.
@@ -28,7 +28,7 @@ pub struct ModuleNode {
     /// The packages opened by this module.
     pub opens: Vec<ModuleOpenNode>,
     /// The internal names of the services used by this module.
-    pub uses: Vec<JavaArcStr>,
+    pub uses: Vec<JavaCompactStr>,
     /// The services provided by this module.
     pub provides: Vec<ModuleProvideNode>,
 }
@@ -36,9 +36,9 @@ pub struct ModuleNode {
 impl ModuleNode {
     /// Constructs a module node with no content.
     pub fn new(
-        name: impl Into<JavaArcStr>,
+        name: impl Into<JavaCompactStr>,
         access: u32,
-        version: Option<JavaArcStr>,
+        version: Option<JavaCompactStr>,
     ) -> ModuleNode {
         ModuleNode {
             name: name.into(),
@@ -94,7 +94,7 @@ impl ModuleVisitor for ModuleNode {
         self.requires.push(ModuleRequireNode::new(
             module,
             access,
-            version.map(JavaArcStr::from),
+            version.map(JavaCompactStr::from),
         ));
     }
 
@@ -134,20 +134,20 @@ impl ModuleVisitor for ModuleNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleRequireNode {
     /// The fully qualified name (using dots) of the dependence.
-    pub module: JavaArcStr,
+    pub module: JavaCompactStr,
     /// The access flag of the dependence among `ACC_TRANSITIVE`, `ACC_STATIC_PHASE`,
     /// `ACC_SYNTHETIC` and `ACC_MANDATED`.
     pub access: u32,
     /// The module version at compile time, or `None`.
-    pub version: Option<JavaArcStr>,
+    pub version: Option<JavaCompactStr>,
 }
 
 impl ModuleRequireNode {
     /// Constructs a new module require node.
     pub fn new(
-        module: impl Into<JavaArcStr>,
+        module: impl Into<JavaCompactStr>,
         access: u32,
-        version: Option<JavaArcStr>,
+        version: Option<JavaCompactStr>,
     ) -> ModuleRequireNode {
         ModuleRequireNode {
             module: module.into(),
@@ -167,21 +167,21 @@ impl ModuleRequireNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleExportNode {
     /// The internal name of the exported package.
-    pub packaze: JavaArcStr,
+    pub packaze: JavaCompactStr,
     /// The access flags of the exported package, valid values are among `ACC_SYNTHETIC` and
     /// `ACC_MANDATED`.
     pub access: u32,
     /// The list of modules that can access this exported package, specified with fully
     /// qualified names (using dots). Empty if the package is exported to all modules.
-    pub modules: Vec<JavaArcStr>,
+    pub modules: Vec<JavaCompactStr>,
 }
 
 impl ModuleExportNode {
     /// Constructs a new module export node.
     pub fn new(
-        packaze: impl Into<JavaArcStr>,
+        packaze: impl Into<JavaCompactStr>,
         access: u32,
-        modules: Vec<JavaArcStr>,
+        modules: Vec<JavaCompactStr>,
     ) -> ModuleExportNode {
         ModuleExportNode {
             packaze: packaze.into(),
@@ -200,21 +200,21 @@ impl ModuleExportNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleOpenNode {
     /// The internal name of the opened package.
-    pub packaze: JavaArcStr,
+    pub packaze: JavaCompactStr,
     /// The access flag of the opened package, valid values are among `ACC_SYNTHETIC` and
     /// `ACC_MANDATED`.
     pub access: u32,
     /// The fully qualified names (using dots) of the modules that can use deep reflection to
     /// the classes of the open package. Empty if the package is open to all modules.
-    pub modules: Vec<JavaArcStr>,
+    pub modules: Vec<JavaCompactStr>,
 }
 
 impl ModuleOpenNode {
     /// Constructs a new module open node.
     pub fn new(
-        packaze: impl Into<JavaArcStr>,
+        packaze: impl Into<JavaCompactStr>,
         access: u32,
-        modules: Vec<JavaArcStr>,
+        modules: Vec<JavaCompactStr>,
     ) -> ModuleOpenNode {
         ModuleOpenNode {
             packaze: packaze.into(),
@@ -233,15 +233,18 @@ impl ModuleOpenNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleProvideNode {
     /// The internal name of the service.
-    pub service: JavaArcStr,
+    pub service: JavaCompactStr,
     /// The internal names of the implementations of the service (there is at least one
     /// provider).
-    pub providers: Vec<JavaArcStr>,
+    pub providers: Vec<JavaCompactStr>,
 }
 
 impl ModuleProvideNode {
     /// Constructs a new module provide node.
-    pub fn new(service: impl Into<JavaArcStr>, providers: Vec<JavaArcStr>) -> ModuleProvideNode {
+    pub fn new(
+        service: impl Into<JavaCompactStr>,
+        providers: Vec<JavaCompactStr>,
+    ) -> ModuleProvideNode {
         ModuleProvideNode {
             service: service.into(),
             providers,

@@ -1,4 +1,4 @@
-//! Java strings: [`JavaStr`], [`JavaString`] and [`JavaArcStr`], which hold any sequence of UTF-16 code units,
+//! Java strings: [`JavaStr`], [`JavaString`] and [`JavaCompactStr`], which hold any sequence of UTF-16 code units,
 //! including unpaired surrogates (ADR-04).
 //!
 //! Class files store strings as *modified UTF-8*, and Java strings may contain lone surrogates,
@@ -26,8 +26,8 @@
 //! sequences, while `jstr` requires the canonical 4-byte form, which is what makes bytewise
 //! equality sound.
 
-mod arc;
 mod codec;
+mod compact;
 mod iter;
 mod pattern;
 
@@ -39,7 +39,7 @@ use std::ops::{Deref, DerefMut, Index, Range, RangeFrom, RangeFull, RangeTo};
 use std::rc::Rc;
 use std::sync::Arc;
 
-pub use arc::JavaArcStr;
+pub use compact::JavaCompactStr;
 pub use iter::{CharIndices, Chars, EncodeUtf16};
 pub use pattern::Pattern;
 use pattern::{find_bytes, rfind_bytes};
@@ -946,12 +946,12 @@ impl_eq!(&JavaStr, String);
 impl_eq!(&JavaStr, JavaString);
 impl_eq!(JavaStr, &str);
 impl_eq!(JavaString, &str);
-impl_eq!(JavaArcStr, str);
-impl_eq!(JavaArcStr, &str);
-impl_eq!(JavaArcStr, String);
-impl_eq!(JavaArcStr, JavaStr);
-impl_eq!(JavaArcStr, &JavaStr);
-impl_eq!(JavaArcStr, JavaString);
+impl_eq!(JavaCompactStr, str);
+impl_eq!(JavaCompactStr, &str);
+impl_eq!(JavaCompactStr, String);
+impl_eq!(JavaCompactStr, JavaStr);
+impl_eq!(JavaCompactStr, &JavaStr);
+impl_eq!(JavaCompactStr, JavaString);
 
 impl PartialEq<Cow<'_, JavaStr>> for JavaStr {
     fn eq(&self, other: &Cow<'_, JavaStr>) -> bool {

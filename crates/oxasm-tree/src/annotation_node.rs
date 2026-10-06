@@ -3,7 +3,7 @@
 
 use oxasm::constant::AnnotationValue;
 use oxasm::{
-    AnnotationVisitor, JavaArcStr, JavaStr, Label, MethodVisitor, TypePath, TypeReference,
+    AnnotationVisitor, JavaCompactStr, JavaStr, Label, MethodVisitor, TypePath, TypeReference,
 };
 
 /// A value of an annotation element, as an [`AnnotationNode`] stores it (an element of ASM's
@@ -19,9 +19,9 @@ pub enum AnnotationNodeValue {
     /// An enumeration value (ASM's two-element `String[]`).
     Enum {
         /// The class descriptor of the enumeration class.
-        descriptor: JavaArcStr,
+        descriptor: JavaCompactStr,
         /// The actual enumeration value.
-        value: JavaArcStr,
+        value: JavaCompactStr,
     },
     /// A nested annotation.
     Annotation(AnnotationNode),
@@ -89,15 +89,15 @@ impl AnnotationNodeValue {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AnnotationNode {
     /// The class descriptor of the annotation class.
-    pub desc: JavaArcStr,
+    pub desc: JavaCompactStr,
     /// The name value pairs of this annotation, in visit order. Each name is `None` only if a
     /// visitor passed none (a class reader always passes the element name).
-    pub values: Vec<(Option<JavaArcStr>, AnnotationNodeValue)>,
+    pub values: Vec<(Option<JavaCompactStr>, AnnotationNodeValue)>,
 }
 
 impl AnnotationNode {
     /// Constructs a new annotation node with no values.
-    pub fn new(descriptor: impl Into<JavaArcStr>) -> AnnotationNode {
+    pub fn new(descriptor: impl Into<JavaCompactStr>) -> AnnotationNode {
         AnnotationNode {
             desc: descriptor.into(),
             values: Vec::new(),
@@ -132,14 +132,14 @@ pub(crate) fn accept_annotation(
 impl AnnotationVisitor for AnnotationNode {
     fn visit(&mut self, name: Option<&JavaStr>, value: &AnnotationValue<'_>) {
         self.values.push((
-            name.map(JavaArcStr::from),
+            name.map(JavaCompactStr::from),
             AnnotationNodeValue::from_visited(value),
         ));
     }
 
     fn visit_enum(&mut self, name: Option<&JavaStr>, descriptor: &JavaStr, value: &JavaStr) {
         self.values.push((
-            name.map(JavaArcStr::from),
+            name.map(JavaCompactStr::from),
             AnnotationNodeValue::Enum {
                 descriptor: descriptor.into(),
                 value: value.into(),
@@ -153,7 +153,7 @@ impl AnnotationVisitor for AnnotationNode {
         descriptor: &JavaStr,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
         self.values.push((
-            name.map(JavaArcStr::from),
+            name.map(JavaCompactStr::from),
             AnnotationNodeValue::Annotation(AnnotationNode::new(descriptor)),
         ));
         let AnnotationNodeValue::Annotation(annotation) = self.last_value_mut() else {
@@ -167,7 +167,7 @@ impl AnnotationVisitor for AnnotationNode {
         name: Option<&JavaStr>,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
         self.values.push((
-            name.map(JavaArcStr::from),
+            name.map(JavaCompactStr::from),
             AnnotationNodeValue::Array(Vec::new()),
         ));
         let AnnotationNodeValue::Array(values) = self.last_value_mut() else {
@@ -268,7 +268,7 @@ impl TypeAnnotationNode {
     pub fn new(
         type_ref: TypeReference,
         type_path: Option<TypePath>,
-        descriptor: impl Into<JavaArcStr>,
+        descriptor: impl Into<JavaCompactStr>,
     ) -> TypeAnnotationNode {
         TypeAnnotationNode {
             type_ref,
@@ -317,7 +317,7 @@ impl LocalVariableAnnotationNode {
         start: Vec<Label>,
         end: Vec<Label>,
         index: Vec<u16>,
-        descriptor: impl Into<JavaArcStr>,
+        descriptor: impl Into<JavaCompactStr>,
     ) -> LocalVariableAnnotationNode {
         LocalVariableAnnotationNode {
             type_ref,

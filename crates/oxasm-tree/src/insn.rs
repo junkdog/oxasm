@@ -14,7 +14,7 @@ use oxasm::constant::FrameValue;
 use oxasm::opcodes::{
     IINC, INVOKEDYNAMIC, INVOKEINTERFACE, LDC, LOOKUPSWITCH, MULTIANEWARRAY, TABLESWITCH,
 };
-use oxasm::{Handle, JavaArcStr, Label, MethodVisitor};
+use oxasm::{Handle, JavaCompactStr, Label, MethodVisitor};
 
 use crate::annotation_node::{TypeAnnotationNode, accept_annotation};
 use crate::frame_node::FrameNode;
@@ -69,9 +69,9 @@ impl InsnKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InvokeDynamicInsn {
     /// The method's name.
-    pub name: JavaArcStr,
+    pub name: JavaCompactStr,
     /// The method's descriptor.
-    pub desc: JavaArcStr,
+    pub desc: JavaCompactStr,
     /// The bootstrap method.
     pub bsm: Handle,
     /// The bootstrap method constant arguments.
@@ -110,7 +110,7 @@ pub enum Insn {
         /// The opcode.
         opcode: u8,
         /// The operand: an internal name or, for arrays, a type descriptor.
-        desc: JavaArcStr,
+        desc: JavaCompactStr,
     },
     /// A field instruction (ASM's `FieldInsnNode`): `GETSTATIC`, `PUTSTATIC`, `GETFIELD` or
     /// `PUTFIELD`.
@@ -118,11 +118,11 @@ pub enum Insn {
         /// The opcode.
         opcode: u8,
         /// The internal name of the field's owner class.
-        owner: JavaArcStr,
+        owner: JavaCompactStr,
         /// The field's name.
-        name: JavaArcStr,
+        name: JavaCompactStr,
         /// The field's descriptor.
-        desc: JavaArcStr,
+        desc: JavaCompactStr,
     },
     /// A method instruction (ASM's `MethodInsnNode`): `INVOKEVIRTUAL`, `INVOKESPECIAL`,
     /// `INVOKESTATIC` or `INVOKEINTERFACE`.
@@ -130,11 +130,11 @@ pub enum Insn {
         /// The opcode.
         opcode: u8,
         /// The internal name of the method's owner class.
-        owner: JavaArcStr,
+        owner: JavaCompactStr,
         /// The method's name.
-        name: JavaArcStr,
+        name: JavaCompactStr,
         /// The method's descriptor.
-        desc: JavaArcStr,
+        desc: JavaCompactStr,
         /// Whether the method's owner class is an interface (ASM's `itf`).
         is_interface: bool,
     },
@@ -183,7 +183,7 @@ pub enum Insn {
     /// A `MULTIANEWARRAY` instruction (ASM's `MultiANewArrayInsnNode`).
     MultiANewArray {
         /// An array type descriptor.
-        desc: JavaArcStr,
+        desc: JavaCompactStr,
         /// The number of dimensions of the array to allocate.
         dims: u8,
     },
@@ -200,7 +200,7 @@ pub enum Insn {
 
 impl Insn {
     /// A type instruction (`NEW`, `ANEWARRAY`, `CHECKCAST` or `INSTANCEOF`).
-    pub fn type_insn(opcode: u8, desc: impl Into<JavaArcStr>) -> Insn {
+    pub fn type_insn(opcode: u8, desc: impl Into<JavaCompactStr>) -> Insn {
         Insn::Type {
             opcode,
             desc: desc.into(),
@@ -210,9 +210,9 @@ impl Insn {
     /// A field instruction.
     pub fn field_insn(
         opcode: u8,
-        owner: impl Into<JavaArcStr>,
-        name: impl Into<JavaArcStr>,
-        desc: impl Into<JavaArcStr>,
+        owner: impl Into<JavaCompactStr>,
+        name: impl Into<JavaCompactStr>,
+        desc: impl Into<JavaCompactStr>,
     ) -> Insn {
         Insn::Field {
             opcode,
@@ -225,9 +225,9 @@ impl Insn {
     /// A method instruction.
     pub fn method_insn(
         opcode: u8,
-        owner: impl Into<JavaArcStr>,
-        name: impl Into<JavaArcStr>,
-        desc: impl Into<JavaArcStr>,
+        owner: impl Into<JavaCompactStr>,
+        name: impl Into<JavaCompactStr>,
+        desc: impl Into<JavaCompactStr>,
         is_interface: bool,
     ) -> Insn {
         Insn::Method {
@@ -243,17 +243,17 @@ impl Insn {
     /// (ASM's deprecated 4-argument `MethodInsnNode` constructor).
     pub fn method_insn_of(
         opcode: u8,
-        owner: impl Into<JavaArcStr>,
-        name: impl Into<JavaArcStr>,
-        desc: impl Into<JavaArcStr>,
+        owner: impl Into<JavaCompactStr>,
+        name: impl Into<JavaCompactStr>,
+        desc: impl Into<JavaCompactStr>,
     ) -> Insn {
         Insn::method_insn(opcode, owner, name, desc, opcode == INVOKEINTERFACE)
     }
 
     /// An `INVOKEDYNAMIC` instruction.
     pub fn invoke_dynamic_insn(
-        name: impl Into<JavaArcStr>,
-        desc: impl Into<JavaArcStr>,
+        name: impl Into<JavaCompactStr>,
+        desc: impl Into<JavaCompactStr>,
         bsm: Handle,
         bsm_args: Vec<Constant<'static>>,
     ) -> Insn {
@@ -266,7 +266,7 @@ impl Insn {
     }
 
     /// A `MULTIANEWARRAY` instruction.
-    pub fn multi_a_new_array_insn(desc: impl Into<JavaArcStr>, dims: u8) -> Insn {
+    pub fn multi_a_new_array_insn(desc: impl Into<JavaCompactStr>, dims: u8) -> Insn {
         Insn::MultiANewArray {
             desc: desc.into(),
             dims,

@@ -31,7 +31,7 @@ pub use constant::{AnnotationValue, Constant, FrameValue};
 pub use constant_dynamic::ConstantDynamic;
 pub use handle::Handle;
 pub use hierarchy::{ChainedHierarchy, ClassHierarchy, MapHierarchy, ObjectHierarchy};
-pub use jstr::{JavaArcStr, JavaStr, JavaString};
+pub use jstr::{JavaCompactStr, JavaStr, JavaString};
 pub use label::Label;
 pub use opcodes::{FrameKind, HandleKind};
 pub use reader::{ClassReader, ParsingOptions};
