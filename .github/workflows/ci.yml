@@ -27,13 +27,31 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
   msrv:
-    name: msrv (1.96)
+    name: msrv (1.99)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.96
+      - uses: dtolnay/rust-toolchain@1.99
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-targets
+
+  miri:
+    # ADR-18: every module containing `unsafe` runs its tests under Miri. Today that is jstr.
+    name: miri (unsafe modules)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: ""
+      # proptest persists failures (getcwd), and the full case counts are slow under Miri.
+      MIRIFLAGS: -Zmiri-disable-isolation
+      PROPTEST_CASES: "16"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo miri setup
+      - run: cargo miri test -p oxasm --lib jstr
 
   oracle:
     name: oracle

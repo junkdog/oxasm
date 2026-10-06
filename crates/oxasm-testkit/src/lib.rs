@@ -6,6 +6,7 @@
 
 pub mod golden;
 pub mod precompiled;
+pub mod signatures;
 
 use std::path::{Path, PathBuf};
 
