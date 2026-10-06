@@ -263,6 +263,7 @@ impl InsnList {
     }
 
     /// Adds the given instruction to the end of this list, and returns its handle.
+    #[inline(always)]
     pub fn add(&mut self, node: impl Into<InsnNode>) -> InsnId {
         let slot = self.alloc(node.into());
         self.link(slot, self.last, NIL);
@@ -404,6 +405,7 @@ impl InsnList {
     // ---------------------------------------------------------------------------------------------
 
     /// The handle of the node in the given slot, or `None` for `NIL`.
+    #[inline]
     fn id_of(&self, slot: u32) -> Option<InsnId> {
         (slot != NIL).then(|| InsnId {
             list: self.id,
@@ -427,6 +429,7 @@ impl InsnList {
     }
 
     /// Stores the given node in a free slot, and returns the slot (not linked yet).
+    #[inline(always)]
     fn alloc(&mut self, node: InsnNode) -> u32 {
         if let Some(slot) = self.free.pop() {
             self.slots[slot as usize].node = Some(node);
@@ -456,6 +459,7 @@ impl InsnList {
 
     /// Links the given slot between `previous` and `next` (either may be `NIL`), which must be
     /// adjacent.
+    #[inline(always)]
     fn link(&mut self, slot: u32, previous: u32, next: u32) {
         let entry = &mut self.slots[slot as usize];
         entry.previous = previous;
@@ -525,6 +529,7 @@ impl InsnList {
     }
 
     /// Invalidates the caches, after a structural change.
+    #[inline]
     fn invalidate(&mut self) {
         self.positions.take();
         self.labels.take();

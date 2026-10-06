@@ -2,7 +2,7 @@
 
 use oxasm::constant::Constant;
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassVisitor, FieldVisitor, JavaStr, JavaString,
+    AnnotationVisitor, Attribute, ClassVisitor, FieldVisitor, JavaArcStr, JavaStr,
     RecordComponentVisitor, TypePath, TypeReference,
 };
 
@@ -92,11 +92,11 @@ pub struct FieldNode {
     /// field is synthetic and/or deprecated.
     pub access: u32,
     /// The field's name.
-    pub name: JavaString,
+    pub name: JavaArcStr,
     /// The field's descriptor.
-    pub desc: JavaString,
+    pub desc: JavaArcStr,
     /// The field's signature, or `None`.
-    pub signature: Option<JavaString>,
+    pub signature: Option<JavaArcStr>,
     /// The field's initial value: an `Integer`, a `Float`, a `Long`, a `Double` or a `String`
     /// constant, or `None`.
     pub value: Option<Constant<'static>>,
@@ -116,9 +116,9 @@ impl FieldNode {
     /// Constructs a new field node, with no annotations nor attributes.
     pub fn new(
         access: u32,
-        name: impl Into<JavaString>,
-        descriptor: impl Into<JavaString>,
-        signature: Option<JavaString>,
+        name: impl Into<JavaArcStr>,
+        descriptor: impl Into<JavaArcStr>,
+        signature: Option<JavaArcStr>,
         value: Option<Constant<'static>>,
     ) -> FieldNode {
         FieldNode {
@@ -194,11 +194,11 @@ impl FieldVisitor for FieldNode {
 #[derive(Clone, Debug, Default)]
 pub struct RecordComponentNode {
     /// The record component name.
-    pub name: JavaString,
+    pub name: JavaArcStr,
     /// The record component descriptor.
-    pub descriptor: JavaString,
+    pub descriptor: JavaArcStr,
     /// The record component signature, or `None`.
-    pub signature: Option<JavaString>,
+    pub signature: Option<JavaArcStr>,
     /// The runtime visible annotations of this record component.
     pub visible_annotations: Vec<AnnotationNode>,
     /// The runtime invisible annotations of this record component.
@@ -214,9 +214,9 @@ pub struct RecordComponentNode {
 impl RecordComponentNode {
     /// Constructs a new record component node, with no annotations nor attributes.
     pub fn new(
-        name: impl Into<JavaString>,
-        descriptor: impl Into<JavaString>,
-        signature: Option<JavaString>,
+        name: impl Into<JavaArcStr>,
+        descriptor: impl Into<JavaArcStr>,
+        signature: Option<JavaArcStr>,
     ) -> RecordComponentNode {
         RecordComponentNode {
             name: name.into(),

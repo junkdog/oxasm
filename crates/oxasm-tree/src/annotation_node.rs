@@ -3,7 +3,7 @@
 
 use oxasm::constant::AnnotationValue;
 use oxasm::{
-    AnnotationVisitor, JavaStr, JavaString, Label, MethodVisitor, TypePath, TypeReference,
+    AnnotationVisitor, JavaArcStr, JavaStr, Label, MethodVisitor, TypePath, TypeReference,
 };
 
 /// A value of an annotation element, as an [`AnnotationNode`] stores it (an element of ASM's
@@ -19,9 +19,9 @@ pub enum AnnotationNodeValue {
     /// An enumeration value (ASM's two-element `String[]`).
     Enum {
         /// The class descriptor of the enumeration class.
-        descriptor: JavaString,
+        descriptor: JavaArcStr,
         /// The actual enumeration value.
-        value: JavaString,
+        value: JavaArcStr,
     },
     /// A nested annotation.
     Annotation(AnnotationNode),
@@ -89,15 +89,15 @@ impl AnnotationNodeValue {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AnnotationNode {
     /// The class descriptor of the annotation class.
-    pub desc: JavaString,
+    pub desc: JavaArcStr,
     /// The name value pairs of this annotation, in visit order. Each name is `None` only if a
     /// visitor passed none (a class reader always passes the element name).
-    pub values: Vec<(Option<JavaString>, AnnotationNodeValue)>,
+    pub values: Vec<(Option<JavaArcStr>, AnnotationNodeValue)>,
 }
 
 impl AnnotationNode {
     /// Constructs a new annotation node with no values.
-    pub fn new(descriptor: impl Into<JavaString>) -> AnnotationNode {
+    pub fn new(descriptor: impl Into<JavaArcStr>) -> AnnotationNode {
         AnnotationNode {
             desc: descriptor.into(),
             values: Vec::new(),
@@ -132,17 +132,17 @@ pub(crate) fn accept_annotation(
 impl AnnotationVisitor for AnnotationNode {
     fn visit(&mut self, name: Option<&JavaStr>, value: &AnnotationValue<'_>) {
         self.values.push((
-            name.map(JavaStr::to_owned),
+            name.map(JavaArcStr::from),
             AnnotationNodeValue::from_visited(value),
         ));
     }
 
     fn visit_enum(&mut self, name: Option<&JavaStr>, descriptor: &JavaStr, value: &JavaStr) {
         self.values.push((
-            name.map(JavaStr::to_owned),
+            name.map(JavaArcStr::from),
             AnnotationNodeValue::Enum {
-                descriptor: descriptor.to_owned(),
-                value: value.to_owned(),
+                descriptor: descriptor.into(),
+                value: value.into(),
             },
         ));
     }
@@ -153,7 +153,7 @@ impl AnnotationVisitor for AnnotationNode {
         descriptor: &JavaStr,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
         self.values.push((
-            name.map(JavaStr::to_owned),
+            name.map(JavaArcStr::from),
             AnnotationNodeValue::Annotation(AnnotationNode::new(descriptor)),
         ));
         let AnnotationNodeValue::Annotation(annotation) = self.last_value_mut() else {
@@ -167,7 +167,7 @@ impl AnnotationVisitor for AnnotationNode {
         name: Option<&JavaStr>,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
         self.values.push((
-            name.map(JavaStr::to_owned),
+            name.map(JavaArcStr::from),
             AnnotationNodeValue::Array(Vec::new()),
         ));
         let AnnotationNodeValue::Array(values) = self.last_value_mut() else {
@@ -212,8 +212,8 @@ impl AnnotationVisitor for ValuesVisitor<'_> {
 
     fn visit_enum(&mut self, _name: Option<&JavaStr>, descriptor: &JavaStr, value: &JavaStr) {
         self.add(AnnotationNodeValue::Enum {
-            descriptor: descriptor.to_owned(),
-            value: value.to_owned(),
+            descriptor: descriptor.into(),
+            value: value.into(),
         });
     }
 
@@ -268,7 +268,7 @@ impl TypeAnnotationNode {
     pub fn new(
         type_ref: TypeReference,
         type_path: Option<TypePath>,
-        descriptor: impl Into<JavaString>,
+        descriptor: impl Into<JavaArcStr>,
     ) -> TypeAnnotationNode {
         TypeAnnotationNode {
             type_ref,
@@ -317,7 +317,7 @@ impl LocalVariableAnnotationNode {
         start: Vec<Label>,
         end: Vec<Label>,
         index: Vec<u16>,
-        descriptor: impl Into<JavaString>,
+        descriptor: impl Into<JavaArcStr>,
     ) -> LocalVariableAnnotationNode {
         LocalVariableAnnotationNode {
             type_ref,

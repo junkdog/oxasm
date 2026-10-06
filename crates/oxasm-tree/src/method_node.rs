@@ -2,7 +2,7 @@
 
 use oxasm::constant::{Constant, FrameValue};
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassVisitor, FrameKind, Handle, JavaStr, JavaString, Label,
+    AnnotationVisitor, Attribute, ClassVisitor, FrameKind, Handle, JavaArcStr, JavaStr, Label,
     MethodVisitor, Type, TypePath, TypeReference,
 };
 
@@ -15,6 +15,7 @@ use crate::frame_node::FrameNode;
 use crate::insn::{Insn, InsnNode};
 use crate::insn_list::InsnList;
 use crate::nodes::{LocalVariableNode, ParameterNode, TryCatchBlockNode, try_catch_type_ref};
+use crate::strings::{StringPool, Strings, Unshared};
 
 /// The label a method node stores for a visited label.
 ///
@@ -37,13 +38,13 @@ pub struct MethodNode {
     /// method is synthetic and/or deprecated.
     pub access: u32,
     /// The method's name.
-    pub name: JavaString,
+    pub name: JavaArcStr,
     /// The method's descriptor.
-    pub desc: JavaString,
+    pub desc: JavaArcStr,
     /// The method's signature, or `None`.
-    pub signature: Option<JavaString>,
+    pub signature: Option<JavaArcStr>,
     /// The internal names of the method's exception classes.
-    pub exceptions: Vec<JavaString>,
+    pub exceptions: Vec<JavaArcStr>,
     /// The method parameter info (access flags and name).
     pub parameters: Vec<ParameterNode>,
     /// The runtime visible annotations of this method.
@@ -94,10 +95,10 @@ impl MethodNode {
     /// Constructs a new method node, with no content.
     pub fn new(
         access: u32,
-        name: impl Into<JavaString>,
-        descriptor: impl Into<JavaString>,
-        signature: Option<JavaString>,
-        exceptions: Vec<JavaString>,
+        name: impl Into<JavaArcStr>,
+        descriptor: impl Into<JavaArcStr>,
+        signature: Option<JavaArcStr>,
+        exceptions: Vec<JavaArcStr>,
     ) -> MethodNode {
         MethodNode {
             access,
@@ -209,10 +210,129 @@ impl MethodNode {
 // Implementation of the MethodVisitor trait
 // -------------------------------------------------------------------------------------------------
 
+/// The visitor methods of a method node that store strings, with the strings from the given
+/// source.
+impl MethodNode {
+    fn add_parameter(&mut self, strings: &mut impl Strings, name: Option<&JavaStr>, access: u32) {
+        self.parameters
+            .push(ParameterNode::new(strings.get_opt(name), access));
+    }
+
+    fn add_type_insn(&mut self, strings: &mut impl Strings, opcode: u8, type_: &JavaStr) {
+        self.instructions.add(Insn::Type {
+            opcode,
+            desc: strings.get(type_),
+        });
+    }
+
+    fn add_field_insn(
+        &mut self,
+        strings: &mut impl Strings,
+        opcode: u8,
+        owner: &JavaStr,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+    ) {
+        self.instructions.add(Insn::Field {
+            opcode,
+            owner: strings.get(owner),
+            name: strings.get(name),
+            desc: strings.get(descriptor),
+        });
+    }
+
+    fn add_method_insn(
+        &mut self,
+        strings: &mut impl Strings,
+        opcode: u8,
+        owner: &JavaStr,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        is_interface: bool,
+    ) {
+        self.instructions.add(Insn::Method {
+            opcode,
+            owner: strings.get(owner),
+            name: strings.get(name),
+            desc: strings.get(descriptor),
+            is_interface,
+        });
+    }
+
+    fn add_invoke_dynamic_insn(
+        &mut self,
+        strings: &mut impl Strings,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        bootstrap_method_handle: &Handle,
+        bootstrap_method_arguments: &[Constant<'_>],
+    ) {
+        self.instructions.add(Insn::invoke_dynamic_insn(
+            strings.get(name),
+            strings.get(descriptor),
+            bootstrap_method_handle.clone(),
+            bootstrap_method_arguments
+                .iter()
+                .map(Constant::to_owned)
+                .collect(),
+        ));
+    }
+
+    fn add_multi_a_new_array_insn(
+        &mut self,
+        strings: &mut impl Strings,
+        descriptor: &JavaStr,
+        num_dimensions: u8,
+    ) {
+        self.instructions.add(Insn::MultiANewArray {
+            desc: strings.get(descriptor),
+            dims: num_dimensions,
+        });
+    }
+
+    fn add_try_catch_block(
+        &mut self,
+        strings: &mut impl Strings,
+        start: Label,
+        end: Label,
+        handler: Label,
+        type_: Option<&JavaStr>,
+    ) {
+        self.try_catch_blocks.push(TryCatchBlockNode::new(
+            plain(start),
+            plain(end),
+            plain(handler),
+            strings.get_opt(type_),
+        ));
+    }
+
+    #[allow(clippy::too_many_arguments)] // ASM's signature, and the strings
+    fn add_local_variable(
+        &mut self,
+        strings: &mut impl Strings,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        signature: Option<&JavaStr>,
+        start: Label,
+        end: Label,
+        index: u16,
+    ) {
+        self.local_variables.push(LocalVariableNode::new(
+            strings.get(name),
+            strings.get(descriptor),
+            strings.get_opt(signature),
+            plain(start),
+            plain(end),
+            index,
+        ));
+    }
+}
+
+/// A method node visited on its own stores a new allocation for each visited string (a class
+/// node shares them, see [`PooledMethodNode`]).
 impl MethodVisitor for MethodNode {
     fn visit_parameter(&mut self, name: Option<&JavaStr>, access: u32) {
-        self.parameters
-            .push(ParameterNode::new(name.map(JavaStr::to_owned), access));
+        self.add_parameter(&mut Unshared, name, access);
     }
 
     fn visit_annotation_default<'a>(&'a mut self) -> Option<Box<dyn AnnotationVisitor + 'a>> {
@@ -326,7 +446,7 @@ impl MethodVisitor for MethodNode {
     }
 
     fn visit_type_insn(&mut self, opcode: u8, type_: &JavaStr) {
-        self.instructions.add(Insn::type_insn(opcode, type_));
+        self.add_type_insn(&mut Unshared, opcode, type_);
     }
 
     fn visit_field_insn(
@@ -336,8 +456,7 @@ impl MethodVisitor for MethodNode {
         name: &JavaStr,
         descriptor: &JavaStr,
     ) {
-        self.instructions
-            .add(Insn::field_insn(opcode, owner, name, descriptor));
+        self.add_field_insn(&mut Unshared, opcode, owner, name, descriptor);
     }
 
     fn visit_method_insn(
@@ -348,13 +467,7 @@ impl MethodVisitor for MethodNode {
         descriptor: &JavaStr,
         is_interface: bool,
     ) {
-        self.instructions.add(Insn::method_insn(
-            opcode,
-            owner,
-            name,
-            descriptor,
-            is_interface,
-        ));
+        self.add_method_insn(&mut Unshared, opcode, owner, name, descriptor, is_interface);
     }
 
     fn visit_invoke_dynamic_insn(
@@ -364,15 +477,13 @@ impl MethodVisitor for MethodNode {
         bootstrap_method_handle: &Handle,
         bootstrap_method_arguments: &[Constant<'_>],
     ) {
-        self.instructions.add(Insn::invoke_dynamic_insn(
+        self.add_invoke_dynamic_insn(
+            &mut Unshared,
             name,
             descriptor,
-            bootstrap_method_handle.clone(),
-            bootstrap_method_arguments
-                .iter()
-                .map(Constant::to_owned)
-                .collect(),
-        ));
+            bootstrap_method_handle,
+            bootstrap_method_arguments,
+        );
     }
 
     fn visit_jump_insn(&mut self, opcode: u8, label: Label) {
@@ -415,8 +526,7 @@ impl MethodVisitor for MethodNode {
     }
 
     fn visit_multi_a_new_array_insn(&mut self, descriptor: &JavaStr, num_dimensions: u8) {
-        self.instructions
-            .add(Insn::multi_a_new_array_insn(descriptor, num_dimensions));
+        self.add_multi_a_new_array_insn(&mut Unshared, descriptor, num_dimensions);
     }
 
     /// The annotation goes to the last real instruction (not a label, frame or line number).
@@ -438,9 +548,10 @@ impl MethodVisitor for MethodNode {
         }
         let insn: &mut InsnNode = &mut self.instructions[current_insn?];
         // Add the annotation to this instruction.
+        let annotations = insn.type_annotations_mut();
         add_type_annotation(
-            &mut insn.visible_type_annotations,
-            &mut insn.invisible_type_annotations,
+            &mut annotations.visible,
+            &mut annotations.invisible,
             type_ref,
             type_path,
             descriptor,
@@ -455,12 +566,7 @@ impl MethodVisitor for MethodNode {
         handler: Label,
         type_: Option<&JavaStr>,
     ) {
-        self.try_catch_blocks.push(TryCatchBlockNode::new(
-            plain(start),
-            plain(end),
-            plain(handler),
-            type_.map(JavaStr::to_owned),
-        ));
+        self.add_try_catch_block(&mut Unshared, start, end, handler, type_);
     }
 
     /// The annotation goes to the try catch block whose index is in the type reference. If
@@ -494,14 +600,15 @@ impl MethodVisitor for MethodNode {
         end: Label,
         index: u16,
     ) {
-        self.local_variables.push(LocalVariableNode::new(
+        self.add_local_variable(
+            &mut Unshared,
             name,
             descriptor,
-            signature.map(JavaStr::to_owned),
-            plain(start),
-            plain(end),
+            signature,
+            start,
+            end,
             index,
-        ));
+        );
     }
 
     #[allow(clippy::too_many_arguments)] // ASM's signature
@@ -546,5 +653,95 @@ impl MethodVisitor for MethodNode {
 
     fn visit_end(&mut self) {
         // Nothing to do.
+    }
+}
+
+/// The method visitor of a method node that a class node visits: it shares the strings of the
+/// method with those of the class, through the class node's pool, and otherwise delegates to the
+/// method node.
+pub(crate) struct PooledMethodNode<'a> {
+    pub(crate) node: &'a mut MethodNode,
+    pub(crate) strings: &'a mut StringPool,
+}
+
+impl MethodVisitor for PooledMethodNode<'_> {
+    fn delegate(&mut self) -> Option<&mut dyn MethodVisitor> {
+        Some(self.node)
+    }
+
+    fn visit_parameter(&mut self, name: Option<&JavaStr>, access: u32) {
+        self.node.add_parameter(self.strings, name, access);
+    }
+
+    fn visit_type_insn(&mut self, opcode: u8, type_: &JavaStr) {
+        self.node.add_type_insn(self.strings, opcode, type_);
+    }
+
+    fn visit_field_insn(
+        &mut self,
+        opcode: u8,
+        owner: &JavaStr,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+    ) {
+        self.node
+            .add_field_insn(self.strings, opcode, owner, name, descriptor);
+    }
+
+    fn visit_method_insn(
+        &mut self,
+        opcode: u8,
+        owner: &JavaStr,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        is_interface: bool,
+    ) {
+        self.node
+            .add_method_insn(self.strings, opcode, owner, name, descriptor, is_interface);
+    }
+
+    fn visit_invoke_dynamic_insn(
+        &mut self,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        bootstrap_method_handle: &Handle,
+        bootstrap_method_arguments: &[Constant<'_>],
+    ) {
+        self.node.add_invoke_dynamic_insn(
+            self.strings,
+            name,
+            descriptor,
+            bootstrap_method_handle,
+            bootstrap_method_arguments,
+        );
+    }
+
+    fn visit_multi_a_new_array_insn(&mut self, descriptor: &JavaStr, num_dimensions: u8) {
+        self.node
+            .add_multi_a_new_array_insn(self.strings, descriptor, num_dimensions);
+    }
+
+    fn visit_try_catch_block(
+        &mut self,
+        start: Label,
+        end: Label,
+        handler: Label,
+        type_: Option<&JavaStr>,
+    ) {
+        self.node
+            .add_try_catch_block(self.strings, start, end, handler, type_);
+    }
+
+    fn visit_local_variable(
+        &mut self,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        signature: Option<&JavaStr>,
+        start: Label,
+        end: Label,
+        index: u16,
+    ) {
+        self.node
+            .add_local_variable(self.strings, name, descriptor, signature, start, end, index);
     }
 }

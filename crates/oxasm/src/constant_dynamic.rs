@@ -4,16 +4,16 @@ use std::fmt;
 
 use crate::constant::Constant;
 use crate::handle::Handle;
-use crate::jstr::{JavaStr, JavaString};
+use crate::jstr::{JavaArcStr, JavaStr};
 
 /// A constant whose value is computed at runtime, with a bootstrap method (a
 /// `CONSTANT_Dynamic_info`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ConstantDynamic {
     /// The constant name (can be arbitrary).
-    name: JavaString,
+    name: JavaArcStr,
     /// The constant type (must be a field descriptor).
-    descriptor: JavaString,
+    descriptor: JavaArcStr,
     /// The bootstrap method to use to compute the constant value at runtime.
     bootstrap_method: Handle,
     /// The arguments to pass to the bootstrap method, in order to compute the constant value at
@@ -31,8 +31,8 @@ impl ConstantDynamic {
     ///   compute the constant value at runtime.
     #[must_use]
     pub fn new(
-        name: impl Into<JavaString>,
-        descriptor: impl Into<JavaString>,
+        name: impl Into<JavaArcStr>,
+        descriptor: impl Into<JavaArcStr>,
         bootstrap_method: Handle,
         bootstrap_method_arguments: Vec<Constant<'static>>,
     ) -> ConstantDynamic {

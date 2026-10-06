@@ -1,10 +1,10 @@
 //! [`ModuleNode`] and its parts: ASM's `ModuleNode`, `ModuleRequireNode`, `ModuleExportNode`,
 //! `ModuleOpenNode` and `ModuleProvideNode`.
 
-use oxasm::{ClassVisitor, JavaStr, JavaString, ModuleVisitor};
+use oxasm::{ClassVisitor, JavaArcStr, JavaStr, ModuleVisitor};
 
 /// The elements of a list of strings, as the `&[&JavaStr]` a visitor takes.
-fn as_strs(strings: &[JavaString]) -> Vec<&JavaStr> {
+fn as_strs(strings: &[JavaArcStr]) -> Vec<&JavaStr> {
     strings.iter().map(|s| &**s).collect()
 }
 
@@ -12,15 +12,15 @@ fn as_strs(strings: &[JavaString]) -> Vec<&JavaStr> {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ModuleNode {
     /// The fully qualified name (using dots) of this module.
-    pub name: JavaString,
+    pub name: JavaArcStr,
     /// The module's access flags, among `ACC_OPEN`, `ACC_SYNTHETIC` and `ACC_MANDATED`.
     pub access: u32,
     /// The version of this module, or `None`.
-    pub version: Option<JavaString>,
+    pub version: Option<JavaArcStr>,
     /// The internal name of the main class of this module, or `None`.
-    pub main_class: Option<JavaString>,
+    pub main_class: Option<JavaArcStr>,
     /// The internal names of the packages declared by this module.
-    pub packages: Vec<JavaString>,
+    pub packages: Vec<JavaArcStr>,
     /// The dependencies of this module.
     pub requires: Vec<ModuleRequireNode>,
     /// The packages exported by this module.
@@ -28,7 +28,7 @@ pub struct ModuleNode {
     /// The packages opened by this module.
     pub opens: Vec<ModuleOpenNode>,
     /// The internal names of the services used by this module.
-    pub uses: Vec<JavaString>,
+    pub uses: Vec<JavaArcStr>,
     /// The services provided by this module.
     pub provides: Vec<ModuleProvideNode>,
 }
@@ -36,9 +36,9 @@ pub struct ModuleNode {
 impl ModuleNode {
     /// Constructs a module node with no content.
     pub fn new(
-        name: impl Into<JavaString>,
+        name: impl Into<JavaArcStr>,
         access: u32,
-        version: Option<JavaString>,
+        version: Option<JavaArcStr>,
     ) -> ModuleNode {
         ModuleNode {
             name: name.into(),
@@ -83,18 +83,18 @@ impl ModuleNode {
 
 impl ModuleVisitor for ModuleNode {
     fn visit_main_class(&mut self, main_class: &JavaStr) {
-        self.main_class = Some(main_class.to_owned());
+        self.main_class = Some(main_class.into());
     }
 
     fn visit_package(&mut self, packaze: &JavaStr) {
-        self.packages.push(packaze.to_owned());
+        self.packages.push(packaze.into());
     }
 
     fn visit_require(&mut self, module: &JavaStr, access: u32, version: Option<&JavaStr>) {
         self.requires.push(ModuleRequireNode::new(
             module,
             access,
-            version.map(JavaStr::to_owned),
+            version.map(JavaArcStr::from),
         ));
     }
 
@@ -102,7 +102,7 @@ impl ModuleVisitor for ModuleNode {
         self.exports.push(ModuleExportNode::new(
             packaze,
             access,
-            modules.iter().map(|&m| m.to_owned()).collect(),
+            modules.iter().map(|&m| m.into()).collect(),
         ));
     }
 
@@ -110,18 +110,18 @@ impl ModuleVisitor for ModuleNode {
         self.opens.push(ModuleOpenNode::new(
             packaze,
             access,
-            modules.iter().map(|&m| m.to_owned()).collect(),
+            modules.iter().map(|&m| m.into()).collect(),
         ));
     }
 
     fn visit_use(&mut self, service: &JavaStr) {
-        self.uses.push(service.to_owned());
+        self.uses.push(service.into());
     }
 
     fn visit_provide(&mut self, service: &JavaStr, providers: &[&JavaStr]) {
         self.provides.push(ModuleProvideNode::new(
             service,
-            providers.iter().map(|&p| p.to_owned()).collect(),
+            providers.iter().map(|&p| p.into()).collect(),
         ));
     }
 
@@ -134,20 +134,20 @@ impl ModuleVisitor for ModuleNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleRequireNode {
     /// The fully qualified name (using dots) of the dependence.
-    pub module: JavaString,
+    pub module: JavaArcStr,
     /// The access flag of the dependence among `ACC_TRANSITIVE`, `ACC_STATIC_PHASE`,
     /// `ACC_SYNTHETIC` and `ACC_MANDATED`.
     pub access: u32,
     /// The module version at compile time, or `None`.
-    pub version: Option<JavaString>,
+    pub version: Option<JavaArcStr>,
 }
 
 impl ModuleRequireNode {
     /// Constructs a new module require node.
     pub fn new(
-        module: impl Into<JavaString>,
+        module: impl Into<JavaArcStr>,
         access: u32,
-        version: Option<JavaString>,
+        version: Option<JavaArcStr>,
     ) -> ModuleRequireNode {
         ModuleRequireNode {
             module: module.into(),
@@ -167,21 +167,21 @@ impl ModuleRequireNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleExportNode {
     /// The internal name of the exported package.
-    pub packaze: JavaString,
+    pub packaze: JavaArcStr,
     /// The access flags of the exported package, valid values are among `ACC_SYNTHETIC` and
     /// `ACC_MANDATED`.
     pub access: u32,
     /// The list of modules that can access this exported package, specified with fully
     /// qualified names (using dots). Empty if the package is exported to all modules.
-    pub modules: Vec<JavaString>,
+    pub modules: Vec<JavaArcStr>,
 }
 
 impl ModuleExportNode {
     /// Constructs a new module export node.
     pub fn new(
-        packaze: impl Into<JavaString>,
+        packaze: impl Into<JavaArcStr>,
         access: u32,
-        modules: Vec<JavaString>,
+        modules: Vec<JavaArcStr>,
     ) -> ModuleExportNode {
         ModuleExportNode {
             packaze: packaze.into(),
@@ -200,21 +200,21 @@ impl ModuleExportNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleOpenNode {
     /// The internal name of the opened package.
-    pub packaze: JavaString,
+    pub packaze: JavaArcStr,
     /// The access flag of the opened package, valid values are among `ACC_SYNTHETIC` and
     /// `ACC_MANDATED`.
     pub access: u32,
     /// The fully qualified names (using dots) of the modules that can use deep reflection to
     /// the classes of the open package. Empty if the package is open to all modules.
-    pub modules: Vec<JavaString>,
+    pub modules: Vec<JavaArcStr>,
 }
 
 impl ModuleOpenNode {
     /// Constructs a new module open node.
     pub fn new(
-        packaze: impl Into<JavaString>,
+        packaze: impl Into<JavaArcStr>,
         access: u32,
-        modules: Vec<JavaString>,
+        modules: Vec<JavaArcStr>,
     ) -> ModuleOpenNode {
         ModuleOpenNode {
             packaze: packaze.into(),
@@ -233,15 +233,15 @@ impl ModuleOpenNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModuleProvideNode {
     /// The internal name of the service.
-    pub service: JavaString,
+    pub service: JavaArcStr,
     /// The internal names of the implementations of the service (there is at least one
     /// provider).
-    pub providers: Vec<JavaString>,
+    pub providers: Vec<JavaArcStr>,
 }
 
 impl ModuleProvideNode {
     /// Constructs a new module provide node.
-    pub fn new(service: impl Into<JavaString>, providers: Vec<JavaString>) -> ModuleProvideNode {
+    pub fn new(service: impl Into<JavaArcStr>, providers: Vec<JavaArcStr>) -> ModuleProvideNode {
         ModuleProvideNode {
             service: service.into(),
             providers,

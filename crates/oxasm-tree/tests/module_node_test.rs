@@ -33,9 +33,9 @@ fn test_accept() {
             access: u32,
             version: Option<&JavaStr>,
         ) -> Option<Box<dyn ModuleVisitor + 'a>> {
-            self.0.name = name.to_owned();
+            self.0.name = name.into();
             self.0.access = access;
-            self.0.version = version.map(JavaStr::to_owned);
+            self.0.version = version.map(Into::into);
             Some(Box::new(&mut *self.0))
         }
     }
@@ -75,7 +75,7 @@ fn accept_replays_every_directive() {
             access: u32,
             version: Option<&JavaStr>,
         ) -> Option<Box<dyn ModuleVisitor + 'a>> {
-            *self.0 = ModuleNode::new(name, access, version.map(JavaStr::to_owned));
+            *self.0 = ModuleNode::new(name, access, version.map(Into::into));
             Some(Box::new(&mut *self.0))
         }
     }

@@ -14,7 +14,7 @@ use oxasm::constant::FrameValue;
 use oxasm::opcodes::{
     IINC, INVOKEDYNAMIC, INVOKEINTERFACE, LDC, LOOKUPSWITCH, MULTIANEWARRAY, TABLESWITCH,
 };
-use oxasm::{Handle, JavaString, Label, MethodVisitor};
+use oxasm::{Handle, JavaArcStr, Label, MethodVisitor};
 
 use crate::annotation_node::{TypeAnnotationNode, accept_annotation};
 use crate::frame_node::FrameNode;
@@ -69,9 +69,9 @@ impl InsnKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InvokeDynamicInsn {
     /// The method's name.
-    pub name: JavaString,
+    pub name: JavaArcStr,
     /// The method's descriptor.
-    pub desc: JavaString,
+    pub desc: JavaArcStr,
     /// The bootstrap method.
     pub bsm: Handle,
     /// The bootstrap method constant arguments.
@@ -110,7 +110,7 @@ pub enum Insn {
         /// The opcode.
         opcode: u8,
         /// The operand: an internal name or, for arrays, a type descriptor.
-        desc: JavaString,
+        desc: JavaArcStr,
     },
     /// A field instruction (ASM's `FieldInsnNode`): `GETSTATIC`, `PUTSTATIC`, `GETFIELD` or
     /// `PUTFIELD`.
@@ -118,11 +118,11 @@ pub enum Insn {
         /// The opcode.
         opcode: u8,
         /// The internal name of the field's owner class.
-        owner: JavaString,
+        owner: JavaArcStr,
         /// The field's name.
-        name: JavaString,
+        name: JavaArcStr,
         /// The field's descriptor.
-        desc: JavaString,
+        desc: JavaArcStr,
     },
     /// A method instruction (ASM's `MethodInsnNode`): `INVOKEVIRTUAL`, `INVOKESPECIAL`,
     /// `INVOKESTATIC` or `INVOKEINTERFACE`.
@@ -130,11 +130,11 @@ pub enum Insn {
         /// The opcode.
         opcode: u8,
         /// The internal name of the method's owner class.
-        owner: JavaString,
+        owner: JavaArcStr,
         /// The method's name.
-        name: JavaString,
+        name: JavaArcStr,
         /// The method's descriptor.
-        desc: JavaString,
+        desc: JavaArcStr,
         /// Whether the method's owner class is an interface (ASM's `itf`).
         is_interface: bool,
     },
@@ -183,7 +183,7 @@ pub enum Insn {
     /// A `MULTIANEWARRAY` instruction (ASM's `MultiANewArrayInsnNode`).
     MultiANewArray {
         /// An array type descriptor.
-        desc: JavaString,
+        desc: JavaArcStr,
         /// The number of dimensions of the array to allocate.
         dims: u8,
     },
@@ -200,7 +200,7 @@ pub enum Insn {
 
 impl Insn {
     /// A type instruction (`NEW`, `ANEWARRAY`, `CHECKCAST` or `INSTANCEOF`).
-    pub fn type_insn(opcode: u8, desc: impl Into<JavaString>) -> Insn {
+    pub fn type_insn(opcode: u8, desc: impl Into<JavaArcStr>) -> Insn {
         Insn::Type {
             opcode,
             desc: desc.into(),
@@ -210,9 +210,9 @@ impl Insn {
     /// A field instruction.
     pub fn field_insn(
         opcode: u8,
-        owner: impl Into<JavaString>,
-        name: impl Into<JavaString>,
-        desc: impl Into<JavaString>,
+        owner: impl Into<JavaArcStr>,
+        name: impl Into<JavaArcStr>,
+        desc: impl Into<JavaArcStr>,
     ) -> Insn {
         Insn::Field {
             opcode,
@@ -225,9 +225,9 @@ impl Insn {
     /// A method instruction.
     pub fn method_insn(
         opcode: u8,
-        owner: impl Into<JavaString>,
-        name: impl Into<JavaString>,
-        desc: impl Into<JavaString>,
+        owner: impl Into<JavaArcStr>,
+        name: impl Into<JavaArcStr>,
+        desc: impl Into<JavaArcStr>,
         is_interface: bool,
     ) -> Insn {
         Insn::Method {
@@ -243,17 +243,17 @@ impl Insn {
     /// (ASM's deprecated 4-argument `MethodInsnNode` constructor).
     pub fn method_insn_of(
         opcode: u8,
-        owner: impl Into<JavaString>,
-        name: impl Into<JavaString>,
-        desc: impl Into<JavaString>,
+        owner: impl Into<JavaArcStr>,
+        name: impl Into<JavaArcStr>,
+        desc: impl Into<JavaArcStr>,
     ) -> Insn {
         Insn::method_insn(opcode, owner, name, desc, opcode == INVOKEINTERFACE)
     }
 
     /// An `INVOKEDYNAMIC` instruction.
     pub fn invoke_dynamic_insn(
-        name: impl Into<JavaString>,
-        desc: impl Into<JavaString>,
+        name: impl Into<JavaArcStr>,
+        desc: impl Into<JavaArcStr>,
         bsm: Handle,
         bsm_args: Vec<Constant<'static>>,
     ) -> Insn {
@@ -266,7 +266,7 @@ impl Insn {
     }
 
     /// A `MULTIANEWARRAY` instruction.
-    pub fn multi_a_new_array_insn(desc: impl Into<JavaString>, dims: u8) -> Insn {
+    pub fn multi_a_new_array_insn(desc: impl Into<JavaArcStr>, dims: u8) -> Insn {
         Insn::MultiANewArray {
             desc: desc.into(),
             dims,
@@ -455,12 +455,24 @@ impl Insn {
 pub struct InsnNode {
     /// The instruction.
     pub insn: Insn,
-    /// The runtime visible type annotations of this instruction. Only used for real
+    /// The type annotations of this instruction, or `None` if it has none (ASM's
+    /// `visibleTypeAnnotations` and `invisibleTypeAnnotations`, both `null`). Only used for real
     /// instructions (not for labels, frames, or line number nodes).
-    pub visible_type_annotations: Vec<TypeAnnotationNode>,
-    /// The runtime invisible type annotations of this instruction. Only used for real
-    /// instructions (not for labels, frames, or line number nodes).
-    pub invisible_type_annotations: Vec<TypeAnnotationNode>,
+    ///
+    /// They are boxed because instructions rarely have any: this keeps an instruction node
+    /// small. [`visible_type_annotations`](Self::visible_type_annotations) and
+    /// [`invisible_type_annotations`](Self::invisible_type_annotations) read them, and
+    /// [`type_annotations_mut`](Self::type_annotations_mut) adds some.
+    pub type_annotations: Option<Box<InsnTypeAnnotations>>,
+}
+
+/// The type annotations of an instruction (see [`InsnNode::type_annotations`]).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct InsnTypeAnnotations {
+    /// The runtime visible type annotations of the instruction.
+    pub visible: Vec<TypeAnnotationNode>,
+    /// The runtime invisible type annotations of the instruction.
+    pub invisible: Vec<TypeAnnotationNode>,
 }
 
 impl InsnNode {
@@ -468,8 +480,7 @@ impl InsnNode {
     pub fn new(insn: Insn) -> InsnNode {
         InsnNode {
             insn,
-            visible_type_annotations: Vec::new(),
-            invisible_type_annotations: Vec::new(),
+            type_annotations: None,
         }
     }
 
@@ -482,6 +493,25 @@ impl InsnNode {
     /// `getOpcode()`, which returns -1 for those).
     pub fn opcode(&self) -> Option<u8> {
         self.insn.opcode()
+    }
+
+    /// The runtime visible type annotations of this instruction.
+    pub fn visible_type_annotations(&self) -> &[TypeAnnotationNode] {
+        self.type_annotations
+            .as_deref()
+            .map_or(&[], |annotations| &annotations.visible)
+    }
+
+    /// The runtime invisible type annotations of this instruction.
+    pub fn invisible_type_annotations(&self) -> &[TypeAnnotationNode] {
+        self.type_annotations
+            .as_deref()
+            .map_or(&[], |annotations| &annotations.invisible)
+    }
+
+    /// The type annotations of this instruction, which are created (empty) if it has none.
+    pub fn type_annotations_mut(&mut self) -> &mut InsnTypeAnnotations {
+        self.type_annotations.get_or_insert_default()
     }
 
     /// Makes the given visitor visit this instruction, then its type annotations if it is a
@@ -499,8 +529,8 @@ impl InsnNode {
     /// Makes the given visitor visit the type annotations of this instruction.
     fn accept_annotations(&self, method_visitor: &mut dyn MethodVisitor) {
         for (annotations, visible) in [
-            (&self.visible_type_annotations, true),
-            (&self.invisible_type_annotations, false),
+            (self.visible_type_annotations(), true),
+            (self.invisible_type_annotations(), false),
         ] {
             for type_annotation in annotations {
                 let av = method_visitor.visit_insn_annotation(
@@ -524,12 +554,7 @@ impl InsnNode {
             self.insn,
             Insn::Label(_) | Insn::Frame(_) | Insn::Line { .. }
         ) {
-            clone
-                .visible_type_annotations
-                .clone_from(&self.visible_type_annotations);
-            clone
-                .invisible_type_annotations
-                .clone_from(&self.invisible_type_annotations);
+            clone.type_annotations.clone_from(&self.type_annotations);
         }
         clone
     }

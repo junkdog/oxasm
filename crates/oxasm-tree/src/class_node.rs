@@ -2,7 +2,7 @@
 
 use oxasm::constant::Constant;
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassVisitor, FieldVisitor, JavaStr, JavaString, MethodVisitor,
+    AnnotationVisitor, Attribute, ClassVisitor, FieldVisitor, JavaArcStr, JavaStr, MethodVisitor,
     ModuleVisitor, RecordComponentVisitor, TypePath, TypeReference,
 };
 
@@ -11,13 +11,18 @@ use crate::field_node::{
     FieldNode, RecordComponentNode, accept_annotations, add_annotation, add_type_annotation,
 };
 use crate::method_node::MethodNode;
+use crate::method_node::PooledMethodNode;
 use crate::module_node::ModuleNode;
 use crate::nodes::InnerClassNode;
+use crate::strings::{StringPool, Strings};
 
 /// A node that represents a class.
 ///
 /// A class reader fills it by visiting it, and [`accept`](Self::accept) replays it into any
-/// class visitor:
+/// class visitor. While it is visited, equal strings are shared: the nodes of a class hold one
+/// [`JavaArcStr`] per distinct name, descriptor or signature of the class and of its fields and
+/// methods, and of the instructions, local variables and try catch blocks of its methods (much
+/// as ASM's nodes share the strings of its class reader).
 ///
 /// ```
 /// # fn main() -> Result<(), oxasm::error::ReadError> {
@@ -41,29 +46,29 @@ pub struct ClassNode {
     /// class is deprecated (`ACC_DEPRECATED`) or a record (`ACC_RECORD`).
     pub access: u32,
     /// The internal name of this class.
-    pub name: JavaString,
+    pub name: JavaArcStr,
     /// The signature of this class, or `None`.
-    pub signature: Option<JavaString>,
+    pub signature: Option<JavaArcStr>,
     /// The internal name of the super class. For interfaces, the super class is
     /// `java/lang/Object`. `None` only for the `java/lang/Object` class.
-    pub super_name: Option<JavaString>,
+    pub super_name: Option<JavaArcStr>,
     /// The internal names of the interfaces directly implemented by this class.
-    pub interfaces: Vec<JavaString>,
+    pub interfaces: Vec<JavaArcStr>,
     /// The name of the source file from which this class was compiled, or `None`.
-    pub source_file: Option<JavaString>,
+    pub source_file: Option<JavaArcStr>,
     /// The correspondence between source and compiled elements of this class, or `None`.
-    pub source_debug: Option<JavaString>,
+    pub source_debug: Option<JavaArcStr>,
     /// The module stored in this class, or `None`.
     pub module: Option<ModuleNode>,
     /// The internal name of the enclosing class of this class (see `visit_outer_class`), or
     /// `None`.
-    pub outer_class: Option<JavaString>,
+    pub outer_class: Option<JavaArcStr>,
     /// The name of the method that contains this class, or `None` if this class is not enclosed
     /// in a method.
-    pub outer_method: Option<JavaString>,
+    pub outer_method: Option<JavaArcStr>,
     /// The descriptor of the method that contains this class, or `None` if this class is not
     /// enclosed in a method.
-    pub outer_method_desc: Option<JavaString>,
+    pub outer_method_desc: Option<JavaArcStr>,
     /// The runtime visible annotations of this class.
     pub visible_annotations: Vec<AnnotationNode>,
     /// The runtime invisible annotations of this class.
@@ -77,17 +82,20 @@ pub struct ClassNode {
     /// The inner classes of this class.
     pub inner_classes: Vec<InnerClassNode>,
     /// The internal name of the nest host class of this class, or `None`.
-    pub nest_host_class: Option<JavaString>,
+    pub nest_host_class: Option<JavaArcStr>,
     /// The internal names of the nest members of this class.
-    pub nest_members: Vec<JavaString>,
+    pub nest_members: Vec<JavaArcStr>,
     /// The internal names of the permitted subclasses of this class.
-    pub permitted_subclasses: Vec<JavaString>,
+    pub permitted_subclasses: Vec<JavaArcStr>,
     /// The record components of this class.
     pub record_components: Vec<RecordComponentNode>,
     /// The fields of this class.
     pub fields: Vec<FieldNode>,
     /// The methods of this class.
     pub methods: Vec<MethodNode>,
+    /// The strings visited so far, which the nodes of this class share (emptied by
+    /// `visit_end`).
+    strings: StringPool,
 }
 
 impl ClassNode {
@@ -166,11 +174,6 @@ impl ClassNode {
 // Implementation of the ClassVisitor trait
 // -------------------------------------------------------------------------------------------------
 
-/// The owned copy of an optional string.
-fn owned(s: Option<&JavaStr>) -> Option<JavaString> {
-    s.map(JavaStr::to_owned)
-}
-
 impl ClassVisitor for ClassNode {
     fn visit(
         &mut self,
@@ -183,15 +186,16 @@ impl ClassVisitor for ClassNode {
     ) {
         self.version = version;
         self.access = access;
-        self.name = name.to_owned();
-        self.signature = owned(signature);
-        self.super_name = owned(super_name);
-        self.interfaces = interfaces.iter().map(|&i| i.to_owned()).collect();
+        let strings = &mut self.strings;
+        self.name = strings.get(name);
+        self.signature = strings.get_opt(signature);
+        self.super_name = strings.get_opt(super_name);
+        self.interfaces = interfaces.iter().map(|&i| strings.get(i)).collect();
     }
 
     fn visit_source(&mut self, source: Option<&JavaStr>, debug: Option<&JavaStr>) {
-        self.source_file = owned(source);
-        self.source_debug = owned(debug);
+        self.source_file = self.strings.get_opt(source);
+        self.source_debug = self.strings.get_opt(debug);
     }
 
     fn visit_module<'a>(
@@ -203,12 +207,12 @@ impl ClassVisitor for ClassNode {
         Some(Box::new(self.module.insert(ModuleNode::new(
             name,
             access,
-            owned(version),
+            self.strings.get_opt(version),
         ))))
     }
 
     fn visit_nest_host(&mut self, nest_host: &JavaStr) {
-        self.nest_host_class = Some(nest_host.to_owned());
+        self.nest_host_class = Some(self.strings.get(nest_host));
     }
 
     fn visit_outer_class(
@@ -217,9 +221,9 @@ impl ClassVisitor for ClassNode {
         name: Option<&JavaStr>,
         descriptor: Option<&JavaStr>,
     ) {
-        self.outer_class = Some(owner.to_owned());
-        self.outer_method = owned(name);
-        self.outer_method_desc = owned(descriptor);
+        self.outer_class = Some(self.strings.get(owner));
+        self.outer_method = self.strings.get_opt(name);
+        self.outer_method_desc = self.strings.get_opt(descriptor);
     }
 
     fn visit_annotation<'a>(
@@ -257,12 +261,12 @@ impl ClassVisitor for ClassNode {
     }
 
     fn visit_nest_member(&mut self, nest_member: &JavaStr) {
-        self.nest_members.push(nest_member.to_owned());
+        self.nest_members.push(self.strings.get(nest_member));
     }
 
     fn visit_permitted_subclass(&mut self, permitted_subclass: &JavaStr) {
         self.permitted_subclasses
-            .push(permitted_subclass.to_owned());
+            .push(self.strings.get(permitted_subclass));
     }
 
     fn visit_inner_class(
@@ -272,10 +276,11 @@ impl ClassVisitor for ClassNode {
         inner_name: Option<&JavaStr>,
         access: u32,
     ) {
+        let strings = &mut self.strings;
         self.inner_classes.push(InnerClassNode::new(
-            name,
-            owned(outer_name),
-            owned(inner_name),
+            strings.get(name),
+            strings.get_opt(outer_name),
+            strings.get_opt(inner_name),
             access,
         ));
     }
@@ -286,8 +291,12 @@ impl ClassVisitor for ClassNode {
         descriptor: &JavaStr,
         signature: Option<&JavaStr>,
     ) -> Option<Box<dyn RecordComponentVisitor + 'a>> {
-        self.record_components
-            .push(RecordComponentNode::new(name, descriptor, owned(signature)));
+        let strings = &mut self.strings;
+        self.record_components.push(RecordComponentNode::new(
+            strings.get(name),
+            strings.get(descriptor),
+            strings.get_opt(signature),
+        ));
         Some(Box::new(
             self.record_components.last_mut().expect("just added"),
         ))
@@ -301,11 +310,12 @@ impl ClassVisitor for ClassNode {
         signature: Option<&JavaStr>,
         value: Option<&Constant<'_>>,
     ) -> Option<Box<dyn FieldVisitor + 'a>> {
+        let strings = &mut self.strings;
         self.fields.push(FieldNode::new(
             access,
-            name,
-            descriptor,
-            owned(signature),
+            strings.get(name),
+            strings.get(descriptor),
+            strings.get_opt(signature),
             value.map(Constant::to_owned),
         ));
         Some(Box::new(self.fields.last_mut().expect("just added")))
@@ -319,17 +329,22 @@ impl ClassVisitor for ClassNode {
         signature: Option<&JavaStr>,
         exceptions: &[&JavaStr],
     ) -> Option<Box<dyn MethodVisitor + 'a>> {
+        let strings = &mut self.strings;
         self.methods.push(MethodNode::new(
             access,
-            name,
-            descriptor,
-            owned(signature),
-            exceptions.iter().map(|&e| e.to_owned()).collect(),
+            strings.get(name),
+            strings.get(descriptor),
+            strings.get_opt(signature),
+            exceptions.iter().map(|&e| strings.get(e)).collect(),
         ));
-        Some(Box::new(self.methods.last_mut().expect("just added")))
+        Some(Box::new(PooledMethodNode {
+            node: self.methods.last_mut().expect("just added"),
+            strings,
+        }))
     }
 
     fn visit_end(&mut self) {
-        // Nothing to do.
+        // The nodes keep their strings; the pool is only needed while visiting.
+        self.strings = StringPool::default();
     }
 }

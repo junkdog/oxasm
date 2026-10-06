@@ -1,7 +1,7 @@
 //! The plain member nodes: [`InnerClassNode`], [`ParameterNode`], [`LocalVariableNode`] and
 //! [`TryCatchBlockNode`] (ASM's classes of the same names).
 
-use oxasm::{ClassVisitor, JavaString, Label, MethodVisitor, TypeReference};
+use oxasm::{ClassVisitor, JavaArcStr, Label, MethodVisitor, TypeReference};
 
 use crate::annotation_node::{TypeAnnotationNode, accept_annotation};
 
@@ -13,13 +13,13 @@ use crate::annotation_node::{TypeAnnotationNode, accept_annotation};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InnerClassNode {
     /// The internal name of an inner class.
-    pub name: JavaString,
+    pub name: JavaArcStr,
     /// The internal name of the class to which the inner class belongs. `None` if the inner
     /// class is not the member of a class or interface (e.g. for local or anonymous classes).
-    pub outer_name: Option<JavaString>,
+    pub outer_name: Option<JavaArcStr>,
     /// The (simple) name of the inner class inside its enclosing class. `None` for anonymous
     /// inner classes.
-    pub inner_name: Option<JavaString>,
+    pub inner_name: Option<JavaArcStr>,
     /// The access flags of the inner class as originally declared in the enclosing class.
     pub access: u32,
 }
@@ -27,9 +27,9 @@ pub struct InnerClassNode {
 impl InnerClassNode {
     /// Constructs a new inner class node.
     pub fn new(
-        name: impl Into<JavaString>,
-        outer_name: Option<JavaString>,
-        inner_name: Option<JavaString>,
+        name: impl Into<JavaArcStr>,
+        outer_name: Option<JavaArcStr>,
+        inner_name: Option<JavaArcStr>,
         access: u32,
     ) -> InnerClassNode {
         InnerClassNode {
@@ -55,7 +55,7 @@ impl InnerClassNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParameterNode {
     /// The parameter's name, or `None` if none is provided.
-    pub name: Option<JavaString>,
+    pub name: Option<JavaArcStr>,
     /// The parameter's access flags (see [`oxasm::opcodes`]). Valid values are `ACC_FINAL`,
     /// `ACC_SYNTHETIC` and `ACC_MANDATED`.
     pub access: u32,
@@ -63,7 +63,7 @@ pub struct ParameterNode {
 
 impl ParameterNode {
     /// Constructs a new parameter node.
-    pub fn new(name: Option<JavaString>, access: u32) -> ParameterNode {
+    pub fn new(name: Option<JavaArcStr>, access: u32) -> ParameterNode {
         ParameterNode { name, access }
     }
 
@@ -77,11 +77,11 @@ impl ParameterNode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalVariableNode {
     /// The name of a local variable.
-    pub name: JavaString,
+    pub name: JavaArcStr,
     /// The type descriptor of this local variable.
-    pub desc: JavaString,
+    pub desc: JavaArcStr,
     /// The signature of this local variable, or `None`.
-    pub signature: Option<JavaString>,
+    pub signature: Option<JavaArcStr>,
     /// The first instruction corresponding to the scope of this local variable (inclusive).
     pub start: Label,
     /// The last instruction corresponding to the scope of this local variable (exclusive).
@@ -93,9 +93,9 @@ pub struct LocalVariableNode {
 impl LocalVariableNode {
     /// Constructs a new local variable node.
     pub fn new(
-        name: impl Into<JavaString>,
-        descriptor: impl Into<JavaString>,
-        signature: Option<JavaString>,
+        name: impl Into<JavaArcStr>,
+        descriptor: impl Into<JavaArcStr>,
+        signature: Option<JavaArcStr>,
         start: Label,
         end: Label,
         index: u16,
@@ -134,7 +134,7 @@ pub struct TryCatchBlockNode {
     pub handler: Label,
     /// The internal name of the type of exceptions handled by the handler. `None` to catch any
     /// exceptions (for "finally" blocks).
-    pub type_: Option<JavaString>,
+    pub type_: Option<JavaArcStr>,
     /// The runtime visible type annotations on the exception handler type.
     pub visible_type_annotations: Vec<TypeAnnotationNode>,
     /// The runtime invisible type annotations on the exception handler type.
@@ -147,7 +147,7 @@ impl TryCatchBlockNode {
         start: Label,
         end: Label,
         handler: Label,
-        type_: Option<JavaString>,
+        type_: Option<JavaArcStr>,
     ) -> TryCatchBlockNode {
         TryCatchBlockNode {
             start,

@@ -45,10 +45,10 @@ fn test_visit_and_accept_with_uninitialized_method_node() {
         ) -> Option<Box<dyn MethodVisitor + 'a>> {
             let mut method = MethodNode::default();
             method.access = access;
-            method.name = name.to_owned();
-            method.desc = descriptor.to_owned();
-            method.signature = signature.map(JavaStr::to_owned);
-            method.exceptions = exceptions.iter().map(|&e| e.to_owned()).collect();
+            method.name = name.into();
+            method.desc = descriptor.into();
+            method.signature = signature.map(Into::into);
+            method.exceptions = exceptions.iter().map(|&e| e.into()).collect();
             self.0.methods.push(method);
             Some(Box::new(self.0.methods.last_mut().unwrap()))
         }
