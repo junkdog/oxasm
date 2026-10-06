@@ -1,0 +1,30 @@
+magic: -889275714
+minor_version: 0
+major_version: 52
+access_flags: 9729
+this_class: ConstantClassInfo annotations/ITPA
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 1
+interface: ConstantClassInfo java/lang/annotation/Annotation
+fields_count: 0
+methods_count: 1
+access_flags: 1025
+name_index: v
+descriptor_index: ()I
+attributes_count: 0
+attributes_count: 2
+attribute_name_index: RuntimeVisibleAnnotations
+num_annotations: 2
+type_index: Ljava/lang/annotation/Retention;
+num_element_value_pairs: 1
+element_name_index: value
+e: Ljava/lang/annotation/RetentionPolicy;
+const_name_index: CLASS
+type_index: Ljava/lang/annotation/Target;
+num_element_value_pairs: 1
+element_name_index: value
+[: 1
+e: Ljava/lang/annotation/ElementType;
+const_name_index: TYPE_PARAMETER
+attribute_name_index: SourceFile
+sourcefile_index: ITPA.java

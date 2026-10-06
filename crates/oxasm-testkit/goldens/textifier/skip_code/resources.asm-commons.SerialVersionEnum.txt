@@ -1,0 +1,32 @@
+// class version 52.0 (52)
+// access flags 0x4030
+// signature Ljava/lang/Enum<LSerialVersionEnum;>;
+// declaration: SerialVersionEnum extends java.lang.Enum<SerialVersionEnum>
+final enum SerialVersionEnum extends java/lang/Enum {
+
+  // compiled from: SerialVersionEnum.java
+
+  // access flags 0x4019
+  public final static enum LSerialVersionEnum; V1
+
+  // access flags 0x4019
+  public final static enum LSerialVersionEnum; V2
+
+  // access flags 0x4019
+  public final static enum LSerialVersionEnum; V3
+
+  // access flags 0x101A
+  private final static synthetic [LSerialVersionEnum; ENUM$VALUES
+
+  // access flags 0x8
+  static <clinit>()V
+
+  // access flags 0x2
+  private <init>(Ljava/lang/String;I)V
+
+  // access flags 0x9
+  public static values()[LSerialVersionEnum;
+
+  // access flags 0x9
+  public static valueOf(Ljava/lang/String;)LSerialVersionEnum;
+}

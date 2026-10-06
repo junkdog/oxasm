@@ -1,0 +1,12 @@
+// class version 53.0 (53)
+// access flags 0x21
+public class pkg/A {
+
+  // compiled from: A.java
+
+  // access flags 0x1
+  public <init>()V
+
+  // access flags 0x9
+  public static main([Ljava/lang/String;)V
+}

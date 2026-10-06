@@ -1,0 +1,90 @@
+// class version 45.3 (196653)
+// access flags 0x20
+class jdk3/AllInstructions {
+
+  // compiled from: AllInstructions.java
+
+  // access flags 0x2
+  private I f
+
+  // access flags 0x2
+  private J g
+
+  // access flags 0x2
+  private Ljdk3/AllInstructions; field
+
+  // access flags 0xA
+  private static Ljdk3/AllInstructions; staticField
+
+  // access flags 0x0
+  <init>()V
+
+  // access flags 0x0
+  <init>(IFJDLjava/lang/Object;)V
+
+  // access flags 0x9
+  public static intInstructions(IIIIIIIII)I
+
+  // access flags 0x9
+  public static longInstructions(JJJJJJJJJ)J
+
+  // access flags 0x9
+  public static floatInstructions(FFFFFFFFF)F
+
+  // access flags 0x9
+  public static doubleInstructions(DDDDDDDDD)D
+
+  // access flags 0x9
+  public static castInstructions(IJJ)D
+
+  // access flags 0x9
+  public static castInstructions(FDD)F
+
+  // access flags 0x9
+  public static objectInstructions(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+
+  // access flags 0x9
+  public static arrayInstructions([B[C[S[I[J[F[D[Ljava/lang/Object;)[Ljava/lang/Object;
+
+  // access flags 0x1
+  public fieldInstructions()V
+
+  // access flags 0x1
+  public methodInstructions(Ljava/lang/Runnable;)V
+
+  // access flags 0x9
+  public static lookupSwitchInstruction(I)I
+
+  // access flags 0x9
+  public static tableSwitchInstruction(I)I
+
+  // access flags 0x9
+  public static monitorInstructions(Ljava/lang/Object;)Ljava/lang/String;
+
+  // access flags 0x1
+  public dupX1Instruction()I
+
+  // access flags 0x1
+  public dup2Instruction([JII)V
+
+  // access flags 0x1
+  public dup2X1Instruction()J
+
+  // access flags 0x1
+  public dup2X1InstructionVariant([Ljava/lang/String;ILjava/lang/Object;)V
+
+  // access flags 0x1
+  public dupX2Instruction([I[I)V
+
+  // access flags 0x1
+  public dup2X2Instruction([J[J)V
+
+  // access flags 0x1
+  public popInstructions()V
+
+  // access flags 0x1
+  public jsrAndRetInstructions(I)I throws java/lang/Exception
+
+  // access flags 0x1
+  public readNullArray()Ljava/lang/Object;
+}

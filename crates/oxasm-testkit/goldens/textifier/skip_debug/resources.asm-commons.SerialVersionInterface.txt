@@ -1,0 +1,8 @@
+// class version 52.0 (52)
+// access flags 0x600
+abstract interface SerialVersionInterface implements java/io/Serializable {
+
+
+  // access flags 0x401
+  public abstract someMethod([Ljava/lang/Object;)V
+}

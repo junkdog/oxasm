@@ -1,0 +1,50 @@
+// class version 45.3 (196653)
+// access flags 0x20
+class jdk3/AllStructures$1 implements java/lang/Runnable {
+
+  // access flags 0x0
+  INNERCLASS jdk3/AllStructures$1 null null
+  // access flags 0x2
+  private INNERCLASS jdk3/AllStructures$InnerClass jdk3/AllStructures InnerClass
+
+  // access flags 0x1012
+  private final synthetic Ljdk3/AllStructures; this$0
+
+  // access flags 0x0
+  <init>(Ljdk3/AllStructures;)V
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+    ALOAD 0
+    ALOAD 1
+    PUTFIELD jdk3/AllStructures$1.this$0 : Ljdk3/AllStructures;
+    RETURN
+    MAXSTACK = 2
+    MAXLOCALS = 2
+
+  // access flags 0x1
+  public run()V
+    NEW jdk3/AllStructures$InnerClass
+    DUP
+    ALOAD 0
+    GETFIELD jdk3/AllStructures$1.this$0 : Ljdk3/AllStructures;
+    NEW jdk3/AllStructures$InnerClass
+    DUP
+    ALOAD 0
+    GETFIELD jdk3/AllStructures$1.this$0 : Ljdk3/AllStructures;
+    ALOAD 0
+    GETFIELD jdk3/AllStructures$1.this$0 : Ljdk3/AllStructures;
+    INVOKESTATIC jdk3/AllStructures.access$000 (Ljdk3/AllStructures;)D
+    ALOAD 0
+    GETFIELD jdk3/AllStructures$1.this$0 : Ljdk3/AllStructures;
+    INVOKESTATIC jdk3/AllStructures.access$100 (Ljdk3/AllStructures;)D
+    DADD
+    ACONST_NULL
+    INVOKESPECIAL jdk3/AllStructures$InnerClass.<init> (Ljdk3/AllStructures;DLjdk3/AllStructures$1;)V
+    INVOKESTATIC jdk3/AllStructures$InnerClass.access$300 (Ljdk3/AllStructures$InnerClass;)D
+    ACONST_NULL
+    INVOKESPECIAL jdk3/AllStructures$InnerClass.<init> (Ljdk3/AllStructures;DLjdk3/AllStructures$1;)V
+    POP
+    RETURN
+    MAXSTACK = 10
+    MAXLOCALS = 1
+}

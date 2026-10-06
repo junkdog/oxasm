@@ -1,0 +1,24 @@
+// class version 58.65535 (-65478)
+// RECORD
+// access flags 0x10030
+final class jdk14/AllStructures$EmptyRecord extends java/lang/Record {
+
+  // compiled from: AllStructures.java
+  NESTHOST jdk14/AllStructures
+  // access flags 0x18
+  final static INNERCLASS jdk14/AllStructures$EmptyRecord jdk14/AllStructures EmptyRecord
+  // access flags 0x19
+  public final static INNERCLASS java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup
+
+  // access flags 0x1
+  public <init>()V
+
+  // access flags 0x1
+  public toString()Ljava/lang/String;
+
+  // access flags 0x11
+  public final hashCode()I
+
+  // access flags 0x11
+  public final equals(Ljava/lang/Object;)Z
+}

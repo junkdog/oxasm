@@ -1,0 +1,22 @@
+// class version 52.0 (52)
+// access flags 0x20
+class jdk8/AllInstructions {
+
+  // compiled from: AllInstructions.java
+  // access flags 0x19
+  public final static INNERCLASS java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup
+
+  // access flags 0x0
+  <init>()V
+
+  // access flags 0x1
+  // signature (Ljava/util/List<Ljava/lang/String;>;)V
+  // declaration: void invokedynamic(java.util.List<java.lang.String>)
+  public invokedynamic(Ljava/util/List;)V
+    // parameter  strings
+
+  // access flags 0x100A
+  private static synthetic lambda$invokedynamic$0(Ljava/util/List;Ljava/lang/String;)V
+    // parameter final synthetic  validStrings
+    // parameter synthetic  s
+}

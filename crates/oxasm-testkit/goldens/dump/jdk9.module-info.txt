@@ -1,0 +1,58 @@
+magic: -889275714
+minor_version: 0
+major_version: 53
+access_flags: 32768
+this_class: ConstantClassInfo module-info
+super_class: 0
+interfaces_count: 0
+fields_count: 0
+methods_count: 0
+attributes_count: 4
+attribute_name_index: Module
+name: ConstantModuleInfo pkg
+access: 0
+version: 1.0
+require_count: 4
+name: ConstantModuleInfo java.compiler
+access: 0
+version: 9
+name: ConstantModuleInfo java.base
+access: 32768
+version: 9
+name: ConstantModuleInfo java.naming
+access: 64
+version: 9
+name: ConstantModuleInfo java.prefs
+access: 32
+version: 9
+export_count: 2
+name: ConstantPackageInfo pkg
+access: 0
+export_to_count: 2
+to: ConstantModuleInfo java.naming
+to: ConstantModuleInfo java.compiler
+name: ConstantPackageInfo pkg/internal
+access: 0
+export_to_count: 1
+to: ConstantModuleInfo java.prefs
+open_count: 1
+name: ConstantPackageInfo pkg/internal
+access: 0
+open_to_count: 2
+to: ConstantModuleInfo java.naming
+to: ConstantModuleInfo pkg
+use_count: 2
+use: ConstantClassInfo pkg/A
+use: ConstantClassInfo java/lang/Integer
+provide_count: 1
+provide: ConstantClassInfo pkg/A
+provide_with_count: 1
+with: ConstantClassInfo pkg/internal/AImpl
+attribute_name_index: ModuleMainClass
+main_class: ConstantClassInfo pkg/A
+attribute_name_index: ModulePackages
+package_count: 2
+package: ConstantPackageInfo pkg/internal
+package: ConstantPackageInfo pkg
+attribute_name_index: SourceFile
+sourcefile_index: module-info.java

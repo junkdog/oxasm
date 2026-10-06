@@ -1,0 +1,10 @@
+// class version 55.0 (55)
+// access flags 0x21
+public class jdk11/AllStructures$Nested {
+
+  // compiled from: AllStructures$Nested.jasm
+  NESTHOST jdk11/AllStructures
+
+  // access flags 0x1
+  public <init>()V
+}

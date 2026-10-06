@@ -1,0 +1,21 @@
+// class version 52.0 (52)
+// access flags 0x20
+class jdk8/AllStructures$1 implements java/lang/Runnable {
+
+  // compiled from: AllStructures.java
+  OUTERCLASS jdk8/AllStructures anonymousInnerClass ()Ljava/lang/Runnable;
+  // access flags 0x0
+  INNERCLASS jdk8/AllStructures$1 null null
+  // access flags 0x2
+  private INNERCLASS jdk8/AllStructures$InnerClass jdk8/AllStructures InnerClass
+
+  // access flags 0x1010
+  final synthetic Ljdk8/AllStructures; this$0
+
+  // access flags 0x0
+  <init>(Ljdk8/AllStructures;)V
+    // parameter final mandated  this$0
+
+  // access flags 0x1
+  public run()V
+}

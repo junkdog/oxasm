@@ -1,0 +1,24 @@
+magic: -889275714
+minor_version: 0
+major_version: 47
+access_flags: 33
+this_class: ConstantClassInfo jdk3/SubOptimalMaxStackAndLocals
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 0
+methods_count: 1
+access_flags: 1
+name_index: <init>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 3
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 177
+exception_table_length: 0
+attributes_count: 0
+attributes_count: 1
+attribute_name_index: SourceFile
+sourcefile_index: SubOptimalMaxStackAndLocals.jasm

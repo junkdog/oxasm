@@ -1,0 +1,12 @@
+// class version 52.0 (52)
+// access flags 0x21
+public class invalid/InvalidVerificationTypeInfo {
+
+  // compiled from: InvalidVerificationTypeInfo.java
+
+  // access flags 0x1
+  public <init>(Ljava/lang/String;)V
+
+  // access flags 0x1
+  public <init>(Z)V
+}

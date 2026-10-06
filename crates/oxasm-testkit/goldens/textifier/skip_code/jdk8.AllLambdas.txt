@@ -1,0 +1,28 @@
+// class version 52.0 (52)
+// access flags 0x21
+public class jdk8/AllLambdas {
+
+  // compiled from: AllLambdas.java
+  // access flags 0x609
+  public static abstract INNERCLASS jdk8/AllLambdas$InnerClass jdk8/AllLambdas InnerClass
+  // access flags 0x19
+  public final static INNERCLASS java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup
+
+  // access flags 0x1
+  public <init>()V
+
+  // access flags 0x9
+  public static normalLambda()V
+
+  // access flags 0x9
+  public static advancedLambda()V
+
+  // access flags 0x9
+  public static serializableLambda()V
+
+  // access flags 0x9
+  public static serializableAdvancedLambda()V
+
+  // access flags 0x100A
+  private static synthetic $deserializeLambda$(Ljava/lang/invoke/SerializedLambda;)Ljava/lang/Object;
+}

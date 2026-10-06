@@ -1,0 +1,91 @@
+// class version 52.0 (52)
+// access flags 0x20
+class app1/Main$BadLocal {
+
+  // access flags 0x8
+  static INNERCLASS app1/Main$BadLocal app1/Main BadLocal
+
+  // access flags 0x0
+  <init>()V
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+    RETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x0
+  sample()V throws java/lang/Exception
+    TRYCATCHBLOCK L0 L1 L2 null
+    TRYCATCHBLOCK L3 L4 L4 null
+    ACONST_NULL
+    ASTORE 1
+    ACONST_NULL
+    ASTORE 2
+   L3
+    NEW java/io/BufferedReader
+    DUP
+    NEW java/io/StringReader
+    DUP
+    LDC "1\n2\n3\n4\n"
+    INVOKESPECIAL java/io/StringReader.<init> (Ljava/lang/String;)V
+    INVOKESPECIAL java/io/BufferedReader.<init> (Ljava/io/Reader;)V
+    ASTORE 3
+   L0
+    GOTO L5
+   L6
+   FRAME FULL [app1/Main$BadLocal java/lang/Throwable java/lang/Throwable java/io/BufferedReader java/lang/String] []
+    ICONST_0
+    ISTORE 5
+    ALOAD 4
+    INVOKESTATIC java/lang/Integer.parseInt (Ljava/lang/String;)I
+    POP
+   L5
+   FRAME CHOP 1
+    ALOAD 3
+    INVOKEVIRTUAL java/io/BufferedReader.readLine ()Ljava/lang/String;
+    DUP
+    ASTORE 4
+    IFNONNULL L6
+   L1
+    ALOAD 3
+    IFNULL L7
+    ALOAD 3
+    INVOKEVIRTUAL java/io/BufferedReader.close ()V
+    GOTO L7
+   L2
+   FRAME SAME1 java/lang/Throwable
+    ASTORE 1
+    ALOAD 3
+    IFNULL L8
+    ALOAD 3
+    INVOKEVIRTUAL java/io/BufferedReader.close ()V
+   L8
+   FRAME CHOP 1
+    ALOAD 1
+    ATHROW
+   L4
+   FRAME SAME1 java/lang/Throwable
+    ASTORE 2
+    ALOAD 1
+    IFNONNULL L9
+    ALOAD 2
+    ASTORE 1
+    GOTO L10
+   L9
+   FRAME SAME
+    ALOAD 1
+    ALOAD 2
+    IF_ACMPEQ L10
+    ALOAD 1
+    ALOAD 2
+    INVOKEVIRTUAL java/lang/Throwable.addSuppressed (Ljava/lang/Throwable;)V
+   L10
+   FRAME SAME
+    ALOAD 1
+    ATHROW
+   L7
+   FRAME CHOP 2
+    RETURN
+    MAXSTACK = 5
+    MAXLOCALS = 6
+}

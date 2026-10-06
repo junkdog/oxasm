@@ -1,0 +1,12 @@
+// class version 52.0 (52)
+// access flags 0x21
+public class invalid/InvalidWideOpcode {
+
+  // compiled from: InvalidWideOpcode.java
+
+  // access flags 0x1
+  public <init>()V
+
+  // access flags 0x1
+  public m(I)I
+}

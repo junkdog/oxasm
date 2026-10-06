@@ -1,0 +1,14 @@
+// class version 49.0 (49)
+// access flags 0x20
+class jdk5/AllStructures$InnerClass {
+
+  // compiled from: AllStructures.java
+  // access flags 0x0
+  INNERCLASS jdk5/AllStructures$InnerClass jdk5/AllStructures InnerClass
+
+  // access flags 0x1010
+  final synthetic Ljdk5/AllStructures; this$0
+
+  // access flags 0x0
+  <init>(Ljdk5/AllStructures;)V
+}

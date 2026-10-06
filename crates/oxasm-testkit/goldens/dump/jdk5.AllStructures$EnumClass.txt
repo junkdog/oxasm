@@ -1,0 +1,200 @@
+magic: -889275714
+minor_version: 0
+major_version: 49
+access_flags: 16432
+this_class: ConstantClassInfo jdk5/AllStructures$EnumClass
+super_class: ConstantClassInfo java/lang/Enum
+interfaces_count: 0
+fields_count: 5
+access_flags: 16409
+name_index: VALUE0
+descriptor_index: Ljdk5/AllStructures$EnumClass;
+attributes_count: 0
+access_flags: 16409
+name_index: VALUE1
+descriptor_index: Ljdk5/AllStructures$EnumClass;
+attributes_count: 0
+access_flags: 16409
+name_index: VALUE2
+descriptor_index: Ljdk5/AllStructures$EnumClass;
+attributes_count: 0
+access_flags: 2
+name_index: value
+descriptor_index: I
+attributes_count: 0
+access_flags: 4122
+name_index: $VALUES
+descriptor_index: [Ljdk5/AllStructures$EnumClass;
+attributes_count: 0
+methods_count: 5
+access_flags: 25
+name_index: values
+descriptor_index: ()[Ljdk5/AllStructures$EnumClass;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 0
+0: 178 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.$VALUES[Ljdk5/AllStructures$EnumClass;
+1: 182 ConstantMethodRefInfo [Ljdk5/AllStructures$EnumClass;.clone()Ljava/lang/Object;
+2: 192 ConstantClassInfo [Ljdk5/AllStructures$EnumClass;
+3: 176
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 200
+access_flags: 9
+name_index: valueOf
+descriptor_index: (Ljava/lang/String;)Ljdk5/AllStructures$EnumClass;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 18 ConstantClassInfo jdk5/AllStructures$EnumClass
+1: 25 0
+2: 184 ConstantMethodRefInfo java/lang/Enum.valueOf(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+3: 192 ConstantClassInfo jdk5/AllStructures$EnumClass
+4: 176
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 200
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <5>
+name_index: name
+descriptor_index: Ljava/lang/String;
+index: 0
+access_flags: 2
+name_index: <init>
+descriptor_index: (Ljava/lang/String;II)V
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 3
+max_locals: 4
+0: 25 0
+1: 25 1
+2: 21 2
+3: 183 ConstantMethodRefInfo java/lang/Enum.<init>(Ljava/lang/String;I)V
+4: 25 0
+5: 21 3
+6: 181 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.valueI
+7: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 207
+start_pc: <4>
+line_number: 208
+start_pc: <7>
+line_number: 209
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <8>
+name_index: this
+descriptor_index: Ljdk5/AllStructures$EnumClass;
+index: 0
+start_pc: <0>
+length: <8>
+name_index: value
+descriptor_index: I
+index: 3
+attribute_name_index: Signature
+signature_index: (I)V
+access_flags: 1
+name_index: getValue
+descriptor_index: ()I
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 180 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.valueI
+2: 172
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 212
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <3>
+name_index: this
+descriptor_index: Ljdk5/AllStructures$EnumClass;
+index: 0
+access_flags: 8
+name_index: <clinit>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 5
+max_locals: 0
+0: 187 ConstantClassInfo jdk5/AllStructures$EnumClass
+1: 89
+2: 18 ConstantStringInfo VALUE0
+3: 3
+4: 3
+5: 183 ConstantMethodRefInfo jdk5/AllStructures$EnumClass.<init>(Ljava/lang/String;II)V
+6: 179 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.VALUE0Ljdk5/AllStructures$EnumClass;
+7: 187 ConstantClassInfo jdk5/AllStructures$EnumClass
+8: 89
+9: 18 ConstantStringInfo VALUE1
+10: 4
+11: 4
+12: 183 ConstantMethodRefInfo jdk5/AllStructures$EnumClass.<init>(Ljava/lang/String;II)V
+13: 179 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.VALUE1Ljdk5/AllStructures$EnumClass;
+14: 187 ConstantClassInfo jdk5/AllStructures$EnumClass
+15: 89
+16: 18 ConstantStringInfo VALUE2
+17: 5
+18: 5
+19: 183 ConstantMethodRefInfo jdk5/AllStructures$EnumClass.<init>(Ljava/lang/String;II)V
+20: 179 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.VALUE2Ljdk5/AllStructures$EnumClass;
+21: 6
+22: 189 ConstantClassInfo jdk5/AllStructures$EnumClass
+23: 89
+24: 3
+25: 178 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.VALUE0Ljdk5/AllStructures$EnumClass;
+26: 83
+27: 89
+28: 4
+29: 178 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.VALUE1Ljdk5/AllStructures$EnumClass;
+30: 83
+31: 89
+32: 5
+33: 178 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.VALUE2Ljdk5/AllStructures$EnumClass;
+34: 83
+35: 179 ConstantFieldRefInfo jdk5/AllStructures$EnumClass.$VALUES[Ljdk5/AllStructures$EnumClass;
+36: 177
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 201
+start_pc: <7>
+line_number: 202
+start_pc: <14>
+line_number: 203
+start_pc: <21>
+line_number: 200
+attributes_count: 3
+attribute_name_index: InnerClasses
+number_of_classes: 1
+inner_class_info_index: ConstantClassInfo jdk5/AllStructures$EnumClass
+outer_class_info_index: ConstantClassInfo jdk5/AllStructures
+inner_name_index: EnumClass
+inner_class_access_flags: 16408
+attribute_name_index: Signature
+signature_index: Ljava/lang/Enum<Ljdk5/AllStructures$EnumClass;>;
+attribute_name_index: SourceFile
+sourcefile_index: AllStructures.java

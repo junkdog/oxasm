@@ -1,0 +1,9 @@
+// class version 47.0 (47)
+// access flags 0x21
+public class jdk3/SubOptimalMaxStackAndLocals {
+
+  // compiled from: SubOptimalMaxStackAndLocals.jasm
+
+  // access flags 0x1
+  public <init>()V
+}

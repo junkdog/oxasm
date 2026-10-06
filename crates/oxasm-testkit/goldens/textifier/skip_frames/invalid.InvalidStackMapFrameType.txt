@@ -1,0 +1,37 @@
+// class version 52.0 (52)
+// access flags 0x21
+public class invalid/InvalidStackMapFrameType {
+
+  // compiled from: InvalidStackMapFrameType.java
+
+  // access flags 0x1
+  public <init>(Ljava/lang/String;)V
+   L0
+    LINENUMBER 4 L0
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+   L1
+    LINENUMBER 5 L1
+    RETURN
+    MAXSTACK = 1
+    MAXLOCALS = 2
+
+  // access flags 0x1
+  public <init>(Z)V
+   L0
+    LINENUMBER 7 L0
+    ALOAD 0
+    ILOAD 1
+    IFEQ L1
+    LDC "true"
+    GOTO L2
+   L1
+    LDC "false"
+   L2
+    INVOKESPECIAL invalid/InvalidStackMapFrameType.<init> (Ljava/lang/String;)V
+   L3
+    LINENUMBER 8 L3
+    RETURN
+    MAXSTACK = 2
+    MAXLOCALS = 2
+}

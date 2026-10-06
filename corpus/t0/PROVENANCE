@@ -1,0 +1,7 @@
+Imported by `cargo xtask corpus t0` from OW2 ASM (BSD-3-Clause, see NOTICE).
+tag:    ASM_9_10_1
+commit: 38c169b1d7609085c8fdcede23767899ae4e1d77
+
+*                  asm-test/src/main/resources/**
+resources/<module> <module>/src/test/resources/*.class
+upstream/textifier asm-util/src/test/resources/*.txt (sigtest-* excluded, \r stripped)

@@ -1,0 +1,33 @@
+// class version 52.0 (52)
+// access flags 0x20
+class SerialVersionClass implements java/io/Serializable {
+
+  // compiled from: SerialVersionClass.java
+
+  // access flags 0x1C
+  protected final static I someField = 32
+
+  // access flags 0x0
+  <init>()V
+   L0
+    LINENUMBER 45 L0
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+    RETURN
+   L1
+    LOCALVARIABLE this LSerialVersionClass; L0 L1 0
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x1
+  public someMethod()[Ljava/lang/Object;
+   L0
+    LINENUMBER 48 L0
+    ICONST_0
+    ANEWARRAY java/lang/Object
+    ARETURN
+   L1
+    LOCALVARIABLE this LSerialVersionClass; L0 L1 0
+    MAXSTACK = 1
+    MAXLOCALS = 1
+}

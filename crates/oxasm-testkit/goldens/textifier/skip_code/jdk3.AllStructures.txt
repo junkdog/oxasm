@@ -1,0 +1,97 @@
+// class version 45.3 (196653)
+// access flags 0x420
+abstract class jdk3/AllStructures implements java/lang/Runnable java/lang/Cloneable java/io/Serializable {
+
+  // compiled from: AllStructures.java
+  // access flags 0x2
+  private INNERCLASS jdk3/AllStructures$InnerClass jdk3/AllStructures InnerClass
+  // access flags 0x0
+  INNERCLASS jdk3/AllStructures$1 null null
+
+  // access flags 0x1A
+  private final static Ljava/lang/String; UTF8 = "\u0008\u0080\u0800\u8000"
+
+  // access flags 0x1A
+  private final static J serialVersionUID = 123456L
+
+  // access flags 0x1
+  public I f0
+
+  // access flags 0x4
+  protected F f1
+
+  // access flags 0x0
+  J f2
+
+  // access flags 0x2
+  private D f3
+
+  // access flags 0x8
+  static Ljdk3/AllStructures; f4
+
+  // access flags 0x10
+  final B f5 = 1
+
+  // access flags 0x80
+  transient C f6
+
+  // access flags 0x40
+  volatile S f7
+
+  // access flags 0x0
+  Z f8
+
+  // access flags 0x0
+  <init>()V
+
+  // access flags 0x1
+  public m0()I
+
+  // access flags 0x4
+  protected m1()F
+
+  // access flags 0x0
+  m2()J
+
+  // access flags 0x2
+  private m3()D
+
+  // access flags 0x8
+  static m4()Ljdk3/AllStructures;
+
+  // access flags 0x10
+  final m5()B
+
+  // access flags 0x800
+  strictfp m6()C
+
+  // access flags 0x0
+  m7()S
+
+  // access flags 0x400
+  abstract m8()Z
+
+  // access flags 0x9
+  public static main([Ljava/lang/String;)V
+
+  // access flags 0x1
+  public run()V
+
+  // access flags 0x21
+  public synchronized clone()Ljava/lang/Object;
+
+  // access flags 0x102
+  private native nativeMethod()V
+
+  // access flags 0x2
+  private anonymousInnerClass()Ljava/lang/Runnable; throws java/lang/Exception
+
+  // access flags 0x1008
+  static synthetic access$000(Ljdk3/AllStructures;)D
+
+  // access flags 0x1008
+  static synthetic access$100(Ljdk3/AllStructures;)D
+
+  // access flags 0x8
+  static <clinit>()V
+}

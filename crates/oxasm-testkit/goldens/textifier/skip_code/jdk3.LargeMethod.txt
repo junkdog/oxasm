@@ -1,0 +1,15 @@
+// class version 45.3 (196653)
+// access flags 0x21
+public class jdk3/LargeMethod {
+
+  // compiled from: LargeMethod.java
+
+  // access flags 0x2
+  private I f
+
+  // access flags 0x0
+  <init>(IFJDLjava/lang/Object;)V
+
+  // access flags 0x1
+  public wideInstructions(IJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJIFJDLjava/lang/Object;)Ljdk3/LargeMethod;
+}

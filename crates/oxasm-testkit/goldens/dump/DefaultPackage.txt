@@ -1,0 +1,12 @@
+magic: -889275714
+minor_version: 0
+major_version: 45
+access_flags: 1536
+this_class: ConstantClassInfo DefaultPackage
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 0
+methods_count: 0
+attributes_count: 1
+attribute_name_index: SourceFile
+sourcefile_index: DefaultPackage.java

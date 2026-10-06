@@ -1,0 +1,1 @@
+org.objectweb.asm.test.ClassFormatException: Unknown verification_type_info tag: 255

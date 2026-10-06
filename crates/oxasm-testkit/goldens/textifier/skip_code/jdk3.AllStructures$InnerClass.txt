@@ -1,0 +1,25 @@
+// class version 45.3 (196653)
+// access flags 0x20
+class jdk3/AllStructures$InnerClass {
+
+  // compiled from: AllStructures.java
+  // access flags 0x2
+  private INNERCLASS jdk3/AllStructures$InnerClass jdk3/AllStructures InnerClass
+  // access flags 0x0
+  INNERCLASS jdk3/AllStructures$1 null null
+
+  // access flags 0x12
+  private final D f0
+
+  // access flags 0x1012
+  private final synthetic Ljdk3/AllStructures; this$0
+
+  // access flags 0x2
+  private <init>(Ljdk3/AllStructures;D)V
+
+  // access flags 0x1000
+  synthetic <init>(Ljdk3/AllStructures;DLjdk3/AllStructures$1;)V
+
+  // access flags 0x1008
+  static synthetic access$300(Ljdk3/AllStructures$InnerClass;)D
+}

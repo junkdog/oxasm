@@ -1,0 +1,57 @@
+magic: -889275714
+minor_version: 0
+major_version: 49
+access_flags: 32
+this_class: ConstantClassInfo jdk5/AllStructures$GenericInnerClass
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 1
+access_flags: 4112
+name_index: this$0
+descriptor_index: Ljdk5/AllStructures;
+attributes_count: 0
+methods_count: 1
+access_flags: 0
+name_index: <init>
+descriptor_index: (Ljdk5/AllStructures;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 25 0
+1: 25 1
+2: 181 ConstantFieldRefInfo jdk5/AllStructures$GenericInnerClass.this$0Ljdk5/AllStructures;
+3: 25 0
+4: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+5: 177
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 218
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <6>
+name_index: this
+descriptor_index: Ljdk5/AllStructures$GenericInnerClass;
+index: 0
+attribute_name_index: LocalVariableTypeTable
+local_variable_type_table_length: 1
+start_pc: <0>
+length: <6>
+name_index: this
+signature_index: Ljdk5/AllStructures<TU0;TU1;TU2;TU3;TU4;TU5;TU6;>.GenericInnerClass<TT;>;
+index: 0
+attributes_count: 3
+attribute_name_index: InnerClasses
+number_of_classes: 1
+inner_class_info_index: ConstantClassInfo jdk5/AllStructures$GenericInnerClass
+outer_class_info_index: ConstantClassInfo jdk5/AllStructures
+inner_name_index: GenericInnerClass
+inner_class_access_flags: 0
+attribute_name_index: Signature
+signature_index: <T:Ljava/lang/Object;>Ljava/lang/Object;
+attribute_name_index: SourceFile
+sourcefile_index: AllStructures.java

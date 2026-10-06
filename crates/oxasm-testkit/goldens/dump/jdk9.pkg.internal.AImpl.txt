@@ -1,0 +1,28 @@
+magic: -889275714
+minor_version: 0
+major_version: 53
+access_flags: 33
+this_class: ConstantClassInfo pkg/internal/AImpl
+super_class: ConstantClassInfo pkg/A
+interfaces_count: 0
+fields_count: 0
+methods_count: 1
+access_flags: 1
+name_index: <init>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 183 ConstantMethodRefInfo pkg/A.<init>()V
+2: 177
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 3
+attributes_count: 1
+attribute_name_index: SourceFile
+sourcefile_index: AImpl.java

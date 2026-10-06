@@ -1,0 +1,503 @@
+magic: -889275714
+minor_version: 0
+major_version: 46
+access_flags: 33
+this_class: ConstantClassInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 3
+access_flags: 2
+name_index: stoppedBundles
+descriptor_index: Ljava/util/Hashtable;
+attributes_count: 0
+access_flags: 2
+name_index: allToStop
+descriptor_index: [Lorg/eclipse/osgi/service/resolver/BundleDescription;
+attributes_count: 0
+access_flags: 2
+name_index: context
+descriptor_index: Lorg/osgi/framework/BundleContext;
+attributes_count: 0
+methods_count: 5
+access_flags: 1
+name_index: <init>
+descriptor_index: (Lorg/osgi/framework/BundleContext;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 25 0
+3: 1
+4: 181 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop[Lorg/eclipse/osgi/service/resolver/BundleDescription;
+5: 25 0
+6: 25 1
+7: 181 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.contextLorg/osgi/framework/BundleContext;
+8: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 41
+start_pc: <2>
+line_number: 37
+start_pc: <5>
+line_number: 42
+start_pc: <8>
+line_number: 43
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <9>
+name_index: this
+descriptor_index: Lorg/eclipse/core/runtime/internal/adaptor/BundleStopper;
+index: 0
+start_pc: <0>
+length: <9>
+name_index: context
+descriptor_index: Lorg/osgi/framework/BundleContext;
+index: 1
+access_flags: 2
+name_index: logCycles
+descriptor_index: ([[Ljava/lang/Object;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 7
+max_locals: 5
+0: 178 ConstantFieldRefInfo org/eclipse/osgi/framework/debug/Debug.DEBUG_ENABLEDZ
+1: 154 <3>
+2: 177
+3: 25 1
+4: 190
+5: 158 <79>
+6: 187 ConstantClassInfo java/lang/StringBuffer
+7: 89
+8: 18 ConstantStringInfo [
+9: 183 ConstantMethodRefInfo java/lang/StringBuffer.<init>(Ljava/lang/String;)V
+10: 58 2
+11: 3
+12: 54 3
+13: 167 <51>
+14: 25 2
+15: 16 91
+16: 182 ConstantMethodRefInfo java/lang/StringBuffer.append(C)Ljava/lang/StringBuffer;
+17: 87
+18: 3
+19: 54 4
+20: 167 <36>
+21: 25 2
+22: 25 1
+23: 21 3
+24: 50
+25: 21 4
+26: 50
+27: 192 ConstantClassInfo org/eclipse/osgi/service/resolver/BundleDescription
+28: 185 ConstantInterfaceMethodRefInfo org/eclipse/osgi/service/resolver/BundleDescription.getSymbolicName()Ljava/lang/String; 1
+29: 182 ConstantMethodRefInfo java/lang/StringBuffer.append(Ljava/lang/String;)Ljava/lang/StringBuffer;
+30: 87
+31: 25 2
+32: 16 44
+33: 182 ConstantMethodRefInfo java/lang/StringBuffer.append(C)Ljava/lang/StringBuffer;
+34: 87
+35: 132 4 1
+36: 21 4
+37: 25 1
+38: 21 3
+39: 50
+40: 190
+41: 161 <21>
+42: 25 2
+43: 25 2
+44: 182 ConstantMethodRefInfo java/lang/StringBuffer.length()I
+45: 4
+46: 100
+47: 16 93
+48: 182 ConstantMethodRefInfo java/lang/StringBuffer.insert(IC)Ljava/lang/StringBuffer;
+49: 87
+50: 132 3 1
+51: 21 3
+52: 25 1
+53: 190
+54: 161 <14>
+55: 25 2
+56: 25 2
+57: 182 ConstantMethodRefInfo java/lang/StringBuffer.length()I
+58: 4
+59: 100
+60: 16 93
+61: 182 ConstantMethodRefInfo java/lang/StringBuffer.setCharAt(IC)V
+62: 178 ConstantFieldRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptorMsg.ECLIPSE_BUNDLESTOPPER_CYCLES_FOUNDLjava/lang/String;
+63: 25 2
+64: 184 ConstantMethodRefInfo org/eclipse/osgi/util/NLS.bind(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;
+65: 58 3
+66: 187 ConstantClassInfo org/eclipse/osgi/framework/log/FrameworkLogEntry
+67: 89
+68: 18 ConstantStringInfo org.eclipse.osgi
+69: 25 3
+70: 3
+71: 1
+72: 1
+73: 183 ConstantMethodRefInfo org/eclipse/osgi/framework/log/FrameworkLogEntry.<init>(Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;[Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;)V
+74: 58 4
+75: 184 ConstantMethodRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptor.getDefault()Lorg/eclipse/core/runtime/adaptor/EclipseAdaptor;
+76: 182 ConstantMethodRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptor.getFrameworkLog()Lorg/eclipse/osgi/framework/log/FrameworkLog;
+77: 25 4
+78: 185 ConstantInterfaceMethodRefInfo org/eclipse/osgi/framework/log/FrameworkLog.log(Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;)V 2
+79: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 17
+start_pc: <0>
+line_number: 46
+start_pc: <2>
+line_number: 47
+start_pc: <3>
+line_number: 49
+start_pc: <6>
+line_number: 50
+start_pc: <11>
+line_number: 51
+start_pc: <14>
+line_number: 52
+start_pc: <18>
+line_number: 53
+start_pc: <21>
+line_number: 54
+start_pc: <31>
+line_number: 55
+start_pc: <35>
+line_number: 53
+start_pc: <42>
+line_number: 57
+start_pc: <50>
+line_number: 51
+start_pc: <55>
+line_number: 59
+start_pc: <62>
+line_number: 60
+start_pc: <66>
+line_number: 61
+start_pc: <75>
+line_number: 62
+start_pc: <79>
+line_number: 64
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 7
+start_pc: <0>
+length: <80>
+name_index: this
+descriptor_index: Lorg/eclipse/core/runtime/internal/adaptor/BundleStopper;
+index: 0
+start_pc: <0>
+length: <80>
+name_index: cycles
+descriptor_index: [[Ljava/lang/Object;
+index: 1
+start_pc: <11>
+length: <79>
+name_index: cycleText
+descriptor_index: Ljava/lang/StringBuffer;
+index: 2
+start_pc: <13>
+length: <55>
+name_index: i
+descriptor_index: I
+index: 3
+start_pc: <20>
+length: <42>
+name_index: j
+descriptor_index: I
+index: 4
+start_pc: <66>
+length: <79>
+name_index: message
+descriptor_index: Ljava/lang/String;
+index: 3
+start_pc: <75>
+length: <79>
+name_index: entry
+descriptor_index: Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;
+index: 4
+access_flags: 1
+name_index: stopBundles
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 4
+max_locals: 3
+0: 25 0
+1: 184 ConstantMethodRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptor.getDefault()Lorg/eclipse/core/runtime/adaptor/EclipseAdaptor;
+2: 182 ConstantMethodRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptor.getState()Lorg/eclipse/osgi/service/resolver/State;
+3: 185 ConstantInterfaceMethodRefInfo org/eclipse/osgi/service/resolver/State.getResolvedBundles()[Lorg/eclipse/osgi/service/resolver/BundleDescription; 1
+4: 181 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop[Lorg/eclipse/osgi/service/resolver/BundleDescription;
+5: 184 ConstantMethodRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptor.getDefault()Lorg/eclipse/core/runtime/adaptor/EclipseAdaptor;
+6: 182 ConstantMethodRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptor.getPlatformAdmin()Lorg/eclipse/osgi/service/resolver/PlatformAdmin;
+7: 185 ConstantInterfaceMethodRefInfo org/eclipse/osgi/service/resolver/PlatformAdmin.getStateHelper()Lorg/eclipse/osgi/service/resolver/StateHelper; 1
+8: 58 1
+9: 25 1
+10: 25 0
+11: 180 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop[Lorg/eclipse/osgi/service/resolver/BundleDescription;
+12: 185 ConstantInterfaceMethodRefInfo org/eclipse/osgi/service/resolver/StateHelper.sortBundles([Lorg/eclipse/osgi/service/resolver/BundleDescription;)[[Ljava/lang/Object; 2
+13: 58 2
+14: 25 0
+15: 25 2
+16: 183 ConstantMethodRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.logCycles([[Ljava/lang/Object;)V
+17: 25 0
+18: 187 ConstantClassInfo java/util/Hashtable
+19: 89
+20: 25 0
+21: 180 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop[Lorg/eclipse/osgi/service/resolver/BundleDescription;
+22: 190
+23: 183 ConstantMethodRefInfo java/util/Hashtable.<init>(I)V
+24: 181 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.stoppedBundlesLjava/util/Hashtable;
+25: 25 0
+26: 183 ConstantMethodRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.basicStopBundles()V
+27: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 7
+start_pc: <0>
+line_number: 67
+start_pc: <5>
+line_number: 68
+start_pc: <9>
+line_number: 69
+start_pc: <14>
+line_number: 70
+start_pc: <17>
+line_number: 71
+start_pc: <25>
+line_number: 72
+start_pc: <27>
+line_number: 73
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 3
+start_pc: <0>
+length: <28>
+name_index: this
+descriptor_index: Lorg/eclipse/core/runtime/internal/adaptor/BundleStopper;
+index: 0
+start_pc: <9>
+length: <28>
+name_index: stateHelper
+descriptor_index: Lorg/eclipse/osgi/service/resolver/StateHelper;
+index: 1
+start_pc: <14>
+length: <28>
+name_index: cycles
+descriptor_index: [[Ljava/lang/Object;
+index: 2
+access_flags: 2
+name_index: basicStopBundles
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 7
+max_locals: 8
+0: 25 0
+1: 180 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop[Lorg/eclipse/osgi/service/resolver/BundleDescription;
+2: 190
+3: 4
+4: 100
+5: 54 1
+6: 167 <74>
+7: 25 0
+8: 180 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.contextLorg/osgi/framework/BundleContext;
+9: 25 0
+10: 180 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop[Lorg/eclipse/osgi/service/resolver/BundleDescription;
+11: 21 1
+12: 50
+13: 185 ConstantInterfaceMethodRefInfo org/eclipse/osgi/service/resolver/BundleDescription.getBundleId()J 1
+14: 185 ConstantInterfaceMethodRefInfo org/osgi/framework/BundleContext.getBundle(J)Lorg/osgi/framework/Bundle; 3
+15: 192 ConstantClassInfo org/eclipse/osgi/framework/internal/core/AbstractBundle
+16: 58 2
+17: 25 2
+18: 182 ConstantMethodRefInfo org/eclipse/osgi/framework/internal/core/AbstractBundle.getBundleId()J
+19: 9
+20: 148
+21: 153 <73>
+22: 25 2
+23: 182 ConstantMethodRefInfo org/eclipse/osgi/framework/internal/core/AbstractBundle.getBundleData()Lorg/eclipse/osgi/framework/adaptor/BundleData;
+24: 192 ConstantClassInfo org/eclipse/core/runtime/adaptor/EclipseBundleData
+25: 182 ConstantMethodRefInfo org/eclipse/core/runtime/adaptor/EclipseBundleData.isAutoStartable()Z
+26: 153 <73>
+27: 25 2
+28: 182 ConstantMethodRefInfo org/eclipse/osgi/framework/internal/core/AbstractBundle.getState()I
+29: 16 32
+30: 160 <72>
+31: 25 2
+32: 193 ConstantClassInfo org/eclipse/osgi/framework/internal/core/BundleHost
+33: 153 <72>
+34: 25 2
+35: 182 ConstantMethodRefInfo org/eclipse/osgi/framework/internal/core/AbstractBundle.stop()V
+36: 167 <72>
+37: 58 3
+38: 178 ConstantFieldRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptorMsg.ECLIPSE_BUNDLESTOPPER_ERROR_STOPPING_BUNDLELjava/lang/String;
+39: 25 0
+40: 180 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop[Lorg/eclipse/osgi/service/resolver/BundleDescription;
+41: 21 1
+42: 50
+43: 185 ConstantInterfaceMethodRefInfo org/eclipse/osgi/service/resolver/BundleDescription.toString()Ljava/lang/String; 1
+44: 184 ConstantMethodRefInfo org/eclipse/osgi/util/NLS.bind(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;
+45: 58 4
+46: 187 ConstantClassInfo org/eclipse/osgi/framework/log/FrameworkLogEntry
+47: 89
+48: 18 ConstantStringInfo org.eclipse.osgi
+49: 25 4
+50: 3
+51: 25 3
+52: 1
+53: 183 ConstantMethodRefInfo org/eclipse/osgi/framework/log/FrameworkLogEntry.<init>(Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;[Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;)V
+54: 58 5
+55: 184 ConstantMethodRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptor.getDefault()Lorg/eclipse/core/runtime/adaptor/EclipseAdaptor;
+56: 182 ConstantMethodRefInfo org/eclipse/core/runtime/adaptor/EclipseAdaptor.getFrameworkLog()Lorg/eclipse/osgi/framework/log/FrameworkLog;
+57: 25 5
+58: 185 ConstantInterfaceMethodRefInfo org/eclipse/osgi/framework/log/FrameworkLog.log(Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;)V 2
+59: 167 <72>
+60: 58 7
+61: 168 <64>
+62: 25 7
+63: 191
+64: 58 6
+65: 25 0
+66: 180 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.stoppedBundlesLjava/util/Hashtable;
+67: 25 2
+68: 25 2
+69: 182 ConstantMethodRefInfo java/util/Hashtable.put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+70: 87
+71: 169 6
+72: 168 <64>
+73: 132 1 -1
+74: 21 1
+75: 156 <7>
+76: 177
+exception_table_length: 3
+start_pc: <27>
+end_pc: <37>
+handler_pc: <37>
+catch_type: ConstantClassInfo java/lang/Exception
+start_pc: <27>
+end_pc: <60>
+handler_pc: <60>
+catch_type: 0
+start_pc: <72>
+end_pc: <73>
+handler_pc: <60>
+catch_type: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 16
+start_pc: <0>
+line_number: 77
+start_pc: <7>
+line_number: 78
+start_pc: <17>
+line_number: 79
+start_pc: <27>
+line_number: 81
+start_pc: <34>
+line_number: 82
+start_pc: <37>
+line_number: 83
+start_pc: <38>
+line_number: 84
+start_pc: <46>
+line_number: 85
+start_pc: <55>
+line_number: 86
+start_pc: <60>
+line_number: 87
+start_pc: <62>
+line_number: 89
+start_pc: <64>
+line_number: 87
+start_pc: <65>
+line_number: 88
+start_pc: <71>
+line_number: 89
+start_pc: <73>
+line_number: 77
+start_pc: <76>
+line_number: 92
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 6
+start_pc: <0>
+length: <77>
+name_index: this
+descriptor_index: Lorg/eclipse/core/runtime/internal/adaptor/BundleStopper;
+index: 0
+start_pc: <6>
+length: <76>
+name_index: stoppingIndex
+descriptor_index: I
+index: 1
+start_pc: <17>
+length: <73>
+name_index: toStop
+descriptor_index: Lorg/eclipse/osgi/framework/internal/core/AbstractBundle;
+index: 2
+start_pc: <38>
+length: <59>
+name_index: e
+descriptor_index: Ljava/lang/Exception;
+index: 3
+start_pc: <46>
+length: <59>
+name_index: message
+descriptor_index: Ljava/lang/String;
+index: 4
+start_pc: <55>
+length: <59>
+name_index: entry
+descriptor_index: Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;
+index: 5
+access_flags: 1
+name_index: isStopped
+descriptor_index: (Lorg/osgi/framework/Bundle;)Z
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 25 0
+1: 180 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.stoppedBundlesLjava/util/Hashtable;
+2: 199 <5>
+3: 3
+4: 172
+5: 25 0
+6: 180 ConstantFieldRefInfo org/eclipse/core/runtime/internal/adaptor/BundleStopper.stoppedBundlesLjava/util/Hashtable;
+7: 25 1
+8: 182 ConstantMethodRefInfo java/util/Hashtable.get(Ljava/lang/Object;)Ljava/lang/Object;
+9: 198 <12>
+10: 4
+11: 172
+12: 3
+13: 172
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 95
+start_pc: <3>
+line_number: 96
+start_pc: <5>
+line_number: 97
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <14>
+name_index: this
+descriptor_index: Lorg/eclipse/core/runtime/internal/adaptor/BundleStopper;
+index: 0
+start_pc: <0>
+length: <14>
+name_index: bundle
+descriptor_index: Lorg/osgi/framework/Bundle;
+index: 1
+attributes_count: 1
+attribute_name_index: SourceFile
+sourcefile_index: BundleStopper.java

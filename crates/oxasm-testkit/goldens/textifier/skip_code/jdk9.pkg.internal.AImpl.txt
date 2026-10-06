@@ -1,0 +1,9 @@
+// class version 53.0 (53)
+// access flags 0x21
+public class pkg/internal/AImpl extends pkg/A {
+
+  // compiled from: AImpl.java
+
+  // access flags 0x1
+  public <init>()V
+}

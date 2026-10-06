@@ -1,0 +1,49 @@
+// class version 52.0 (52)
+// access flags 0x20
+class jdk8/AllStructures$InnerClass {
+
+  // access flags 0x2
+  private INNERCLASS jdk8/AllStructures$InnerClass jdk8/AllStructures InnerClass
+  // access flags 0x0
+  INNERCLASS jdk8/AllStructures$1 null null
+
+  // access flags 0x12
+  private final D f
+  @Lannotations/VTUA;(v=0) : FIELD, null
+  @Lannotations/ITUA;(v=1) : FIELD, null // invisible
+
+  // access flags 0x1010
+  final synthetic Ljdk8/AllStructures; this$0
+
+  // access flags 0x2
+  private <init>(Ljdk8/AllStructures;D)V
+    ALOAD 0
+    ALOAD 1
+    PUTFIELD jdk8/AllStructures$InnerClass.this$0 : Ljdk8/AllStructures;
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+    ALOAD 0
+    DLOAD 2
+    PUTFIELD jdk8/AllStructures$InnerClass.f : D
+    RETURN
+    MAXSTACK = 3
+    MAXLOCALS = 4
+
+  // access flags 0x1000
+  synthetic <init>(Ljdk8/AllStructures;DLjdk8/AllStructures$1;)V
+    ALOAD 0
+    ALOAD 1
+    DLOAD 2
+    INVOKESPECIAL jdk8/AllStructures$InnerClass.<init> (Ljdk8/AllStructures;D)V
+    RETURN
+    MAXSTACK = 4
+    MAXLOCALS = 5
+
+  // access flags 0x1008
+  static synthetic access$300(Ljdk8/AllStructures$InnerClass;)D
+    ALOAD 0
+    GETFIELD jdk8/AllStructures$InnerClass.f : D
+    DRETURN
+    MAXSTACK = 2
+    MAXLOCALS = 1
+}

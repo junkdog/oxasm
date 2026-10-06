@@ -1,0 +1,14 @@
+// class version 52.0 (52)
+// access flags 0x20
+class app1/Main$BadLocal {
+
+  // compiled from: Main.java
+  // access flags 0x8
+  static INNERCLASS app1/Main$BadLocal app1/Main BadLocal
+
+  // access flags 0x0
+  <init>()V
+
+  // access flags 0x0
+  sample()V throws java/lang/Exception
+}

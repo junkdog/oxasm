@@ -1,0 +1,45 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/oxasm",
+    "crates/oxasm-tree",
+    "crates/oxasm-analysis",
+    "crates/oxasm-commons",
+    "crates/oxasm-util",
+    "crates/oxasm-testkit",
+    "xtask",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.96"
+license = "BSD-3-Clause"
+
+[workspace.dependencies]
+oxasm = { path = "crates/oxasm" }
+oxasm-tree = { path = "crates/oxasm-tree" }
+oxasm-analysis = { path = "crates/oxasm-analysis" }
+oxasm-commons = { path = "crates/oxasm-commons" }
+oxasm-util = { path = "crates/oxasm-util" }
+oxasm-testkit = { path = "crates/oxasm-testkit" }
+
+# xtask only
+anyhow = "1"
+sha2 = "0.11"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+# ADR-18: every unsafe block states its invariant; one unsafe op per block.
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "warn"
+# ADR-17: Java's narrowing casts are the spec in ported modules, which opt out with a
+# module-level `#![allow(clippy::cast_possible_truncation)]`; new code must not truncate silently.
+cast_possible_truncation = "deny"
+
+[profile.dev.package."*"]
+opt-level = 1

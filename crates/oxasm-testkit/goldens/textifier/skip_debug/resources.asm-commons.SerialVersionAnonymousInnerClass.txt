@@ -1,0 +1,34 @@
+// class version 52.0 (52)
+// access flags 0x20
+class SerialVersionAnonymousInnerClass implements java/io/Serializable {
+
+  // access flags 0x0
+  INNERCLASS SerialVersionAnonymousInnerClass$1 null null
+
+  // access flags 0x19
+  public final static LSerialVersionAnonymousInnerClass; anonymousInnerClass
+
+  // access flags 0x8
+  static <clinit>()V
+    NEW SerialVersionAnonymousInnerClass$1
+    DUP
+    INVOKESPECIAL SerialVersionAnonymousInnerClass$1.<init> ()V
+    PUTSTATIC SerialVersionAnonymousInnerClass.anonymousInnerClass : LSerialVersionAnonymousInnerClass;
+    RETURN
+    MAXSTACK = 2
+    MAXLOCALS = 0
+
+  // access flags 0x0
+  <init>()V
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+    RETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x1
+  public someMethod()V
+    RETURN
+    MAXSTACK = 0
+    MAXLOCALS = 1
+}

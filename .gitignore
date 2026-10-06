@@ -1,0 +1,5 @@
+/target
+/corpus/t1/
+/corpus/t2/
+/fuzz/artifacts/
+/fuzz/corpus/

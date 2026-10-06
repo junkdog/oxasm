@@ -1,0 +1,23 @@
+// class version 52.0 (52)
+// access flags 0x21
+public class jdk8/Artificial$()$Structures {
+
+
+  // access flags 0x1
+  public I value
+
+  // access flags 0x1
+  public <init>(I)V
+
+  // access flags 0x2
+  private <init>(Ljdk8/Artificial$()$Structures;)V
+
+  // access flags 0x1
+  public clone()Ljdk8/Artificial$()$Structures;
+
+  // access flags 0x9
+  public static methodType()Ljava/lang/invoke/MethodType;
+
+  // access flags 0x9
+  public static frameWithForwardLabelReferences([Ljava/lang/String;)V
+}

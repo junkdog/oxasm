@@ -1,0 +1,184 @@
+magic: -889275714
+minor_version: 0
+major_version: 52
+access_flags: 32
+this_class: ConstantClassInfo app1/Main$BadLocal
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 0
+methods_count: 2
+access_flags: 0
+name_index: <init>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 47
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <3>
+name_index: this
+descriptor_index: Lapp1/Main$BadLocal;
+index: 0
+access_flags: 0
+name_index: sample
+descriptor_index: ()V
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 5
+max_locals: 6
+0: 1
+1: 58 1
+2: 1
+3: 58 2
+4: 187 ConstantClassInfo java/io/BufferedReader
+5: 89
+6: 187 ConstantClassInfo java/io/StringReader
+7: 89
+8: 18 ConstantStringInfo 1
+2
+3
+4
+
+9: 183 ConstantMethodRefInfo java/io/StringReader.<init>(Ljava/lang/String;)V
+10: 183 ConstantMethodRefInfo java/io/BufferedReader.<init>(Ljava/io/Reader;)V
+11: 58 3
+12: 167 <18>
+13: 3
+14: 54 5
+15: 25 4
+16: 184 ConstantMethodRefInfo java/lang/Integer.parseInt(Ljava/lang/String;)I
+17: 87
+18: 25 3
+19: 182 ConstantMethodRefInfo java/io/BufferedReader.readLine()Ljava/lang/String;
+20: 89
+21: 58 4
+22: 199 <13>
+23: 25 3
+24: 198 <49>
+25: 25 3
+26: 182 ConstantMethodRefInfo java/io/BufferedReader.close()V
+27: 167 <49>
+28: 58 1
+29: 25 3
+30: 198 <33>
+31: 25 3
+32: 182 ConstantMethodRefInfo java/io/BufferedReader.close()V
+33: 25 1
+34: 191
+35: 58 2
+36: 25 1
+37: 199 <41>
+38: 25 2
+39: 58 1
+40: 167 <47>
+41: 25 1
+42: 25 2
+43: 165 <47>
+44: 25 1
+45: 25 2
+46: 182 ConstantMethodRefInfo java/lang/Throwable.addSuppressed(Ljava/lang/Throwable;)V
+47: 25 1
+48: 191
+49: 177
+exception_table_length: 2
+start_pc: <12>
+end_pc: <23>
+handler_pc: <28>
+catch_type: 0
+start_pc: <4>
+end_pc: <35>
+handler_pc: <35>
+catch_type: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 7
+start_pc: <0>
+line_number: 49
+start_pc: <12>
+line_number: 51
+start_pc: <13>
+line_number: 52
+start_pc: <15>
+line_number: 53
+start_pc: <18>
+line_number: 51
+start_pc: <23>
+line_number: 55
+start_pc: <49>
+line_number: 56
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 5
+start_pc: <0>
+length: <50>
+name_index: this
+descriptor_index: Lapp1/Main$BadLocal;
+index: 0
+start_pc: <12>
+length: <33>
+name_index: reader
+descriptor_index: Ljava/io/BufferedReader;
+index: 3
+start_pc: <13>
+length: <18>
+name_index: line
+descriptor_index: Ljava/lang/String;
+index: 4
+start_pc: <22>
+length: <23>
+name_index: line
+descriptor_index: Ljava/lang/String;
+index: 4
+start_pc: <15>
+length: <18>
+name_index: columnidx
+descriptor_index: I
+index: 5
+attribute_name_index: StackMapTable
+number_of_entries: 8
+FULL <13>
+number_of_locals: 5
+tag: 7
+cpool_index: ConstantClassInfo app1/Main$BadLocal
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Throwable
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Throwable
+tag: 7
+cpool_index: ConstantClassInfo java/io/BufferedReader
+tag: 7
+cpool_index: ConstantClassInfo java/lang/String
+number_of_stack_items: 0
+CHOP_1 <18>
+SAME_LOCALS_1_STACK_ITEM <28>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Throwable
+CHOP_1 <33>
+SAME_LOCALS_1_STACK_ITEM <35>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Throwable
+SAME <41>
+SAME <47>
+CHOP_2 <49>
+attribute_name_index: Exceptions
+number_of_exceptions: 1
+exception_index: ConstantClassInfo java/lang/Exception
+attributes_count: 2
+attribute_name_index: InnerClasses
+number_of_classes: 1
+inner_class_info_index: ConstantClassInfo app1/Main$BadLocal
+outer_class_info_index: ConstantClassInfo app1/Main
+inner_name_index: BadLocal
+inner_class_access_flags: 8
+attribute_name_index: SourceFile
+sourcefile_index: Main.java

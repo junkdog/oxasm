@@ -1,0 +1,35 @@
+// class version 52.0 (52)
+// access flags 0x21
+public class jdk8/LargeMethod {
+
+  // compiled from: LargeMethod.java
+
+  // access flags 0x0
+  I f
+
+  // access flags 0x1
+  public <init>(Ljava/lang/Object;Ljava/lang/String;)V
+    // parameter  o
+    // parameter  s
+
+  // access flags 0x1
+  public largeMethod(ZBCSIJFDLjava/lang/Object;[Z[B[C[S[I[J[F[D[Ljava/lang/Object;)Ljdk8/LargeMethod;
+    // parameter  v0
+    // parameter  v1
+    // parameter  v2
+    // parameter  v3
+    // parameter  v4
+    // parameter  v5
+    // parameter  v6
+    // parameter  v7
+    // parameter  v8
+    // parameter  v9
+    // parameter  v10
+    // parameter  v11
+    // parameter  v12
+    // parameter  v13
+    // parameter  v14
+    // parameter  v15
+    // parameter  v16
+    // parameter  v17
+}

@@ -1,0 +1,13 @@
+// class version 52.0 (52)
+// access flags 0x2601
+public abstract @interface annotations/VFA implements java/lang/annotation/Annotation {
+
+  // compiled from: VFA.java
+
+  @Ljava/lang/annotation/Retention;(value=Ljava/lang/annotation/RetentionPolicy;.RUNTIME)
+
+  @Ljava/lang/annotation/Target;(value={Ljava/lang/annotation/ElementType;.FIELD})
+
+  // access flags 0x401
+  public abstract v()I
+}

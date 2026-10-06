@@ -1,0 +1,11 @@
+// class version 52.0 (52)
+// access flags 0x601
+public abstract interface jdk8/AllLambdas$InnerClass {
+
+  // compiled from: AllLambdas.java
+  // access flags 0x609
+  public static abstract INNERCLASS jdk8/AllLambdas$InnerClass jdk8/AllLambdas InnerClass
+
+  // access flags 0x1
+  public default inner()V
+}

@@ -1,0 +1,32 @@
+// class version 55.0 (55)
+// access flags 0x21
+public class jdk11/AllInstructions {
+
+  // compiled from: AllInstructions.jasm
+  // access flags 0x19
+  public final static INNERCLASS java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup
+
+  // access flags 0x1
+  public <init>()V
+
+  // access flags 0x1
+  public m()Ljava/lang/Object;
+
+  // access flags 0x9
+  public static primitiveExample()J
+
+  // access flags 0xA
+  private static bsm(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/Class;)J
+
+  // access flags 0xA
+  private static anotherBsm(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/Class;)J
+
+  // access flags 0x9
+  public static gnarlyCondyPop()V
+
+  // access flags 0x9
+  public static main([Ljava/lang/String;)V
+
+  // access flags 0x100A
+  private static synthetic lambda$main$0()V
+}

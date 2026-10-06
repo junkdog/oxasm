@@ -1,0 +1,12 @@
+// class version 52.0 (52)
+// access flags 0x21
+public class invalid/InvalidInsnTypeAnnotationTargetType {
+
+  // compiled from: InvalidInsnTypeAnnotationTargetType.java
+
+  // access flags 0x1
+  public <init>()V
+
+  // access flags 0x1
+  public method()V
+}

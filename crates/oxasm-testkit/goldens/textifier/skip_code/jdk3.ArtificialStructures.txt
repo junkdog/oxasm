@@ -1,0 +1,32 @@
+// class version 47.0 (47)
+// access flags 0x21
+public class jdk3/ArtificialStructures {
+
+  // compiled from: ArtificialStructures.java
+  // debug info: source-debug
+
+  ATTRIBUTE Comment : unknown
+
+  // access flags 0x1001
+  public synthetic I f
+  ATTRIBUTE Comment : unknown
+
+  // access flags 0x1001
+  public synthetic <init>(Ljava/lang/String;)V
+  ATTRIBUTE Comment : unknown
+
+  // access flags 0x0
+  <init>(Z)V
+
+  // access flags 0x8
+  static dup_x2(IJ)V
+
+  // access flags 0x8
+  static dup2_x2(IIII)V
+
+  // access flags 0x8
+  static dup2_x2(IIJ)V
+
+  // access flags 0x8
+  static dup2_x2(JD)V
+}

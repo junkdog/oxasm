@@ -1,0 +1,13 @@
+[package]
+name = "oxasm-tree"
+description = "Tree (object model) API for oxasm: a port of ASM's asm-tree"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+oxasm.workspace = true
+
+[lints]
+workspace = true

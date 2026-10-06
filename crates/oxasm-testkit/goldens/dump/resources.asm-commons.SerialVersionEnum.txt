@@ -1,0 +1,161 @@
+magic: -889275714
+minor_version: 0
+major_version: 52
+access_flags: 16432
+this_class: ConstantClassInfo SerialVersionEnum
+super_class: ConstantClassInfo java/lang/Enum
+interfaces_count: 0
+fields_count: 4
+access_flags: 16409
+name_index: V1
+descriptor_index: LSerialVersionEnum;
+attributes_count: 0
+access_flags: 16409
+name_index: V2
+descriptor_index: LSerialVersionEnum;
+attributes_count: 0
+access_flags: 16409
+name_index: V3
+descriptor_index: LSerialVersionEnum;
+attributes_count: 0
+access_flags: 4122
+name_index: ENUM$VALUES
+descriptor_index: [LSerialVersionEnum;
+attributes_count: 0
+methods_count: 4
+access_flags: 8
+name_index: <clinit>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 4
+max_locals: 0
+0: 187 ConstantClassInfo SerialVersionEnum
+1: 89
+2: 18 ConstantStringInfo V1
+3: 3
+4: 183 ConstantMethodRefInfo SerialVersionEnum.<init>(Ljava/lang/String;I)V
+5: 179 ConstantFieldRefInfo SerialVersionEnum.V1LSerialVersionEnum;
+6: 187 ConstantClassInfo SerialVersionEnum
+7: 89
+8: 18 ConstantStringInfo V2
+9: 4
+10: 183 ConstantMethodRefInfo SerialVersionEnum.<init>(Ljava/lang/String;I)V
+11: 179 ConstantFieldRefInfo SerialVersionEnum.V2LSerialVersionEnum;
+12: 187 ConstantClassInfo SerialVersionEnum
+13: 89
+14: 18 ConstantStringInfo V3
+15: 5
+16: 183 ConstantMethodRefInfo SerialVersionEnum.<init>(Ljava/lang/String;I)V
+17: 179 ConstantFieldRefInfo SerialVersionEnum.V3LSerialVersionEnum;
+18: 6
+19: 189 ConstantClassInfo SerialVersionEnum
+20: 89
+21: 3
+22: 178 ConstantFieldRefInfo SerialVersionEnum.V1LSerialVersionEnum;
+23: 83
+24: 89
+25: 4
+26: 178 ConstantFieldRefInfo SerialVersionEnum.V2LSerialVersionEnum;
+27: 83
+28: 89
+29: 5
+30: 178 ConstantFieldRefInfo SerialVersionEnum.V3LSerialVersionEnum;
+31: 83
+32: 179 ConstantFieldRefInfo SerialVersionEnum.ENUM$VALUES[LSerialVersionEnum;
+33: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 34
+start_pc: <6>
+line_number: 35
+start_pc: <12>
+line_number: 36
+start_pc: <18>
+line_number: 33
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 0
+access_flags: 2
+name_index: <init>
+descriptor_index: (Ljava/lang/String;I)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 3
+max_locals: 3
+0: 25 0
+1: 25 1
+2: 21 2
+3: 183 ConstantMethodRefInfo java/lang/Enum.<init>(Ljava/lang/String;I)V
+4: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 33
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <5>
+name_index: this
+descriptor_index: LSerialVersionEnum;
+index: 0
+access_flags: 9
+name_index: values
+descriptor_index: ()[LSerialVersionEnum;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 5
+max_locals: 3
+0: 178 ConstantFieldRefInfo SerialVersionEnum.ENUM$VALUES[LSerialVersionEnum;
+1: 89
+2: 58 0
+3: 3
+4: 25 0
+5: 190
+6: 89
+7: 54 1
+8: 189 ConstantClassInfo SerialVersionEnum
+9: 89
+10: 58 2
+11: 3
+12: 21 1
+13: 184 ConstantMethodRefInfo java/lang/System.arraycopy(Ljava/lang/Object;ILjava/lang/Object;II)V
+14: 25 2
+15: 176
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 1
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 0
+access_flags: 9
+name_index: valueOf
+descriptor_index: (Ljava/lang/String;)LSerialVersionEnum;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 18 ConstantClassInfo SerialVersionEnum
+1: 25 0
+2: 184 ConstantMethodRefInfo java/lang/Enum.valueOf(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+3: 192 ConstantClassInfo SerialVersionEnum
+4: 176
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 1
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 0
+attributes_count: 2
+attribute_name_index: Signature
+signature_index: Ljava/lang/Enum<LSerialVersionEnum;>;
+attribute_name_index: SourceFile
+sourcefile_index: SerialVersionEnum.java

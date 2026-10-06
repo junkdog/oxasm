@@ -1,0 +1,22 @@
+// class version 49.0 (49)
+// access flags 0x20
+class jdk5/AllStructures$1LocalClass {
+
+  // compiled from: AllStructures.java
+  OUTERCLASS jdk5/AllStructures localClassConstructor (Ljava/lang/String;)V
+  // access flags 0x0
+  INNERCLASS jdk5/AllStructures$1LocalClass null LocalClass
+
+  // access flags 0x1010
+  final synthetic Ljava/lang/String; val$name
+
+  // access flags 0x1010
+  final synthetic Ljdk5/AllStructures; this$0
+
+  // access flags 0x0
+  // signature (I)V
+  // declaration: void <init>(int)
+  <init>(Ljdk5/AllStructures;ILjava/lang/String;)V
+    // annotable parameter count: 1 (visible)
+    @Ljava/lang/Deprecated;() // parameter 0
+}

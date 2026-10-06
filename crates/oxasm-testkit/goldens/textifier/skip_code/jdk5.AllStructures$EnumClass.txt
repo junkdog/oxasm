@@ -1,0 +1,42 @@
+// class version 49.0 (49)
+// access flags 0x4030
+// signature Ljava/lang/Enum<Ljdk5/AllStructures$EnumClass;>;
+// declaration: jdk5/AllStructures$EnumClass extends java.lang.Enum<jdk5.AllStructures$EnumClass>
+final enum jdk5/AllStructures$EnumClass extends java/lang/Enum {
+
+  // compiled from: AllStructures.java
+  // access flags 0x4018
+  final static enum INNERCLASS jdk5/AllStructures$EnumClass jdk5/AllStructures EnumClass
+
+  // access flags 0x4019
+  public final static enum Ljdk5/AllStructures$EnumClass; VALUE0
+
+  // access flags 0x4019
+  public final static enum Ljdk5/AllStructures$EnumClass; VALUE1
+
+  // access flags 0x4019
+  public final static enum Ljdk5/AllStructures$EnumClass; VALUE2
+
+  // access flags 0x2
+  private I value
+
+  // access flags 0x101A
+  private final static synthetic [Ljdk5/AllStructures$EnumClass; $VALUES
+
+  // access flags 0x19
+  public final static values()[Ljdk5/AllStructures$EnumClass;
+
+  // access flags 0x9
+  public static valueOf(Ljava/lang/String;)Ljdk5/AllStructures$EnumClass;
+
+  // access flags 0x2
+  // signature (I)V
+  // declaration: void <init>(int)
+  private <init>(Ljava/lang/String;II)V
+
+  // access flags 0x1
+  public getValue()I
+
+  // access flags 0x8
+  static <clinit>()V
+}

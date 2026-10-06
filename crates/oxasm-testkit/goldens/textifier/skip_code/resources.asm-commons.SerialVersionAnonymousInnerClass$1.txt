@@ -1,0 +1,12 @@
+// class version 52.0 (52)
+// access flags 0x20
+class SerialVersionAnonymousInnerClass$1 extends SerialVersionAnonymousInnerClass {
+
+  // compiled from: SerialVersionAnonymousInnerClass.java
+  OUTERCLASS SerialVersionAnonymousInnerClass null
+  // access flags 0x0
+  INNERCLASS SerialVersionAnonymousInnerClass$1 null null
+
+  // access flags 0x0
+  <init>()V
+}

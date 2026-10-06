@@ -1,0 +1,2060 @@
+magic: -889275714
+minor_version: 0
+major_version: 52
+access_flags: 33
+this_class: ConstantClassInfo jdk8/AllFrames
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 3
+access_flags: 0
+name_index: o
+descriptor_index: Ljava/lang/Object;
+attributes_count: 0
+access_flags: 0
+name_index: s
+descriptor_index: Ljava/lang/String;
+attributes_count: 0
+access_flags: 0
+name_index: f
+descriptor_index: I
+attributes_count: 0
+methods_count: 31
+access_flags: 1
+name_index: <init>
+descriptor_index: (Ljava/lang/Object;Ljava/lang/String;)V
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 3
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 25 0
+3: 25 1
+4: 181 ConstantFieldRefInfo jdk8/AllFrames.oLjava/lang/Object;
+5: 25 0
+6: 25 2
+7: 181 ConstantFieldRefInfo jdk8/AllFrames.sLjava/lang/String;
+8: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 42
+start_pc: <2>
+line_number: 43
+start_pc: <5>
+line_number: 44
+start_pc: <8>
+line_number: 45
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 3
+start_pc: <0>
+length: <9>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <9>
+name_index: o
+descriptor_index: Ljava/lang/Object;
+index: 1
+start_pc: <0>
+length: <9>
+name_index: s
+descriptor_index: Ljava/lang/String;
+index: 2
+attribute_name_index: MethodParameters
+parameters_count: 2
+name_index: o
+access_flags: 0
+name_index: s
+access_flags: 0
+access_flags: 1
+name_index: <init>
+descriptor_index: (Z)V
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 3
+max_locals: 2
+0: 25 0
+1: 1
+2: 21 1
+3: 153 <6>
+4: 18 ConstantStringInfo true
+5: 167 <7>
+6: 18 ConstantStringInfo false
+7: 183 ConstantMethodRefInfo jdk8/AllFrames.<init>(Ljava/lang/Object;Ljava/lang/String;)V
+8: 177
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 2
+start_pc: <0>
+line_number: 50
+start_pc: <8>
+line_number: 51
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <9>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <9>
+name_index: b
+descriptor_index: Z
+index: 1
+attribute_name_index: StackMapTable
+number_of_entries: 2
+FULL <6>
+number_of_locals: 2
+tag: 6
+tag: 1
+number_of_stack_items: 2
+tag: 6
+tag: 5
+FULL <7>
+number_of_locals: 2
+tag: 6
+tag: 1
+number_of_stack_items: 3
+tag: 6
+tag: 5
+tag: 7
+cpool_index: ConstantClassInfo java/lang/String
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: create
+descriptor_index: (Ljava/lang/String;)Ljdk8/AllFrames;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 4
+max_locals: 1
+0: 187 ConstantClassInfo jdk8/AllFrames
+1: 89
+2: 1
+3: 25 0
+4: 199 <7>
+5: 18 ConstantStringInfo 
+6: 167 <8>
+7: 25 0
+8: 183 ConstantMethodRefInfo jdk8/AllFrames.<init>(Ljava/lang/Object;Ljava/lang/String;)V
+9: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 56
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <10>
+name_index: s
+descriptor_index: Ljava/lang/String;
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+FULL <7>
+number_of_locals: 1
+tag: 7
+cpool_index: ConstantClassInfo java/lang/String
+number_of_stack_items: 3
+tag: 8
+offset: <0>
+tag: 8
+offset: <0>
+tag: 5
+FULL <8>
+number_of_locals: 1
+tag: 7
+cpool_index: ConstantClassInfo java/lang/String
+number_of_stack_items: 4
+tag: 8
+offset: <0>
+tag: 8
+offset: <0>
+tag: 5
+tag: 7
+cpool_index: ConstantClassInfo java/lang/String
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: s
+access_flags: 0
+access_flags: 1
+name_index: m0
+descriptor_index: (ZBCSIFJDLjava/lang/Object;[Ljava/lang/Object;[[Ljava/lang/Object;)I
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 14
+max_locals: 14
+0: 21 1
+1: 153 <28>
+2: 25 0
+3: 21 1
+4: 154 <7>
+5: 4
+6: 167 <8>
+7: 3
+8: 21 2
+9: 21 3
+10: 21 4
+11: 21 5
+12: 4
+13: 100
+14: 23 6
+15: 12
+16: 102
+17: 22 7
+18: 10
+19: 101
+20: 24 9
+21: 15
+22: 103
+23: 25 11
+24: 25 12
+25: 25 13
+26: 182 ConstantMethodRefInfo jdk8/AllFrames.m0(ZBCSIFJDLjava/lang/Object;[Ljava/lang/Object;[[Ljava/lang/Object;)I
+27: 167 <53>
+28: 25 0
+29: 21 1
+30: 154 <33>
+31: 4
+32: 167 <34>
+33: 3
+34: 21 2
+35: 21 3
+36: 21 4
+37: 21 5
+38: 4
+39: 96
+40: 23 6
+41: 12
+42: 98
+43: 22 7
+44: 10
+45: 97
+46: 24 9
+47: 15
+48: 99
+49: 25 11
+50: 25 12
+51: 25 13
+52: 182 ConstantMethodRefInfo jdk8/AllFrames.m0(ZBCSIFJDLjava/lang/Object;[Ljava/lang/Object;[[Ljava/lang/Object;)I
+53: 172
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 73
+start_pc: <2>
+line_number: 74
+start_pc: <28>
+line_number: 75
+start_pc: <53>
+line_number: 73
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 12
+start_pc: <0>
+length: <54>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <54>
+name_index: b
+descriptor_index: Z
+index: 1
+start_pc: <0>
+length: <54>
+name_index: y
+descriptor_index: B
+index: 2
+start_pc: <0>
+length: <54>
+name_index: c
+descriptor_index: C
+index: 3
+start_pc: <0>
+length: <54>
+name_index: s
+descriptor_index: S
+index: 4
+start_pc: <0>
+length: <54>
+name_index: i
+descriptor_index: I
+index: 5
+start_pc: <0>
+length: <54>
+name_index: f
+descriptor_index: F
+index: 6
+start_pc: <0>
+length: <54>
+name_index: l
+descriptor_index: J
+index: 7
+start_pc: <0>
+length: <54>
+name_index: d
+descriptor_index: D
+index: 9
+start_pc: <0>
+length: <54>
+name_index: o
+descriptor_index: Ljava/lang/Object;
+index: 11
+start_pc: <0>
+length: <54>
+name_index: p
+descriptor_index: [Ljava/lang/Object;
+index: 12
+start_pc: <0>
+length: <54>
+name_index: q
+descriptor_index: [[Ljava/lang/Object;
+index: 13
+attribute_name_index: StackMapTable
+number_of_entries: 6
+SAME_LOCALS_1_STACK_ITEM <7>
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+FULL <8>
+number_of_locals: 12
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+tag: 1
+tag: 1
+tag: 1
+tag: 1
+tag: 1
+tag: 2
+tag: 4
+tag: 3
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Object
+tag: 7
+cpool_index: ConstantClassInfo [Ljava/lang/Object;
+tag: 7
+cpool_index: ConstantClassInfo [[Ljava/lang/Object;
+number_of_stack_items: 2
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+tag: 1
+SAME <28>
+SAME_LOCALS_1_STACK_ITEM <33>
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+FULL <34>
+number_of_locals: 12
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+tag: 1
+tag: 1
+tag: 1
+tag: 1
+tag: 1
+tag: 2
+tag: 4
+tag: 3
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Object
+tag: 7
+cpool_index: ConstantClassInfo [Ljava/lang/Object;
+tag: 7
+cpool_index: ConstantClassInfo [[Ljava/lang/Object;
+number_of_stack_items: 2
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+tag: 1
+SAME_LOCALS_1_STACK_ITEM <53>
+tag: 1
+attribute_name_index: MethodParameters
+parameters_count: 11
+name_index: b
+access_flags: 0
+name_index: y
+access_flags: 0
+name_index: c
+access_flags: 0
+name_index: s
+access_flags: 0
+name_index: i
+access_flags: 0
+name_index: f
+access_flags: 0
+name_index: l
+access_flags: 0
+name_index: d
+access_flags: 0
+name_index: o
+access_flags: 0
+name_index: p
+access_flags: 0
+name_index: q
+access_flags: 0
+access_flags: 9
+name_index: m0Static
+descriptor_index: (ZBCSIFJDLjava/lang/Object;[Ljava/lang/Object;[[Ljava/lang/Object;)I
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 13
+max_locals: 13
+0: 21 0
+1: 153 <27>
+2: 21 0
+3: 154 <6>
+4: 4
+5: 167 <7>
+6: 3
+7: 21 1
+8: 21 2
+9: 21 3
+10: 21 4
+11: 4
+12: 100
+13: 23 5
+14: 12
+15: 102
+16: 22 6
+17: 10
+18: 101
+19: 24 8
+20: 15
+21: 103
+22: 25 10
+23: 25 11
+24: 25 12
+25: 184 ConstantMethodRefInfo jdk8/AllFrames.m0Static(ZBCSIFJDLjava/lang/Object;[Ljava/lang/Object;[[Ljava/lang/Object;)I
+26: 167 <51>
+27: 21 0
+28: 154 <31>
+29: 4
+30: 167 <32>
+31: 3
+32: 21 1
+33: 21 2
+34: 21 3
+35: 21 4
+36: 4
+37: 96
+38: 23 5
+39: 12
+40: 98
+41: 22 6
+42: 10
+43: 97
+44: 24 8
+45: 15
+46: 99
+47: 25 10
+48: 25 11
+49: 25 12
+50: 184 ConstantMethodRefInfo jdk8/AllFrames.m0Static(ZBCSIFJDLjava/lang/Object;[Ljava/lang/Object;[[Ljava/lang/Object;)I
+51: 172
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 92
+start_pc: <2>
+line_number: 93
+start_pc: <27>
+line_number: 94
+start_pc: <51>
+line_number: 92
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 11
+start_pc: <0>
+length: <52>
+name_index: b
+descriptor_index: Z
+index: 0
+start_pc: <0>
+length: <52>
+name_index: y
+descriptor_index: B
+index: 1
+start_pc: <0>
+length: <52>
+name_index: c
+descriptor_index: C
+index: 2
+start_pc: <0>
+length: <52>
+name_index: s
+descriptor_index: S
+index: 3
+start_pc: <0>
+length: <52>
+name_index: i
+descriptor_index: I
+index: 4
+start_pc: <0>
+length: <52>
+name_index: f
+descriptor_index: F
+index: 5
+start_pc: <0>
+length: <52>
+name_index: l
+descriptor_index: J
+index: 6
+start_pc: <0>
+length: <52>
+name_index: d
+descriptor_index: D
+index: 8
+start_pc: <0>
+length: <52>
+name_index: o
+descriptor_index: Ljava/lang/Object;
+index: 10
+start_pc: <0>
+length: <52>
+name_index: p
+descriptor_index: [Ljava/lang/Object;
+index: 11
+start_pc: <0>
+length: <52>
+name_index: q
+descriptor_index: [[Ljava/lang/Object;
+index: 12
+attribute_name_index: StackMapTable
+number_of_entries: 6
+SAME <6>
+SAME_LOCALS_1_STACK_ITEM <7>
+tag: 1
+SAME <27>
+SAME <31>
+SAME_LOCALS_1_STACK_ITEM <32>
+tag: 1
+SAME_LOCALS_1_STACK_ITEM <51>
+tag: 1
+attribute_name_index: MethodParameters
+parameters_count: 11
+name_index: b
+access_flags: 0
+name_index: y
+access_flags: 0
+name_index: c
+access_flags: 0
+name_index: s
+access_flags: 0
+name_index: i
+access_flags: 0
+name_index: f
+access_flags: 0
+name_index: l
+access_flags: 0
+name_index: d
+access_flags: 0
+name_index: o
+access_flags: 0
+name_index: p
+access_flags: 0
+name_index: q
+access_flags: 0
+access_flags: 1
+name_index: m0
+descriptor_index: ([BZ)Ljava/lang/String;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 4
+max_locals: 4
+0: 25 1
+1: 199 <4>
+2: 1
+3: 167 <13>
+4: 187 ConstantClassInfo java/lang/String
+5: 89
+6: 25 1
+7: 21 2
+8: 153 <11>
+9: 18 ConstantStringInfo a
+10: 167 <12>
+11: 18 ConstantStringInfo b
+12: 183 ConstantMethodRefInfo java/lang/String.<init>([BLjava/lang/String;)V
+13: 176
+14: 58 3
+15: 1
+16: 176
+exception_table_length: 1
+start_pc: <0>
+end_pc: <13>
+handler_pc: <14>
+catch_type: ConstantClassInfo java/io/UnsupportedEncodingException
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 100
+start_pc: <14>
+line_number: 101
+start_pc: <15>
+line_number: 102
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 4
+start_pc: <15>
+length: <17>
+name_index: e
+descriptor_index: Ljava/io/UnsupportedEncodingException;
+index: 3
+start_pc: <0>
+length: <17>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <17>
+name_index: bytes
+descriptor_index: [B
+index: 1
+start_pc: <0>
+length: <17>
+name_index: b
+descriptor_index: Z
+index: 2
+attribute_name_index: StackMapTable
+number_of_entries: 5
+SAME <4>
+FULL <11>
+number_of_locals: 3
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+tag: 7
+cpool_index: ConstantClassInfo [B
+tag: 1
+number_of_stack_items: 3
+tag: 8
+offset: <4>
+tag: 8
+offset: <4>
+tag: 7
+cpool_index: ConstantClassInfo [B
+FULL <12>
+number_of_locals: 3
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+tag: 7
+cpool_index: ConstantClassInfo [B
+tag: 1
+number_of_stack_items: 4
+tag: 8
+offset: <4>
+tag: 8
+offset: <4>
+tag: 7
+cpool_index: ConstantClassInfo [B
+tag: 7
+cpool_index: ConstantClassInfo java/lang/String
+SAME_LOCALS_1_STACK_ITEM <13>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/String
+SAME_LOCALS_1_STACK_ITEM <14>
+tag: 7
+cpool_index: ConstantClassInfo java/io/UnsupportedEncodingException
+attribute_name_index: MethodParameters
+parameters_count: 2
+name_index: bytes
+access_flags: 0
+name_index: b
+access_flags: 0
+access_flags: 1
+name_index: m1
+descriptor_index: (II)V
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 1
+max_locals: 5
+0: 21 2
+1: 54 4
+2: 21 1
+3: 156 <7>
+4: 21 1
+5: 116
+6: 54 1
+7: 177
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 110
+start_pc: <2>
+line_number: 111
+start_pc: <4>
+line_number: 112
+start_pc: <7>
+line_number: 114
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 4
+start_pc: <0>
+length: <8>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <8>
+name_index: i
+descriptor_index: I
+index: 1
+start_pc: <0>
+length: <8>
+name_index: j
+descriptor_index: I
+index: 2
+start_pc: <2>
+length: <8>
+name_index: l
+descriptor_index: I
+index: 4
+attribute_name_index: StackMapTable
+number_of_entries: 1
+APPEND_2 <7>
+tag: 0
+tag: 1
+attribute_name_index: MethodParameters
+parameters_count: 2
+name_index: i
+access_flags: 0
+name_index: j
+access_flags: 0
+access_flags: 9
+name_index: m1Static
+descriptor_index: (II)V
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 1
+max_locals: 4
+0: 21 1
+1: 54 3
+2: 21 0
+3: 156 <7>
+4: 21 0
+5: 116
+6: 54 0
+7: 177
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 120
+start_pc: <2>
+line_number: 121
+start_pc: <4>
+line_number: 122
+start_pc: <7>
+line_number: 124
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 3
+start_pc: <0>
+length: <8>
+name_index: i
+descriptor_index: I
+index: 0
+start_pc: <0>
+length: <8>
+name_index: j
+descriptor_index: I
+index: 1
+start_pc: <2>
+length: <8>
+name_index: l
+descriptor_index: I
+index: 3
+attribute_name_index: StackMapTable
+number_of_entries: 1
+APPEND_2 <7>
+tag: 0
+tag: 1
+attribute_name_index: MethodParameters
+parameters_count: 2
+name_index: i
+access_flags: 0
+name_index: j
+access_flags: 0
+access_flags: 1
+name_index: m2
+descriptor_index: (IZ)J
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 8
+max_locals: 7
+0: 9
+1: 55 3
+2: 21 2
+3: 153 <16>
+4: 3
+5: 54 5
+6: 22 3
+7: 21 5
+8: 132 5 1
+9: 133
+10: 97
+11: 55 3
+12: 21 5
+13: 21 1
+14: 161 <6>
+15: 167 <31>
+16: 9
+17: 55 5
+18: 22 3
+19: 22 5
+20: 92
+21: 10
+22: 97
+23: 55 5
+24: 97
+25: 55 3
+26: 22 5
+27: 21 1
+28: 133
+29: 148
+30: 155 <18>
+31: 22 3
+32: 173
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 10
+start_pc: <0>
+line_number: 128
+start_pc: <2>
+line_number: 129
+start_pc: <4>
+line_number: 130
+start_pc: <6>
+line_number: 132
+start_pc: <12>
+line_number: 133
+start_pc: <15>
+line_number: 134
+start_pc: <16>
+line_number: 135
+start_pc: <18>
+line_number: 137
+start_pc: <26>
+line_number: 138
+start_pc: <31>
+line_number: 140
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 6
+start_pc: <6>
+length: <15>
+name_index: i
+descriptor_index: I
+index: 5
+start_pc: <18>
+length: <31>
+name_index: i
+descriptor_index: J
+index: 5
+start_pc: <0>
+length: <33>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <33>
+name_index: n
+descriptor_index: I
+index: 1
+start_pc: <0>
+length: <33>
+name_index: b
+descriptor_index: Z
+index: 2
+start_pc: <2>
+length: <33>
+name_index: total
+descriptor_index: J
+index: 3
+attribute_name_index: StackMapTable
+number_of_entries: 4
+APPEND_2 <6>
+tag: 4
+tag: 1
+CHOP_1 <16>
+APPEND_1 <18>
+tag: 4
+CHOP_1 <31>
+attribute_name_index: MethodParameters
+parameters_count: 2
+name_index: n
+access_flags: 0
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m2Static
+descriptor_index: (IZ)J
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 8
+max_locals: 6
+0: 9
+1: 55 2
+2: 21 1
+3: 153 <16>
+4: 3
+5: 54 4
+6: 22 2
+7: 21 4
+8: 132 4 1
+9: 133
+10: 97
+11: 55 2
+12: 21 4
+13: 21 0
+14: 161 <6>
+15: 167 <31>
+16: 9
+17: 55 4
+18: 22 2
+19: 22 4
+20: 92
+21: 10
+22: 97
+23: 55 4
+24: 97
+25: 55 2
+26: 22 4
+27: 21 0
+28: 133
+29: 148
+30: 155 <18>
+31: 22 2
+32: 173
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 10
+start_pc: <0>
+line_number: 145
+start_pc: <2>
+line_number: 146
+start_pc: <4>
+line_number: 147
+start_pc: <6>
+line_number: 149
+start_pc: <12>
+line_number: 150
+start_pc: <15>
+line_number: 151
+start_pc: <16>
+line_number: 152
+start_pc: <18>
+line_number: 154
+start_pc: <26>
+line_number: 155
+start_pc: <31>
+line_number: 157
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 5
+start_pc: <6>
+length: <15>
+name_index: i
+descriptor_index: I
+index: 4
+start_pc: <18>
+length: <31>
+name_index: i
+descriptor_index: J
+index: 4
+start_pc: <0>
+length: <33>
+name_index: n
+descriptor_index: I
+index: 0
+start_pc: <0>
+length: <33>
+name_index: b
+descriptor_index: Z
+index: 1
+start_pc: <2>
+length: <33>
+name_index: total
+descriptor_index: J
+index: 2
+attribute_name_index: StackMapTable
+number_of_entries: 4
+APPEND_2 <6>
+tag: 4
+tag: 1
+CHOP_1 <16>
+APPEND_1 <18>
+tag: 4
+CHOP_1 <31>
+attribute_name_index: MethodParameters
+parameters_count: 2
+name_index: n
+access_flags: 0
+name_index: b
+access_flags: 0
+access_flags: 1
+name_index: m3
+descriptor_index: (I)I
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 21 1
+1: 156 <66>
+2: 21 1
+3: 21 1
+4: 96
+5: 21 1
+6: 96
+7: 21 1
+8: 96
+9: 21 1
+10: 96
+11: 21 1
+12: 96
+13: 21 1
+14: 96
+15: 21 1
+16: 96
+17: 21 1
+18: 96
+19: 21 1
+20: 96
+21: 21 1
+22: 96
+23: 21 1
+24: 96
+25: 21 1
+26: 96
+27: 21 1
+28: 96
+29: 21 1
+30: 96
+31: 21 1
+32: 96
+33: 54 1
+34: 21 1
+35: 21 1
+36: 96
+37: 21 1
+38: 96
+39: 21 1
+40: 96
+41: 21 1
+42: 96
+43: 21 1
+44: 96
+45: 21 1
+46: 96
+47: 21 1
+48: 96
+49: 21 1
+50: 96
+51: 21 1
+52: 96
+53: 21 1
+54: 96
+55: 21 1
+56: 96
+57: 21 1
+58: 96
+59: 21 1
+60: 96
+61: 21 1
+62: 96
+63: 21 1
+64: 96
+65: 54 1
+66: 21 1
+67: 172
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 162
+start_pc: <2>
+line_number: 163
+start_pc: <34>
+line_number: 164
+start_pc: <66>
+line_number: 166
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <68>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <68>
+name_index: i
+descriptor_index: I
+index: 1
+attribute_name_index: StackMapTable
+number_of_entries: 1
+SAME <66>
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: i
+access_flags: 0
+access_flags: 9
+name_index: m3Static
+descriptor_index: (I)I
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 21 0
+1: 156 <66>
+2: 21 0
+3: 21 0
+4: 96
+5: 21 0
+6: 96
+7: 21 0
+8: 96
+9: 21 0
+10: 96
+11: 21 0
+12: 96
+13: 21 0
+14: 96
+15: 21 0
+16: 96
+17: 21 0
+18: 96
+19: 21 0
+20: 96
+21: 21 0
+22: 96
+23: 21 0
+24: 96
+25: 21 0
+26: 96
+27: 21 0
+28: 96
+29: 21 0
+30: 96
+31: 21 0
+32: 96
+33: 54 0
+34: 21 0
+35: 21 0
+36: 96
+37: 21 0
+38: 96
+39: 21 0
+40: 96
+41: 21 0
+42: 96
+43: 21 0
+44: 96
+45: 21 0
+46: 96
+47: 21 0
+48: 96
+49: 21 0
+50: 96
+51: 21 0
+52: 96
+53: 21 0
+54: 96
+55: 21 0
+56: 96
+57: 21 0
+58: 96
+59: 21 0
+60: 96
+61: 21 0
+62: 96
+63: 21 0
+64: 96
+65: 54 0
+66: 21 0
+67: 172
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 171
+start_pc: <2>
+line_number: 172
+start_pc: <34>
+line_number: 173
+start_pc: <66>
+line_number: 175
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <68>
+name_index: i
+descriptor_index: I
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 1
+SAME <66>
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: i
+access_flags: 0
+access_flags: 1
+name_index: m4
+descriptor_index: (I)V
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 21 1
+1: 21 1
+2: 96
+3: 21 1
+4: 96
+5: 21 1
+6: 96
+7: 21 1
+8: 96
+9: 21 1
+10: 96
+11: 21 1
+12: 96
+13: 21 1
+14: 96
+15: 21 1
+16: 96
+17: 21 1
+18: 96
+19: 21 1
+20: 96
+21: 21 1
+22: 96
+23: 21 1
+24: 96
+25: 21 1
+26: 96
+27: 21 1
+28: 96
+29: 21 1
+30: 96
+31: 54 1
+32: 21 1
+33: 21 1
+34: 96
+35: 21 1
+36: 96
+37: 21 1
+38: 96
+39: 21 1
+40: 96
+41: 21 1
+42: 96
+43: 21 1
+44: 96
+45: 21 1
+46: 96
+47: 21 1
+48: 96
+49: 21 1
+50: 96
+51: 21 1
+52: 96
+53: 21 1
+54: 96
+55: 21 1
+56: 96
+57: 21 1
+58: 96
+59: 21 1
+60: 96
+61: 21 1
+62: 96
+63: 54 1
+64: 25 0
+65: 21 1
+66: 154 <69>
+67: 18 ConstantStringInfo true
+68: 167 <70>
+69: 18 ConstantStringInfo false
+70: 181 ConstantFieldRefInfo jdk8/AllFrames.sLjava/lang/String;
+71: 177
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 180
+start_pc: <32>
+line_number: 181
+start_pc: <64>
+line_number: 182
+start_pc: <71>
+line_number: 183
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <72>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <72>
+name_index: i
+descriptor_index: I
+index: 1
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME_LOCALS_1_STACK_ITEM <69>
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+FULL <70>
+number_of_locals: 2
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+tag: 1
+number_of_stack_items: 2
+tag: 7
+cpool_index: ConstantClassInfo jdk8/AllFrames
+tag: 7
+cpool_index: ConstantClassInfo java/lang/String
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: i
+access_flags: 0
+access_flags: 9
+name_index: m5
+descriptor_index: (Z)Ljava/lang/Number;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 3
+max_locals: 1
+0: 21 0
+1: 153 <9>
+2: 187 ConstantClassInfo java/lang/Integer
+3: 89
+4: 4
+5: 183 ConstantMethodRefInfo java/lang/Integer.<init>(I)V
+6: 182 ConstantMethodRefInfo java/lang/Integer.intValue()I
+7: 134
+8: 167 <14>
+9: 187 ConstantClassInfo java/lang/Float
+10: 89
+11: 12
+12: 183 ConstantMethodRefInfo java/lang/Float.<init>(F)V
+13: 182 ConstantMethodRefInfo java/lang/Float.floatValue()F
+14: 184 ConstantMethodRefInfo java/lang/Float.valueOf(F)Ljava/lang/Float;
+15: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 187
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <16>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <9>
+SAME_LOCALS_1_STACK_ITEM <14>
+tag: 2
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m6
+descriptor_index: (Z)[Ljava/lang/Number;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 21 0
+1: 153 <5>
+2: 4
+3: 189 ConstantClassInfo java/lang/Integer
+4: 167 <7>
+5: 4
+6: 189 ConstantClassInfo java/lang/Float
+7: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 192
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <8>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <5>
+SAME_LOCALS_1_STACK_ITEM <7>
+tag: 7
+cpool_index: ConstantClassInfo [Ljava/lang/Number;
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m7
+descriptor_index: (Z)[[Ljava/lang/Number;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 21 0
+1: 153 <6>
+2: 4
+3: 4
+4: 197 ConstantClassInfo [[Ljava/lang/Integer; 2
+5: 167 <9>
+6: 4
+7: 4
+8: 197 ConstantClassInfo [[Ljava/lang/Float; 2
+9: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 197
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <10>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <6>
+SAME_LOCALS_1_STACK_ITEM <9>
+tag: 7
+cpool_index: ConstantClassInfo [[Ljava/lang/Number;
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m8
+descriptor_index: (Z)[Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 21 0
+1: 153 <7>
+2: 4
+3: 4
+4: 197 ConstantClassInfo [[B 2
+5: 192 ConstantClassInfo [Ljava/lang/Object;
+6: 167 <11>
+7: 4
+8: 4
+9: 197 ConstantClassInfo [[S 2
+10: 192 ConstantClassInfo [Ljava/lang/Object;
+11: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 202
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <12>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <7>
+SAME_LOCALS_1_STACK_ITEM <11>
+tag: 7
+cpool_index: ConstantClassInfo [Ljava/lang/Object;
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m9
+descriptor_index: (Z)Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 21 0
+1: 153 <5>
+2: 4
+3: 188 8
+4: 167 <7>
+5: 4
+6: 189 ConstantClassInfo java/lang/Float
+7: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 207
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <8>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <5>
+SAME_LOCALS_1_STACK_ITEM <7>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Object
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m10
+descriptor_index: (Z)[Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 21 0
+1: 153 <7>
+2: 4
+3: 4
+4: 197 ConstantClassInfo [[B 2
+5: 192 ConstantClassInfo [Ljava/lang/Object;
+6: 167 <10>
+7: 4
+8: 189 ConstantClassInfo [Ljava/lang/Float;
+9: 192 ConstantClassInfo [Ljava/lang/Object;
+10: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 212
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <11>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <7>
+SAME_LOCALS_1_STACK_ITEM <10>
+tag: 7
+cpool_index: ConstantClassInfo [Ljava/lang/Object;
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m11
+descriptor_index: (Z)Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 21 0
+1: 153 <5>
+2: 4
+3: 188 8
+4: 167 <8>
+5: 4
+6: 4
+7: 197 ConstantClassInfo [[B 2
+8: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 217
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <9>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <5>
+SAME_LOCALS_1_STACK_ITEM <8>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Object
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m12
+descriptor_index: (Z)[Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 21 0
+1: 153 <5>
+2: 4
+3: 189 ConstantClassInfo java/lang/Object
+4: 167 <8>
+5: 4
+6: 4
+7: 197 ConstantClassInfo [[B 2
+8: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 222
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <9>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <5>
+SAME_LOCALS_1_STACK_ITEM <8>
+tag: 7
+cpool_index: ConstantClassInfo [Ljava/lang/Object;
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m13
+descriptor_index: (Z)[Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 3
+max_locals: 1
+0: 21 0
+1: 153 <7>
+2: 4
+3: 4
+4: 197 ConstantClassInfo [[B 2
+5: 192 ConstantClassInfo [Ljava/lang/Object;
+6: 167 <12>
+7: 4
+8: 4
+9: 4
+10: 197 ConstantClassInfo [[[B 3
+11: 192 ConstantClassInfo [Ljava/lang/Object;
+12: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 227
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <13>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <7>
+SAME_LOCALS_1_STACK_ITEM <12>
+tag: 7
+cpool_index: ConstantClassInfo [Ljava/lang/Object;
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m14
+descriptor_index: (Z)[[Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 4
+max_locals: 1
+0: 21 0
+1: 153 <8>
+2: 4
+3: 4
+4: 4
+5: 197 ConstantClassInfo [[[B 3
+6: 192 ConstantClassInfo [[Ljava/lang/Object;
+7: 167 <14>
+8: 4
+9: 4
+10: 4
+11: 4
+12: 197 ConstantClassInfo [[[[B 4
+13: 192 ConstantClassInfo [[Ljava/lang/Object;
+14: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 232
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <15>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <8>
+SAME_LOCALS_1_STACK_ITEM <14>
+tag: 7
+cpool_index: ConstantClassInfo [[Ljava/lang/Object;
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m15
+descriptor_index: (Z)Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 3
+max_locals: 1
+0: 21 0
+1: 153 <7>
+2: 187 ConstantClassInfo java/lang/Integer
+3: 89
+4: 4
+5: 183 ConstantMethodRefInfo java/lang/Integer.<init>(I)V
+6: 167 <9>
+7: 4
+8: 188 5
+9: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 237
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <10>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <7>
+SAME_LOCALS_1_STACK_ITEM <9>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Object
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m16
+descriptor_index: (Z)Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 3
+max_locals: 1
+0: 21 0
+1: 153 <7>
+2: 187 ConstantClassInfo java/lang/Integer
+3: 89
+4: 4
+5: 183 ConstantMethodRefInfo java/lang/Integer.<init>(I)V
+6: 167 <9>
+7: 4
+8: 189 ConstantClassInfo java/lang/Float
+9: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 242
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <10>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <7>
+SAME_LOCALS_1_STACK_ITEM <9>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Object
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 1
+name_index: m17
+descriptor_index: (Z)Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 1
+max_locals: 2
+0: 21 1
+1: 153 <5>
+2: 3
+3: 188 10
+4: 167 <7>
+5: 3
+6: 188 4
+7: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 247
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <8>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <8>
+name_index: b
+descriptor_index: Z
+index: 1
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <5>
+SAME_LOCALS_1_STACK_ITEM <7>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Object
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 1
+name_index: m18
+descriptor_index: (Z)Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 1
+max_locals: 2
+0: 21 1
+1: 153 <5>
+2: 3
+3: 188 9
+4: 167 <7>
+5: 3
+6: 188 6
+7: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 252
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <8>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <8>
+name_index: b
+descriptor_index: Z
+index: 1
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <5>
+SAME_LOCALS_1_STACK_ITEM <7>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Object
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 1
+name_index: m19
+descriptor_index: (Z)Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 1
+max_locals: 2
+0: 21 1
+1: 153 <5>
+2: 3
+3: 188 7
+4: 167 <7>
+5: 3
+6: 188 11
+7: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 257
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <8>
+name_index: this
+descriptor_index: Ljdk8/AllFrames;
+index: 0
+start_pc: <0>
+length: <8>
+name_index: b
+descriptor_index: Z
+index: 1
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <5>
+SAME_LOCALS_1_STACK_ITEM <7>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Object
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m20
+descriptor_index: (Z)Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 3
+max_locals: 1
+0: 21 0
+1: 153 <4>
+2: 1
+3: 167 <8>
+4: 187 ConstantClassInfo java/lang/Integer
+5: 89
+6: 4
+7: 183 ConstantMethodRefInfo java/lang/Integer.<init>(I)V
+8: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 262
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <9>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <4>
+SAME_LOCALS_1_STACK_ITEM <8>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Integer
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m21
+descriptor_index: (Z)Ljava/lang/Object;
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 3
+max_locals: 1
+0: 21 0
+1: 153 <7>
+2: 187 ConstantClassInfo java/lang/Integer
+3: 89
+4: 4
+5: 183 ConstantMethodRefInfo java/lang/Integer.<init>(I)V
+6: 167 <8>
+7: 1
+8: 176
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 267
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <9>
+name_index: b
+descriptor_index: Z
+index: 0
+attribute_name_index: StackMapTable
+number_of_entries: 2
+SAME <7>
+SAME_LOCALS_1_STACK_ITEM <8>
+tag: 7
+cpool_index: ConstantClassInfo java/lang/Integer
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: b
+access_flags: 0
+access_flags: 9
+name_index: m23
+descriptor_index: ()I
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 1
+1: 58 0
+2: 25 0
+3: 3
+4: 50
+5: 182 ConstantMethodRefInfo java/lang/Integer.intValue()I
+6: 172
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 2
+start_pc: <0>
+line_number: 273
+start_pc: <2>
+line_number: 274
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <2>
+length: <7>
+name_index: array
+descriptor_index: [Ljava/lang/Integer;
+index: 0
+attributes_count: 1
+attribute_name_index: SourceFile
+sourcefile_index: AllFrames.java

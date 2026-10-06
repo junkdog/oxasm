@@ -1,0 +1,29 @@
+# T2 corpus: Maven Central jars chosen for bytecode diversity (oxasm-verification, "Corpus tiers").
+# One groupId:artifactId:version per line; `cargo xtask corpus t2` copies each jar into corpus/t2/.
+
+# Language runtimes: odd frames, $default bridges, huge constant pools, indy-heavy code,
+# unusual stack shapes.
+org.jetbrains.kotlin:kotlin-stdlib:2.2.21
+org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2
+org.scala-lang:scala-library:2.13.16
+org.scala-lang:scala3-library_3:3.3.6
+org.apache.groovy:groovy:4.0.28
+org.clojure:clojure:1.12.1
+org.jruby:jruby-core:9.4.13.0
+
+# Bytecode generators.
+net.bytebuddy:byte-buddy:1.17.8
+org.javassist:javassist:3.30.2-GA
+
+# Old class versions, with JSR/RET subroutines.
+commons-collections:commons-collections:3.2.1
+commons-lang:commons-lang:2.1
+xerces:xercesImpl:2.6.2
+log4j:log4j:1.2.12
+ant:ant:1.6.5
+
+# Large, modern, javac-compiled.
+com.google.guava:guava:33.4.8-jre
+
+# TODO: an obfuscated jar (unpaired-surrogate names, junk attributes) and R8-processed
+# Android classes; neither has an obvious Maven Central candidate yet.

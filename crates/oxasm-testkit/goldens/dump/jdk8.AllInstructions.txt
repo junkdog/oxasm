@@ -1,0 +1,175 @@
+magic: -889275714
+minor_version: 0
+major_version: 52
+access_flags: 32
+this_class: ConstantClassInfo jdk8/AllInstructions
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 0
+methods_count: 3
+access_flags: 0
+name_index: <init>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 10
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <3>
+name_index: this
+descriptor_index: Ljdk8/AllInstructions;
+index: 0
+access_flags: 1
+name_index: invokedynamic
+descriptor_index: (Ljava/util/List;)V
+attributes_count: 3
+attribute_name_index: Code
+max_stack: 4
+max_locals: 3
+0: 6
+1: 189 ConstantClassInfo java/lang/String
+2: 89
+3: 3
+4: 18 ConstantStringInfo a
+5: 83
+6: 89
+7: 4
+8: 18 ConstantStringInfo b
+9: 83
+10: 89
+11: 5
+12: 18 ConstantStringInfo c
+13: 83
+14: 184 ConstantMethodRefInfo java/util/Arrays.asList([Ljava/lang/Object;)Ljava/util/List;
+15: 58 2
+16: 25 1
+17: 25 2
+18: 186 ConstantInvokeDynamicInfo 0.accept(Ljava/util/List;)Ljava/util/function/Consumer;
+19: 185 ConstantInterfaceMethodRefInfo java/util/List.forEach(Ljava/util/function/Consumer;)V 2
+20: 177
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 12
+start_pc: <16>
+line_number: 13
+start_pc: <20>
+line_number: 17
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 3
+start_pc: <0>
+length: <21>
+name_index: this
+descriptor_index: Ljdk8/AllInstructions;
+index: 0
+start_pc: <0>
+length: <21>
+name_index: strings
+descriptor_index: Ljava/util/List;
+index: 1
+start_pc: <16>
+length: <21>
+name_index: validStrings
+descriptor_index: Ljava/util/List;
+index: 2
+attribute_name_index: LocalVariableTypeTable
+local_variable_type_table_length: 2
+start_pc: <0>
+length: <21>
+name_index: strings
+signature_index: Ljava/util/List<Ljava/lang/String;>;
+index: 1
+start_pc: <16>
+length: <21>
+name_index: validStrings
+signature_index: Ljava/util/List<Ljava/lang/String;>;
+index: 2
+attribute_name_index: MethodParameters
+parameters_count: 1
+name_index: strings
+access_flags: 0
+attribute_name_index: Signature
+signature_index: (Ljava/util/List<Ljava/lang/String;>;)V
+access_flags: 4106
+name_index: lambda$invokedynamic$0
+descriptor_index: (Ljava/util/List;Ljava/lang/String;)V
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 6
+max_locals: 2
+0: 25 0
+1: 25 1
+2: 185 ConstantInterfaceMethodRefInfo java/util/List.contains(Ljava/lang/Object;)Z 2
+3: 154 <14>
+4: 178 ConstantFieldRefInfo java/lang/System.outLjava/io/PrintStream;
+5: 18 ConstantStringInfo Invalid string %s
+
+6: 4
+7: 189 ConstantClassInfo java/lang/Object
+8: 89
+9: 3
+10: 25 1
+11: 83
+12: 182 ConstantMethodRefInfo java/io/PrintStream.printf(Ljava/lang/String;[Ljava/lang/Object;)Ljava/io/PrintStream;
+13: 87
+14: 177
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 14
+start_pc: <4>
+line_number: 15
+start_pc: <14>
+line_number: 16
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <15>
+name_index: validStrings
+descriptor_index: Ljava/util/List;
+index: 0
+start_pc: <0>
+length: <15>
+name_index: s
+descriptor_index: Ljava/lang/String;
+index: 1
+attribute_name_index: StackMapTable
+number_of_entries: 1
+SAME <14>
+attribute_name_index: MethodParameters
+parameters_count: 2
+name_index: validStrings
+access_flags: 4112
+name_index: s
+access_flags: 4096
+attributes_count: 3
+attribute_name_index: BootstrapMethods
+num_bootstrap_methods: 1
+bootstrap_method_ref: ConstantMethodHandleInfo 6.ConstantMethodRefInfo java/lang/invoke/LambdaMetafactory.metafactory(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+num_bootstrap_arguments: 3
+bootstrap_argument: ConstantMethodTypeInfo (Ljava/lang/Object;)V
+bootstrap_argument: ConstantMethodHandleInfo 6.ConstantMethodRefInfo jdk8/AllInstructions.lambda$invokedynamic$0(Ljava/util/List;Ljava/lang/String;)V
+bootstrap_argument: ConstantMethodTypeInfo (Ljava/lang/String;)V
+attribute_name_index: InnerClasses
+number_of_classes: 1
+inner_class_info_index: ConstantClassInfo java/lang/invoke/MethodHandles$Lookup
+outer_class_info_index: ConstantClassInfo java/lang/invoke/MethodHandles
+inner_name_index: Lookup
+inner_class_access_flags: 25
+attribute_name_index: SourceFile
+sourcefile_index: AllInstructions.java

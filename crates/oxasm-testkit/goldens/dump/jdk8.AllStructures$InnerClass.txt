@@ -1,0 +1,167 @@
+magic: -889275714
+minor_version: 0
+major_version: 52
+access_flags: 32
+this_class: ConstantClassInfo jdk8/AllStructures$InnerClass
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 2
+access_flags: 18
+name_index: f
+descriptor_index: D
+attributes_count: 2
+attribute_name_index: RuntimeInvisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/ITUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 1
+attribute_name_index: RuntimeVisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/VTUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 0
+access_flags: 4112
+name_index: this$0
+descriptor_index: Ljdk8/AllStructures;
+attributes_count: 0
+methods_count: 3
+access_flags: 2
+name_index: <init>
+descriptor_index: (Ljdk8/AllStructures;D)V
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 3
+max_locals: 4
+0: 25 0
+1: 25 1
+2: 181 ConstantFieldRefInfo jdk8/AllStructures$InnerClass.this$0Ljdk8/AllStructures;
+3: 25 0
+4: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+5: 25 0
+6: 24 2
+7: 181 ConstantFieldRefInfo jdk8/AllStructures$InnerClass.fD
+8: 177
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 115
+start_pc: <5>
+line_number: 116
+start_pc: <8>
+line_number: 117
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <9>
+name_index: this
+descriptor_index: Ljdk8/AllStructures$InnerClass;
+index: 0
+start_pc: <0>
+length: <9>
+name_index: f
+descriptor_index: D
+index: 2
+attribute_name_index: LocalVariableTypeTable
+local_variable_type_table_length: 1
+start_pc: <0>
+length: <9>
+name_index: this
+signature_index: Ljdk8/AllStructures<TU0;TU1;TU2;>.InnerClass;
+index: 0
+attribute_name_index: MethodParameters
+parameters_count: 2
+name_index: this$0
+access_flags: 4112
+name_index: f
+access_flags: 0
+access_flags: 4096
+name_index: <init>
+descriptor_index: (Ljdk8/AllStructures;DLjdk8/AllStructures$1;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 4
+max_locals: 5
+0: 25 0
+1: 25 1
+2: 24 2
+3: 183 ConstantMethodRefInfo jdk8/AllStructures$InnerClass.<init>(Ljdk8/AllStructures;D)V
+4: 177
+exception_table_length: 0
+attributes_count: 3
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 109
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 4
+start_pc: <0>
+length: <5>
+name_index: this
+descriptor_index: Ljdk8/AllStructures$InnerClass;
+index: 0
+start_pc: <0>
+length: <5>
+name_index: x0
+descriptor_index: Ljdk8/AllStructures;
+index: 1
+start_pc: <0>
+length: <5>
+name_index: x1
+descriptor_index: D
+index: 2
+start_pc: <0>
+length: <5>
+name_index: x2
+descriptor_index: Ljdk8/AllStructures$1;
+index: 4
+attribute_name_index: LocalVariableTypeTable
+local_variable_type_table_length: 1
+start_pc: <0>
+length: <5>
+name_index: this
+signature_index: Ljdk8/AllStructures<TU0;TU1;TU2;>.InnerClass;
+index: 0
+access_flags: 4104
+name_index: access$300
+descriptor_index: (Ljdk8/AllStructures$InnerClass;)D
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 25 0
+1: 180 ConstantFieldRefInfo jdk8/AllStructures$InnerClass.fD
+2: 175
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 109
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <3>
+name_index: x0
+descriptor_index: Ljdk8/AllStructures$InnerClass;
+index: 0
+attributes_count: 2
+attribute_name_index: InnerClasses
+number_of_classes: 2
+inner_class_info_index: ConstantClassInfo jdk8/AllStructures$InnerClass
+outer_class_info_index: ConstantClassInfo jdk8/AllStructures
+inner_name_index: InnerClass
+inner_class_access_flags: 2
+inner_class_info_index: ConstantClassInfo jdk8/AllStructures$1
+outer_class_info_index: 0
+inner_name_index: 0
+inner_class_access_flags: 0
+attribute_name_index: SourceFile
+sourcefile_index: AllStructures.java

@@ -1,0 +1,182 @@
+// class version 45.3 (196653)
+// access flags 0x420
+abstract class jdk3/AllStructures implements java/lang/Runnable java/lang/Cloneable java/io/Serializable {
+
+  // access flags 0x2
+  private INNERCLASS jdk3/AllStructures$InnerClass jdk3/AllStructures InnerClass
+  // access flags 0x0
+  INNERCLASS jdk3/AllStructures$1 null null
+
+  // access flags 0x1A
+  private final static Ljava/lang/String; UTF8 = "\u0008\u0080\u0800\u8000"
+
+  // access flags 0x1A
+  private final static J serialVersionUID = 123456L
+
+  // access flags 0x1
+  public I f0
+
+  // access flags 0x4
+  protected F f1
+
+  // access flags 0x0
+  J f2
+
+  // access flags 0x2
+  private D f3
+
+  // access flags 0x8
+  static Ljdk3/AllStructures; f4
+
+  // access flags 0x10
+  final B f5 = 1
+
+  // access flags 0x80
+  transient C f6
+
+  // access flags 0x40
+  volatile S f7
+
+  // access flags 0x0
+  Z f8
+
+  // access flags 0x0
+  <init>()V
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+    ALOAD 0
+    ICONST_1
+    PUTFIELD jdk3/AllStructures.f5 : B
+    RETURN
+    MAXSTACK = 2
+    MAXLOCALS = 1
+
+  // access flags 0x1
+  public m0()I
+    ALOAD 0
+    GETFIELD jdk3/AllStructures.f0 : I
+    IRETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x4
+  protected m1()F
+    ALOAD 0
+    GETFIELD jdk3/AllStructures.f1 : F
+    FRETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x0
+  m2()J
+    ALOAD 0
+    GETFIELD jdk3/AllStructures.f2 : J
+    LRETURN
+    MAXSTACK = 2
+    MAXLOCALS = 1
+
+  // access flags 0x2
+  private m3()D
+    ALOAD 0
+    GETFIELD jdk3/AllStructures.f3 : D
+    DRETURN
+    MAXSTACK = 2
+    MAXLOCALS = 1
+
+  // access flags 0x8
+  static m4()Ljdk3/AllStructures;
+    GETSTATIC jdk3/AllStructures.f4 : Ljdk3/AllStructures;
+    ARETURN
+    MAXSTACK = 1
+    MAXLOCALS = 0
+
+  // access flags 0x10
+  final m5()B
+    ICONST_1
+    IRETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x800
+  strictfp m6()C
+    ALOAD 0
+    GETFIELD jdk3/AllStructures.f6 : C
+    IRETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x0
+  m7()S
+    ALOAD 0
+    GETFIELD jdk3/AllStructures.f7 : S
+    IRETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x400
+  abstract m8()Z
+
+  // access flags 0x9
+  public static main([Ljava/lang/String;)V
+    RETURN
+    MAXSTACK = 0
+    MAXLOCALS = 1
+
+  // access flags 0x1
+  public run()V
+    RETURN
+    MAXSTACK = 0
+    MAXLOCALS = 1
+
+  // access flags 0x21
+  public synchronized clone()Ljava/lang/Object;
+    ALOAD 0
+    ARETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x102
+  private native nativeMethod()V
+
+  // access flags 0x2
+  private anonymousInnerClass()Ljava/lang/Runnable; throws java/lang/Exception
+    ALOAD 0
+    GETFIELD jdk3/AllStructures.f0 : I
+    IFLE L0
+    NEW java/lang/Exception
+    DUP
+    INVOKESPECIAL java/lang/Exception.<init> ()V
+    ATHROW
+   L0
+    NEW jdk3/AllStructures$1
+    DUP
+    ALOAD 0
+    INVOKESPECIAL jdk3/AllStructures$1.<init> (Ljdk3/AllStructures;)V
+    ARETURN
+    MAXSTACK = 3
+    MAXLOCALS = 1
+
+  // access flags 0x1008
+  static synthetic access$000(Ljdk3/AllStructures;)D
+    ALOAD 0
+    GETFIELD jdk3/AllStructures.f3 : D
+    DRETURN
+    MAXSTACK = 2
+    MAXLOCALS = 1
+
+  // access flags 0x1008
+  static synthetic access$100(Ljdk3/AllStructures;)D
+    ALOAD 0
+    INVOKESPECIAL jdk3/AllStructures.m3 ()D
+    DRETURN
+    MAXSTACK = 2
+    MAXLOCALS = 1
+
+  // access flags 0x8
+  static <clinit>()V
+    ACONST_NULL
+    PUTSTATIC jdk3/AllStructures.f4 : Ljdk3/AllStructures;
+    RETURN
+    MAXSTACK = 1
+    MAXLOCALS = 0
+}

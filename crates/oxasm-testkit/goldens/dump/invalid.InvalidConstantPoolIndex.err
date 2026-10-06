@@ -1,0 +1,1 @@
+org.objectweb.asm.test.ClassFormatException: Invalid constant pool index: 65535

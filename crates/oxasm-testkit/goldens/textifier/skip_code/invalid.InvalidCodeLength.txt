@@ -1,0 +1,12 @@
+// class version 55.0 (55)
+// access flags 0x21
+public class invalid/InvalidCodeLength {
+
+  // compiled from: InvalidCodeLength.java
+
+  // access flags 0x11
+  public final I f
+
+  // access flags 0x1
+  public <init>(Z)V
+}

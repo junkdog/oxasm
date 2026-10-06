@@ -1,0 +1,1261 @@
+// class version 45.3 (196653)
+// access flags 0x20
+class jdk3/AllInstructions {
+
+
+  // access flags 0x2
+  private I f
+
+  // access flags 0x2
+  private J g
+
+  // access flags 0x2
+  private Ljdk3/AllInstructions; field
+
+  // access flags 0xA
+  private static Ljdk3/AllInstructions; staticField
+
+  // access flags 0x0
+  <init>()V
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+    RETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x0
+  <init>(IFJDLjava/lang/Object;)V
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+    RETURN
+    MAXSTACK = 1
+    MAXLOCALS = 8
+
+  // access flags 0x9
+  public static intInstructions(IIIIIIIII)I
+    ILOAD 0
+    ICONST_M1
+    IF_ICMPGE L0
+    ICONST_1
+    GOTO L1
+   L0
+    ICONST_0
+   L1
+    ISTORE 9
+    ILOAD 1
+    ICONST_1
+    IF_ICMPLE L2
+    ICONST_1
+    GOTO L3
+   L2
+    ICONST_0
+   L3
+    ISTORE 10
+    ILOAD 2
+    ICONST_2
+    IF_ICMPGT L4
+    ICONST_1
+    GOTO L5
+   L4
+    ICONST_0
+   L5
+    ISTORE 11
+    ILOAD 3
+    ICONST_3
+    IF_ICMPLT L6
+    ICONST_1
+    GOTO L7
+   L6
+    ICONST_0
+   L7
+    ISTORE 12
+    ILOAD 4
+    ICONST_4
+    IF_ICMPNE L8
+    ICONST_1
+    GOTO L9
+   L8
+    ICONST_0
+   L9
+    ISTORE 13
+    ILOAD 5
+    ICONST_5
+    IF_ICMPEQ L10
+    ICONST_1
+    GOTO L11
+   L10
+    ICONST_0
+   L11
+    ISTORE 14
+    ILOAD 9
+    IFEQ L12
+    ILOAD 6
+    ICONST_5
+    IADD
+    GOTO L13
+   L12
+    ILOAD 6
+    ICONST_5
+    ISUB
+   L13
+    ISTORE 0
+    ILOAD 10
+    IFEQ L14
+    ILOAD 7
+    BIPUSH 100
+    IMUL
+    GOTO L15
+   L14
+    ILOAD 7
+    BIPUSH 100
+    IDIV
+   L15
+    ISTORE 1
+    ILOAD 11
+    IFEQ L16
+    ILOAD 8
+    SIPUSH 10000
+    IREM
+    GOTO L17
+   L16
+    ILOAD 8
+    ICONST_M1
+    IXOR
+   L17
+    ISTORE 2
+    ILOAD 12
+    IFEQ L18
+    ILOAD 0
+    LDC 1000000
+    IAND
+    GOTO L19
+   L18
+    ILOAD 0
+    LDC 1000000
+    IOR
+   L19
+    ISTORE 3
+    ILOAD 13
+    IFEQ L20
+    ILOAD 1
+    ILOAD 2
+    IXOR
+    GOTO L21
+   L20
+    ILOAD 1
+    ILOAD 2
+    ISHL
+   L21
+    ISTORE 4
+    ILOAD 14
+    IFEQ L22
+    ILOAD 2
+    ILOAD 3
+    ISHR
+    GOTO L23
+   L22
+    ILOAD 2
+    ILOAD 3
+    IUSHR
+   L23
+    ISTORE 5
+    IINC 6 1
+    ILOAD 6
+    IFGE L24
+    ILOAD 6
+    INEG
+    GOTO L25
+   L24
+    ILOAD 6
+   L25
+    ISTORE 7
+    ILOAD 0
+    IFGE L26
+    ILOAD 1
+    GOTO L27
+   L26
+    ILOAD 2
+   L27
+    ISTORE 1
+    ILOAD 1
+    IFLE L28
+    ILOAD 2
+    GOTO L29
+   L28
+    ILOAD 3
+   L29
+    ISTORE 2
+    ILOAD 2
+    IFGT L30
+    ILOAD 3
+    GOTO L31
+   L30
+    ILOAD 4
+   L31
+    ISTORE 3
+    ILOAD 3
+    IFLT L32
+    ILOAD 4
+    GOTO L33
+   L32
+    ILOAD 5
+   L33
+    ISTORE 4
+    ILOAD 4
+    IFNE L34
+    ILOAD 5
+    GOTO L35
+   L34
+    ILOAD 6
+   L35
+    ISTORE 5
+    ILOAD 5
+    IFEQ L36
+    ILOAD 6
+    GOTO L37
+   L36
+    ILOAD 7
+   L37
+    ISTORE 6
+    ILOAD 0
+    ILOAD 1
+    IADD
+    ILOAD 2
+    IADD
+    ILOAD 3
+    IADD
+    ILOAD 4
+    IADD
+    ILOAD 5
+    IADD
+    ILOAD 6
+    IADD
+    ILOAD 7
+    IADD
+    ILOAD 8
+    IADD
+    IRETURN
+    MAXSTACK = 2
+    MAXLOCALS = 15
+
+  // access flags 0x9
+  public static longInstructions(JJJJJJJJJ)J
+    LLOAD 0
+    LDC -1L
+    LCMP
+    IFGE L0
+    ICONST_1
+    GOTO L1
+   L0
+    ICONST_0
+   L1
+    ISTORE 18
+    LLOAD 2
+    LCONST_1
+    LCMP
+    IFLE L2
+    ICONST_1
+    GOTO L3
+   L2
+    ICONST_0
+   L3
+    ISTORE 19
+    LLOAD 4
+    LDC 2L
+    LCMP
+    IFGT L4
+    ICONST_1
+    GOTO L5
+   L4
+    ICONST_0
+   L5
+    ISTORE 20
+    LLOAD 6
+    LDC 3L
+    LCMP
+    IFLT L6
+    ICONST_1
+    GOTO L7
+   L6
+    ICONST_0
+   L7
+    ISTORE 21
+    LLOAD 8
+    LDC 4L
+    LCMP
+    IFNE L8
+    ICONST_1
+    GOTO L9
+   L8
+    ICONST_0
+   L9
+    ISTORE 22
+    LLOAD 10
+    LDC 5L
+    LCMP
+    IFEQ L10
+    ICONST_1
+    GOTO L11
+   L10
+    ICONST_0
+   L11
+    ISTORE 23
+    ILOAD 18
+    IFEQ L12
+    LLOAD 12
+    LDC 5L
+    LADD
+    GOTO L13
+   L12
+    LLOAD 12
+    LDC 5L
+    LSUB
+   L13
+    LSTORE 0
+    ILOAD 19
+    IFEQ L14
+    LLOAD 14
+    LDC 100L
+    LMUL
+    GOTO L15
+   L14
+    LLOAD 14
+    LDC 100L
+    LDIV
+   L15
+    LSTORE 2
+    ILOAD 20
+    IFEQ L16
+    LLOAD 16
+    LDC 10000L
+    LREM
+    GOTO L17
+   L16
+    LLOAD 16
+    LDC -1L
+    LXOR
+   L17
+    LSTORE 4
+    ILOAD 21
+    IFEQ L18
+    LLOAD 0
+    LDC 1000000L
+    LAND
+    GOTO L19
+   L18
+    LLOAD 0
+    LDC 1000000L
+    LOR
+   L19
+    LSTORE 6
+    ILOAD 22
+    IFEQ L20
+    LLOAD 2
+    LLOAD 4
+    LXOR
+    GOTO L21
+   L20
+    LLOAD 2
+    LLOAD 4
+    L2I
+    LSHL
+   L21
+    LSTORE 8
+    ILOAD 23
+    IFEQ L22
+    LLOAD 4
+    LLOAD 6
+    L2I
+    LSHR
+    GOTO L23
+   L22
+    LLOAD 4
+    LLOAD 6
+    L2I
+    LUSHR
+   L23
+    LSTORE 10
+    LLOAD 12
+    LCONST_1
+    LADD
+    LSTORE 12
+    LLOAD 12
+    LCONST_0
+    LCMP
+    IFGE L24
+    LLOAD 12
+    LNEG
+    GOTO L25
+   L24
+    LLOAD 12
+   L25
+    LSTORE 14
+    LLOAD 0
+    LLOAD 2
+    LADD
+    LLOAD 4
+    LADD
+    LLOAD 6
+    LADD
+    LLOAD 8
+    LADD
+    LLOAD 10
+    LADD
+    LLOAD 12
+    LADD
+    LLOAD 14
+    LADD
+    LLOAD 16
+    LADD
+    LRETURN
+    MAXSTACK = 4
+    MAXLOCALS = 24
+
+  // access flags 0x9
+  public static floatInstructions(FFFFFFFFF)F
+    FLOAD 0
+    LDC -1.0F
+    FCMPG
+    IFGE L0
+    ICONST_1
+    GOTO L1
+   L0
+    ICONST_0
+   L1
+    ISTORE 9
+    FLOAD 1
+    FCONST_1
+    FCMPL
+    IFLE L2
+    ICONST_1
+    GOTO L3
+   L2
+    ICONST_0
+   L3
+    ISTORE 10
+    FLOAD 2
+    FCONST_2
+    FCMPG
+    IFGT L4
+    ICONST_1
+    GOTO L5
+   L4
+    ICONST_0
+   L5
+    ISTORE 11
+    FLOAD 3
+    LDC 3.0F
+    FCMPL
+    IFLT L6
+    ICONST_1
+    GOTO L7
+   L6
+    ICONST_0
+   L7
+    ISTORE 12
+    FLOAD 4
+    LDC 4.0F
+    FCMPL
+    IFNE L8
+    ICONST_1
+    GOTO L9
+   L8
+    ICONST_0
+   L9
+    ISTORE 13
+    FLOAD 5
+    LDC 5.0F
+    FCMPL
+    IFEQ L10
+    ICONST_1
+    GOTO L11
+   L10
+    ICONST_0
+   L11
+    ISTORE 14
+    ILOAD 9
+    IFEQ L12
+    FLOAD 6
+    LDC 5.0F
+    FADD
+    GOTO L13
+   L12
+    FLOAD 6
+    LDC 5.0F
+    FSUB
+   L13
+    FSTORE 0
+    ILOAD 10
+    IFEQ L14
+    FLOAD 7
+    LDC 100.0F
+    FMUL
+    GOTO L15
+   L14
+    FLOAD 7
+    LDC 100.0F
+    FDIV
+   L15
+    FSTORE 1
+    ILOAD 11
+    IFEQ L16
+    FLOAD 8
+    LDC 10000.0F
+    FREM
+    GOTO L17
+   L16
+    FLOAD 8
+   L17
+    FSTORE 2
+    ILOAD 12
+    IFEQ L18
+    FLOAD 3
+    FNEG
+    GOTO L19
+   L18
+    FLOAD 3
+   L19
+    FSTORE 3
+    ILOAD 13
+    IFEQ L20
+    FLOAD 4
+    FNEG
+    GOTO L21
+   L20
+    FLOAD 4
+   L21
+    FSTORE 4
+    ILOAD 14
+    IFEQ L22
+    FLOAD 5
+    FNEG
+    GOTO L23
+   L22
+    FLOAD 5
+   L23
+    FSTORE 5
+    FLOAD 6
+    FCONST_1
+    FADD
+    FSTORE 6
+    FLOAD 6
+    FCONST_0
+    FCMPG
+    IFGE L24
+    FLOAD 6
+    FNEG
+    GOTO L25
+   L24
+    FLOAD 6
+   L25
+    FSTORE 7
+    FLOAD 7
+    FSTORE 8
+    FLOAD 0
+    FLOAD 1
+    FADD
+    FLOAD 2
+    FADD
+    FLOAD 3
+    FADD
+    FLOAD 4
+    FADD
+    FLOAD 5
+    FADD
+    FLOAD 6
+    FADD
+    FLOAD 7
+    FADD
+    FLOAD 8
+    FADD
+    FRETURN
+    MAXSTACK = 2
+    MAXLOCALS = 15
+
+  // access flags 0x9
+  public static doubleInstructions(DDDDDDDDD)D
+    DLOAD 0
+    LDC -1.0D
+    DCMPG
+    IFGE L0
+    ICONST_1
+    GOTO L1
+   L0
+    ICONST_0
+   L1
+    ISTORE 18
+    DLOAD 2
+    DCONST_1
+    DCMPL
+    IFLE L2
+    ICONST_1
+    GOTO L3
+   L2
+    ICONST_0
+   L3
+    ISTORE 19
+    DLOAD 4
+    LDC 2.0D
+    DCMPG
+    IFGT L4
+    ICONST_1
+    GOTO L5
+   L4
+    ICONST_0
+   L5
+    ISTORE 20
+    DLOAD 6
+    LDC 3.0D
+    DCMPL
+    IFLT L6
+    ICONST_1
+    GOTO L7
+   L6
+    ICONST_0
+   L7
+    ISTORE 21
+    DLOAD 8
+    LDC 4.0D
+    DCMPL
+    IFNE L8
+    ICONST_1
+    GOTO L9
+   L8
+    ICONST_0
+   L9
+    ISTORE 22
+    DLOAD 10
+    LDC 5.0D
+    DCMPL
+    IFEQ L10
+    ICONST_1
+    GOTO L11
+   L10
+    ICONST_0
+   L11
+    ISTORE 23
+    ILOAD 18
+    IFEQ L12
+    DLOAD 12
+    LDC 5.0D
+    DADD
+    GOTO L13
+   L12
+    DLOAD 12
+    LDC 5.0D
+    DSUB
+   L13
+    DSTORE 0
+    ILOAD 19
+    IFEQ L14
+    DLOAD 14
+    LDC 100.0D
+    DMUL
+    GOTO L15
+   L14
+    DLOAD 14
+    LDC 100.0D
+    DDIV
+   L15
+    DSTORE 2
+    ILOAD 20
+    IFEQ L16
+    DLOAD 16
+    LDC 10000.0D
+    DREM
+    GOTO L17
+   L16
+    DLOAD 16
+   L17
+    DSTORE 4
+    ILOAD 21
+    IFEQ L18
+    DLOAD 6
+    DNEG
+    GOTO L19
+   L18
+    DLOAD 6
+   L19
+    DSTORE 6
+    ILOAD 22
+    IFEQ L20
+    DLOAD 8
+    DNEG
+    GOTO L21
+   L20
+    DLOAD 8
+   L21
+    DSTORE 8
+    ILOAD 23
+    IFEQ L22
+    DLOAD 10
+    DNEG
+    GOTO L23
+   L22
+    DLOAD 10
+   L23
+    DSTORE 10
+    DLOAD 12
+    DCONST_1
+    DADD
+    DSTORE 12
+    DLOAD 12
+    DCONST_0
+    DCMPG
+    IFGE L24
+    DLOAD 12
+    DNEG
+    GOTO L25
+   L24
+    DLOAD 12
+   L25
+    DSTORE 14
+    DLOAD 0
+    DLOAD 2
+    DADD
+    DLOAD 4
+    DADD
+    DLOAD 6
+    DADD
+    DLOAD 8
+    DADD
+    DLOAD 10
+    DADD
+    DLOAD 12
+    DADD
+    DLOAD 14
+    DADD
+    DLOAD 16
+    DADD
+    DRETURN
+    MAXSTACK = 4
+    MAXLOCALS = 24
+
+  // access flags 0x9
+  public static castInstructions(IJJ)D
+    ILOAD 0
+    I2B
+    ISTORE 5
+    LLOAD 1
+    L2I
+    I2C
+    ISTORE 6
+    LLOAD 3
+    L2I
+    I2S
+    ISTORE 7
+    ILOAD 5
+    I2L
+    LSTORE 8
+    ILOAD 6
+    I2F
+    FSTORE 10
+    ILOAD 7
+    I2D
+    DSTORE 11
+    LLOAD 8
+    LSTORE 1
+    LLOAD 1
+    LSTORE 3
+    DLOAD 11
+    D2L
+    LSTORE 8
+    ILOAD 0
+    I2L
+    LLOAD 1
+    LADD
+    LLOAD 3
+    LADD
+    ILOAD 5
+    I2L
+    LADD
+    ILOAD 6
+    I2L
+    LADD
+    ILOAD 7
+    I2L
+    LADD
+    LLOAD 8
+    LADD
+    L2F
+    FLOAD 10
+    FADD
+    F2D
+    DLOAD 11
+    DADD
+    DRETURN
+    MAXSTACK = 4
+    MAXLOCALS = 13
+
+  // access flags 0x9
+  public static castInstructions(FDD)F
+    FLOAD 0
+    F2I
+    I2B
+    ISTORE 5
+    DLOAD 1
+    D2I
+    I2C
+    ISTORE 6
+    DLOAD 3
+    D2I
+    I2S
+    ISTORE 7
+    ILOAD 5
+    I2L
+    LSTORE 8
+    ILOAD 6
+    I2F
+    FSTORE 10
+    ILOAD 7
+    I2D
+    DSTORE 11
+    LLOAD 8
+    L2D
+    DSTORE 1
+    DLOAD 1
+    DSTORE 3
+    FLOAD 10
+    F2L
+    LSTORE 8
+    FLOAD 0
+    F2D
+    DLOAD 1
+    DADD
+    DLOAD 3
+    DADD
+    ILOAD 5
+    I2D
+    DADD
+    ILOAD 6
+    I2D
+    DADD
+    ILOAD 7
+    I2D
+    DADD
+    LLOAD 8
+    L2D
+    DADD
+    FLOAD 10
+    F2D
+    DADD
+    DLOAD 11
+    DADD
+    D2F
+    FRETURN
+    MAXSTACK = 4
+    MAXLOCALS = 13
+
+  // access flags 0x9
+  public static objectInstructions(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+    ALOAD 0
+    ALOAD 1
+    IF_ACMPNE L0
+    ICONST_1
+    GOTO L1
+   L0
+    ICONST_0
+   L1
+    ISTORE 5
+    ALOAD 1
+    ALOAD 2
+    IF_ACMPEQ L2
+    ICONST_1
+    GOTO L3
+   L2
+    ICONST_0
+   L3
+    ISTORE 6
+    ALOAD 2
+    IFNONNULL L4
+    ICONST_1
+    GOTO L5
+   L4
+    ICONST_0
+   L5
+    ISTORE 7
+    ALOAD 3
+    IFNULL L6
+    ICONST_1
+    GOTO L7
+   L6
+    ICONST_0
+   L7
+    ISTORE 8
+    ALOAD 4
+    INSTANCEOF java/lang/String
+    ISTORE 9
+    ILOAD 5
+    IFEQ L8
+    ACONST_NULL
+    GOTO L9
+   L8
+    ALOAD 0
+   L9
+    ASTORE 0
+    ILOAD 6
+    IFEQ L10
+    ALOAD 1
+    GOTO L11
+   L10
+    ALOAD 0
+   L11
+    ASTORE 1
+    ILOAD 7
+    IFEQ L12
+    ALOAD 2
+    GOTO L13
+   L12
+    ALOAD 1
+   L13
+    ASTORE 2
+    ILOAD 8
+    IFEQ L14
+    ALOAD 3
+    GOTO L15
+   L14
+    ALOAD 2
+   L15
+    ASTORE 3
+    ILOAD 9
+    IFEQ L16
+    NEW java/lang/Integer
+    DUP
+    ALOAD 4
+    CHECKCAST java/lang/String
+    INVOKEVIRTUAL java/lang/String.length ()I
+    INVOKESPECIAL java/lang/Integer.<init> (I)V
+    GOTO L17
+   L16
+    ALOAD 3
+   L17
+    ASTORE 4
+    ALOAD 4
+    ARETURN
+    MAXSTACK = 3
+    MAXLOCALS = 10
+
+  // access flags 0x9
+  public static arrayInstructions([B[C[S[I[J[F[D[Ljava/lang/Object;)[Ljava/lang/Object;
+    ALOAD 0
+    ICONST_1
+    ALOAD 0
+    ICONST_0
+    BALOAD
+    BASTORE
+    ALOAD 1
+    ICONST_1
+    ALOAD 1
+    ICONST_0
+    CALOAD
+    CASTORE
+    ALOAD 2
+    ICONST_1
+    ALOAD 2
+    ICONST_0
+    SALOAD
+    SASTORE
+    ALOAD 3
+    ICONST_1
+    ALOAD 3
+    ICONST_0
+    IALOAD
+    IASTORE
+    ALOAD 4
+    ICONST_1
+    ALOAD 4
+    ICONST_0
+    LALOAD
+    LASTORE
+    ALOAD 5
+    ICONST_1
+    ALOAD 5
+    ICONST_0
+    FALOAD
+    FASTORE
+    ALOAD 6
+    ICONST_1
+    ALOAD 6
+    ICONST_0
+    DALOAD
+    DASTORE
+    ALOAD 7
+    ICONST_1
+    ALOAD 7
+    ICONST_0
+    AALOAD
+    AASTORE
+    ALOAD 7
+    ARRAYLENGTH
+    ANEWARRAY java/lang/Object
+    ASTORE 8
+    ALOAD 8
+    ICONST_0
+    ICONST_4
+    BIPUSH 8
+    BIPUSH 16
+    MULTIANEWARRAY [[[I 3
+    AASTORE
+    ALOAD 8
+    ARETURN
+    MAXSTACK = 5
+    MAXLOCALS = 9
+
+  // access flags 0x1
+  public fieldInstructions()V
+    ALOAD 0
+    GETFIELD jdk3/AllInstructions.field : Ljdk3/AllInstructions;
+    ASTORE 1
+    ALOAD 0
+    GETSTATIC jdk3/AllInstructions.staticField : Ljdk3/AllInstructions;
+    PUTFIELD jdk3/AllInstructions.field : Ljdk3/AllInstructions;
+    ALOAD 1
+    PUTSTATIC jdk3/AllInstructions.staticField : Ljdk3/AllInstructions;
+    RETURN
+    MAXSTACK = 2
+    MAXLOCALS = 2
+
+  // access flags 0x1
+  public methodInstructions(Ljava/lang/Runnable;)V
+    NEW jdk3/AllInstructions
+    DUP
+    INVOKESPECIAL jdk3/AllInstructions.<init> ()V
+    ASTORE 2
+    ALOAD 2
+    INVOKEVIRTUAL jdk3/AllInstructions.fieldInstructions ()V
+    ALOAD 2
+    INVOKESTATIC jdk3/AllInstructions.monitorInstructions (Ljava/lang/Object;)Ljava/lang/String;
+    POP
+    ALOAD 1
+    INVOKEINTERFACE java/lang/Runnable.run ()V (itf)
+    RETURN
+    MAXSTACK = 2
+    MAXLOCALS = 3
+
+  // access flags 0x9
+  public static lookupSwitchInstruction(I)I
+    ILOAD 0
+    LOOKUPSWITCH
+      1000: L0
+      10000: L1
+      100000: L2
+      default: L3
+   L0
+    ICONST_1
+    IRETURN
+   L1
+    ICONST_2
+    IRETURN
+   L2
+    ICONST_3
+    IRETURN
+   L3
+    ICONST_M1
+    IRETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x9
+  public static tableSwitchInstruction(I)I
+    ILOAD 0
+    TABLESWITCH
+      0: L0
+      1: L1
+      2: L2
+      default: L3
+   L0
+    ICONST_1
+    IRETURN
+   L1
+    ICONST_2
+    IRETURN
+   L2
+    ICONST_3
+    IRETURN
+   L3
+    ICONST_M1
+    IRETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+
+  // access flags 0x9
+  public static monitorInstructions(Ljava/lang/Object;)Ljava/lang/String;
+    TRYCATCHBLOCK L0 L1 L1 null
+    ALOAD 0
+    ASTORE 1
+    ALOAD 1
+    MONITORENTER
+   L0
+    ALOAD 0
+    INVOKEVIRTUAL java/lang/Object.toString ()Ljava/lang/String;
+    ASTORE 2
+    ALOAD 1
+    MONITOREXIT
+    ALOAD 2
+    ARETURN
+   L1
+    ASTORE 3
+    ALOAD 1
+    MONITOREXIT
+    ALOAD 3
+    ATHROW
+    MAXSTACK = 1
+    MAXLOCALS = 4
+
+  // access flags 0x1
+  public dupX1Instruction()I
+    ALOAD 0
+    DUP
+    GETFIELD jdk3/AllInstructions.f : I
+    DUP_X1
+    ICONST_1
+    IADD
+    PUTFIELD jdk3/AllInstructions.f : I
+    IRETURN
+    MAXSTACK = 4
+    MAXLOCALS = 1
+
+  // access flags 0x1
+  public dup2Instruction([JII)V
+    ALOAD 1
+    ILOAD 2
+    DUP2
+    LALOAD
+    LCONST_1
+    ILOAD 3
+    LSHL
+    LOR
+    LASTORE
+    RETURN
+    MAXSTACK = 7
+    MAXLOCALS = 4
+
+  // access flags 0x1
+  public dup2X1Instruction()J
+    ALOAD 0
+    DUP
+    GETFIELD jdk3/AllInstructions.g : J
+    DUP2_X1
+    LCONST_1
+    LADD
+    PUTFIELD jdk3/AllInstructions.g : J
+    LRETURN
+    MAXSTACK = 7
+    MAXLOCALS = 1
+
+  // access flags 0x1
+  public dup2X1InstructionVariant([Ljava/lang/String;ILjava/lang/Object;)V
+    NEW java/lang/StringBuffer
+    DUP
+    INVOKESPECIAL java/lang/StringBuffer.<init> ()V
+    ALOAD 1
+    ILOAD 2
+    DUP2_X1
+    AALOAD
+    INVOKEVIRTUAL java/lang/StringBuffer.append (Ljava/lang/String;)Ljava/lang/StringBuffer;
+    LDC " "
+    INVOKEVIRTUAL java/lang/StringBuffer.append (Ljava/lang/String;)Ljava/lang/StringBuffer;
+    ALOAD 3
+    INVOKEVIRTUAL java/lang/Object.toString ()Ljava/lang/String;
+    INVOKEVIRTUAL java/lang/StringBuffer.append (Ljava/lang/String;)Ljava/lang/StringBuffer;
+    INVOKEVIRTUAL java/lang/StringBuffer.toString ()Ljava/lang/String;
+    AASTORE
+    RETURN
+    MAXSTACK = 5
+    MAXLOCALS = 4
+
+  // access flags 0x1
+  public dupX2Instruction([I[I)V
+    ALOAD 1
+    ICONST_0
+    ALOAD 2
+    ICONST_0
+    ICONST_0
+    DUP_X2
+    IASTORE
+    IASTORE
+    RETURN
+    MAXSTACK = 6
+    MAXLOCALS = 3
+
+  // access flags 0x1
+  public dup2X2Instruction([J[J)V
+    ALOAD 1
+    ICONST_0
+    ALOAD 2
+    ICONST_0
+    LCONST_0
+    DUP2_X2
+    LASTORE
+    LASTORE
+    RETURN
+    MAXSTACK = 8
+    MAXLOCALS = 3
+
+  // access flags 0x1
+  public popInstructions()V
+    ALOAD 0
+    INVOKEVIRTUAL jdk3/AllInstructions.dupX1Instruction ()I
+    POP
+    ALOAD 0
+    INVOKEVIRTUAL jdk3/AllInstructions.dup2X1Instruction ()J
+    POP2
+    RETURN
+    MAXSTACK = 2
+    MAXLOCALS = 1
+
+  // access flags 0x1
+  public jsrAndRetInstructions(I)I throws java/lang/Exception
+    TRYCATCHBLOCK L0 L1 L2 java/lang/Throwable
+    TRYCATCHBLOCK L0 L3 L3 null
+    ILOAD 1
+    ICONST_1
+    IADD
+    ISTORE 2
+   L0
+    ALOAD 0
+    ILOAD 2
+    INVOKEVIRTUAL jdk3/AllInstructions.jsrAndRetInstructions (I)I
+    ISTORE 2
+   L1
+    JSR L4
+    GOTO L5
+   L2
+    ASTORE 3
+    ICONST_M1
+    ISTORE 4
+    JSR L4
+    ILOAD 4
+    IRETURN
+   L3
+    ASTORE 5
+    JSR L4
+    ALOAD 5
+    ATHROW
+   L4
+    ASTORE 6
+    IINC 2 1
+    RET 6
+   L5
+    ILOAD 2
+    IRETURN
+    MAXSTACK = 2
+    MAXLOCALS = 7
+
+  // access flags 0x1
+  public readNullArray()Ljava/lang/Object;
+    TRYCATCHBLOCK L0 L1 L1 java/lang/NullPointerException
+    ACONST_NULL
+    ASTORE 1
+   L0
+    ALOAD 1
+    ICONST_0
+    AALOAD
+    ARETURN
+   L1
+    ASTORE 2
+    ACONST_NULL
+    ARETURN
+    MAXSTACK = 2
+    MAXLOCALS = 3
+}

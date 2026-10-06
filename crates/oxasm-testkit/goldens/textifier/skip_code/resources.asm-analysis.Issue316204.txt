@@ -1,0 +1,30 @@
+// class version 46.0 (46)
+// access flags 0x21
+public class org/eclipse/core/runtime/internal/adaptor/BundleStopper {
+
+  // compiled from: BundleStopper.java
+
+  // access flags 0x2
+  private Ljava/util/Hashtable; stoppedBundles
+
+  // access flags 0x2
+  private [Lorg/eclipse/osgi/service/resolver/BundleDescription; allToStop
+
+  // access flags 0x2
+  private Lorg/osgi/framework/BundleContext; context
+
+  // access flags 0x1
+  public <init>(Lorg/osgi/framework/BundleContext;)V
+
+  // access flags 0x2
+  private logCycles([[Ljava/lang/Object;)V
+
+  // access flags 0x1
+  public stopBundles()V
+
+  // access flags 0x2
+  private basicStopBundles()V
+
+  // access flags 0x1
+  public isStopped(Lorg/osgi/framework/Bundle;)Z
+}

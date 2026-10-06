@@ -1,0 +1,13 @@
+[package]
+name = "oxasm-testkit"
+description = "Test corpus, goldens and helpers for the oxasm crates (unpublished)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

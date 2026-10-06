@@ -1,0 +1,103 @@
+magic: -889275714
+minor_version: 3
+major_version: 45
+access_flags: 32
+this_class: ConstantClassInfo jdk3/AllStructures$1
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 1
+interface: ConstantClassInfo java/lang/Runnable
+fields_count: 1
+access_flags: 18
+name_index: this$0
+descriptor_index: Ljdk3/AllStructures;
+attributes_count: 1
+attribute_name_index: Synthetic
+methods_count: 2
+access_flags: 0
+name_index: <init>
+descriptor_index: (Ljdk3/AllStructures;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 25 0
+3: 25 1
+4: 181 ConstantFieldRefInfo jdk3/AllStructures$1.this$0Ljdk3/AllStructures;
+5: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 41
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <6>
+name_index: this
+descriptor_index: Ljdk3/AllStructures$1;
+index: 0
+start_pc: <0>
+length: <6>
+name_index: this$0
+descriptor_index: Ljdk3/AllStructures;
+index: 1
+access_flags: 1
+name_index: run
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 10
+max_locals: 1
+0: 187 ConstantClassInfo jdk3/AllStructures$InnerClass
+1: 89
+2: 25 0
+3: 180 ConstantFieldRefInfo jdk3/AllStructures$1.this$0Ljdk3/AllStructures;
+4: 187 ConstantClassInfo jdk3/AllStructures$InnerClass
+5: 89
+6: 25 0
+7: 180 ConstantFieldRefInfo jdk3/AllStructures$1.this$0Ljdk3/AllStructures;
+8: 25 0
+9: 180 ConstantFieldRefInfo jdk3/AllStructures$1.this$0Ljdk3/AllStructures;
+10: 184 ConstantMethodRefInfo jdk3/AllStructures.access$000(Ljdk3/AllStructures;)D
+11: 25 0
+12: 180 ConstantFieldRefInfo jdk3/AllStructures$1.this$0Ljdk3/AllStructures;
+13: 184 ConstantMethodRefInfo jdk3/AllStructures.access$100(Ljdk3/AllStructures;)D
+14: 99
+15: 1
+16: 183 ConstantMethodRefInfo jdk3/AllStructures$InnerClass.<init>(Ljdk3/AllStructures;DLjdk3/AllStructures$1;)V
+17: 184 ConstantMethodRefInfo jdk3/AllStructures$InnerClass.access$300(Ljdk3/AllStructures$InnerClass;)D
+18: 1
+19: 183 ConstantMethodRefInfo jdk3/AllStructures$InnerClass.<init>(Ljdk3/AllStructures;DLjdk3/AllStructures$1;)V
+20: 87
+21: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 2
+start_pc: <0>
+line_number: 42
+start_pc: <21>
+line_number: 43
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <22>
+name_index: this
+descriptor_index: Ljdk3/AllStructures$1;
+index: 0
+attributes_count: 2
+attribute_name_index: InnerClasses
+number_of_classes: 2
+inner_class_info_index: ConstantClassInfo jdk3/AllStructures$1
+outer_class_info_index: 0
+inner_name_index: 0
+inner_class_access_flags: 0
+inner_class_info_index: ConstantClassInfo jdk3/AllStructures$InnerClass
+outer_class_info_index: ConstantClassInfo jdk3/AllStructures
+inner_name_index: InnerClass
+inner_class_access_flags: 2
+attribute_name_index: SourceFile
+sourcefile_index: AllStructures.java

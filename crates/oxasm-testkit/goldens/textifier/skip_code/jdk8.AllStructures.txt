@@ -1,0 +1,146 @@
+// class version 52.0 (52)
+// access flags 0x421
+// signature <U0:Ljava/lang/Object;U1::Ljava/util/List<TU0;>;U2::Ljava/util/Collection<TU0;>;>Ljava/util/HashMap<TU0;TU1;>;Ljava/util/concurrent/Callable<TU0;>;Ljava/util/concurrent/Future<TU1;>;
+// declaration: jdk8/AllStructures<U0, U1 extends java.util.List<U0>, U2 extends java.util.Collection<U0>> extends java.util.HashMap<U0, U1> implements java.util.concurrent.Callable<U0>, java.util.concurrent.Future<U1>
+public abstract class jdk8/AllStructures extends java/util/HashMap implements java/util/concurrent/Callable java/util/concurrent/Future {
+
+  // compiled from: AllStructures.java
+
+  @Lannotations/VTA;(v=0)
+
+  @Lannotations/ITA;(v=1) // invisible
+
+  @Lannotations/VTUA;(v=14) : CLASS_EXTENDS -1, null
+
+  @Lannotations/VTUA;(v=16) : CLASS_EXTENDS -1, 0;
+
+  @Lannotations/VTUA;(v=18) : CLASS_EXTENDS -1, 1;
+
+  @Lannotations/VTUA;(v=20) : CLASS_EXTENDS 0, null
+
+  @Lannotations/VTUA;(v=22) : CLASS_EXTENDS 0, 0;
+
+  @Lannotations/VTUA;(v=24) : CLASS_EXTENDS 1, null
+
+  @Lannotations/VTUA;(v=26) : CLASS_EXTENDS 1, 0;
+
+  @Lannotations/VTPA;(v=2) : CLASS_TYPE_PARAMETER 0, null
+
+  @Lannotations/VTPA;(v=4) : CLASS_TYPE_PARAMETER 1, null
+
+  @Lannotations/VTUA;(v=6) : CLASS_TYPE_PARAMETER_BOUND 1, 1, null
+
+  @Lannotations/VTPA;(v=8) : CLASS_TYPE_PARAMETER 2, null
+
+  @Lannotations/VTUA;(v=10) : CLASS_TYPE_PARAMETER_BOUND 2, 1, null
+
+  @Lannotations/VTUA;(v=12) : CLASS_TYPE_PARAMETER_BOUND 2, 1, 0;
+
+  @Lannotations/ITUA;(v=15) : CLASS_EXTENDS -1, null // invisible
+
+  @Lannotations/ITUA;(v=17) : CLASS_EXTENDS -1, 0; // invisible
+
+  @Lannotations/ITUA;(v=19) : CLASS_EXTENDS -1, 1; // invisible
+
+  @Lannotations/ITUA;(v=21) : CLASS_EXTENDS 0, null // invisible
+
+  @Lannotations/ITUA;(v=23) : CLASS_EXTENDS 0, 0; // invisible
+
+  @Lannotations/ITUA;(v=25) : CLASS_EXTENDS 1, null // invisible
+
+  @Lannotations/ITUA;(v=27) : CLASS_EXTENDS 1, 0; // invisible
+
+  @Lannotations/ITPA;(v=3) : CLASS_TYPE_PARAMETER 0, null // invisible
+
+  @Lannotations/ITPA;(v=5) : CLASS_TYPE_PARAMETER 1, null // invisible
+
+  @Lannotations/ITUA;(v=7) : CLASS_TYPE_PARAMETER_BOUND 1, 1, null // invisible
+
+  @Lannotations/ITPA;(v=9) : CLASS_TYPE_PARAMETER 2, null // invisible
+
+  @Lannotations/ITUA;(v=11) : CLASS_TYPE_PARAMETER_BOUND 2, 1, null // invisible
+
+  @Lannotations/ITUA;(v=13) : CLASS_TYPE_PARAMETER_BOUND 2, 1, 0; // invisible
+  // access flags 0x2
+  private INNERCLASS jdk8/AllStructures$𝔻 jdk8/AllStructures 𝔻
+  // access flags 0x2
+  private INNERCLASS jdk8/AllStructures$InnerClass jdk8/AllStructures InnerClass
+  // access flags 0x0
+  INNERCLASS jdk8/AllStructures$1 null null
+
+  // access flags 0x1
+  // signature Ljava/util/HashMap<TU0;TU1;>;
+  // declaration: f extends java.util.HashMap<U0, U1>
+  public Ljava/util/HashMap; f
+  @Lannotations/VFA;(v=28)
+  @Lannotations/IFA;(v=29) // invisible
+  @Lannotations/VTUA;(v=30) : FIELD, 0;
+  @Lannotations/VTUA;(v=32) : FIELD, 1;
+  @Lannotations/ITUA;(v=31) : FIELD, 0; // invisible
+  @Lannotations/ITUA;(v=33) : FIELD, 1; // invisible
+
+  // access flags 0x2
+  private D g
+
+  // access flags 0x1
+  public <init>()V
+  @Lannotations/VCA;(v=34)
+  @Lannotations/ICA;(v=35) // invisible
+
+  // access flags 0x1
+  // signature <V0:TU0;V1:TU1;>(TV0;TV1;Ljava/util/Map<+TV0;+TV1;>;)Ljava/util/Map<+TV0;+TV1;>;
+  // declaration: java.util.Map<? extends V0, ? extends V1> m<V0 extends U0, V1 extends U1>(V0, V1, java.util.Map<? extends V0, ? extends V1>)
+  public m(Ljava/lang/Object;Ljava/util/List;Ljava/util/Map;)Ljava/util/Map; throws java/lang/IllegalStateException java/lang/IllegalArgumentException
+    // parameter  p0
+    // parameter  p1
+    // parameter  p2
+  @Lannotations/VMA;(v=36)
+  @Lannotations/IMA;(v=37) // invisible
+  @Lannotations/VTUA;(v=48) : METHOD_RETURN, 0;
+  @Lannotations/VTUA;(v=50) : METHOD_RETURN, 1;
+  @Lannotations/VTPA;(v=38) : METHOD_TYPE_PARAMETER 0, null
+  @Lannotations/VTUA;(v=40) : METHOD_TYPE_PARAMETER_BOUND 0, 0, null
+  @Lannotations/VTUA;(v=42) : METHOD_TYPE_PARAMETER 1, null
+  @Lannotations/VTUA;(v=44) : METHOD_TYPE_PARAMETER_BOUND 1, 0, null
+  @Lannotations/VTUA;(v=62) : THROWS 0, null
+  @Lannotations/VTUA;(v=64) : THROWS 1, null
+  @Lannotations/VTUA;(v=46) : METHOD_RETURN, null
+  @Lannotations/VTUA;(v=58) : METHOD_FORMAL_PARAMETER 2, 0;
+  @Lannotations/VTUA;(v=60) : METHOD_FORMAL_PARAMETER 2, 1;
+  @Lannotations/ITUA;(v=49) : METHOD_RETURN, 0; // invisible
+  @Lannotations/ITUA;(v=51) : METHOD_RETURN, 1; // invisible
+  @Lannotations/ITPA;(v=39) : METHOD_TYPE_PARAMETER 0, null // invisible
+  @Lannotations/ITUA;(v=41) : METHOD_TYPE_PARAMETER_BOUND 0, 0, null // invisible
+  @Lannotations/ITUA;(v=43) : METHOD_TYPE_PARAMETER 1, null // invisible
+  @Lannotations/ITUA;(v=45) : METHOD_TYPE_PARAMETER_BOUND 1, 0, null // invisible
+  @Lannotations/ITUA;(v=63) : THROWS 0, null // invisible
+  @Lannotations/ITUA;(v=65) : THROWS 1, null // invisible
+  @Lannotations/ITUA;(v=47) : METHOD_RETURN, null // invisible
+  @Lannotations/ITUA;(v=59) : METHOD_FORMAL_PARAMETER 2, 0; // invisible
+  @Lannotations/ITUA;(v=61) : METHOD_FORMAL_PARAMETER 2, 1; // invisible
+    // annotable parameter count: 3 (visible)
+    @Lannotations/VPA;(v=52) // parameter 0
+    @Lannotations/VPA;(v=54) // parameter 1
+    @Lannotations/VPA;(v=56) // parameter 2
+    // annotable parameter count: 3 (invisible)
+    @Lannotations/IPA;(v=53) // invisible, parameter 0
+    @Lannotations/IPA;(v=55) // invisible, parameter 1
+    @Lannotations/IPA;(v=57) // invisible, parameter 2
+
+  // access flags 0xA
+  // signature <U:Ljava/lang/Object;V:Ljava/lang/Object;>()V
+  // declaration: void m<U, V>()
+  private static m()V
+
+  // access flags 0x2
+  private n()D
+
+  // access flags 0x2
+  private anonymousInnerClass()Ljava/lang/Runnable; throws java/lang/Exception
+
+  // access flags 0x1008
+  static synthetic access$000(Ljdk8/AllStructures;)D
+
+  // access flags 0x1008
+  static synthetic access$100(Ljdk8/AllStructures;)D
+}

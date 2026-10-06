@@ -1,0 +1,19 @@
+// class version 45.3 (196653)
+// access flags 0x20
+class jdk3/AllStructures$1 implements java/lang/Runnable {
+
+  // compiled from: AllStructures.java
+  // access flags 0x0
+  INNERCLASS jdk3/AllStructures$1 null null
+  // access flags 0x2
+  private INNERCLASS jdk3/AllStructures$InnerClass jdk3/AllStructures InnerClass
+
+  // access flags 0x1012
+  private final synthetic Ljdk3/AllStructures; this$0
+
+  // access flags 0x0
+  <init>(Ljdk3/AllStructures;)V
+
+  // access flags 0x1
+  public run()V
+}

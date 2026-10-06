@@ -1,0 +1,13 @@
+// class version 53.0 (53)
+// access flags 0x21
+public class pkg/internal/AImpl extends pkg/A {
+
+
+  // access flags 0x1
+  public <init>()V
+    ALOAD 0
+    INVOKESPECIAL pkg/A.<init> ()V
+    RETURN
+    MAXSTACK = 1
+    MAXLOCALS = 1
+}

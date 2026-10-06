@@ -1,0 +1,2318 @@
+magic: -889275714
+minor_version: 3
+major_version: 45
+access_flags: 32
+this_class: ConstantClassInfo jdk3/AllInstructions
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 4
+access_flags: 2
+name_index: f
+descriptor_index: I
+attributes_count: 0
+access_flags: 2
+name_index: g
+descriptor_index: J
+attributes_count: 0
+access_flags: 2
+name_index: field
+descriptor_index: Ljdk3/AllInstructions;
+attributes_count: 0
+access_flags: 10
+name_index: staticField
+descriptor_index: Ljdk3/AllInstructions;
+attributes_count: 0
+methods_count: 24
+access_flags: 0
+name_index: <init>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 41
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <3>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+access_flags: 0
+name_index: <init>
+descriptor_index: (IFJDLjava/lang/Object;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 8
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 43
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 6
+start_pc: <0>
+length: <3>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+start_pc: <0>
+length: <3>
+name_index: v0
+descriptor_index: I
+index: 1
+start_pc: <0>
+length: <3>
+name_index: v1
+descriptor_index: F
+index: 2
+start_pc: <0>
+length: <3>
+name_index: v2
+descriptor_index: J
+index: 3
+start_pc: <0>
+length: <3>
+name_index: v3
+descriptor_index: D
+index: 5
+start_pc: <0>
+length: <3>
+name_index: v4
+descriptor_index: Ljava/lang/Object;
+index: 7
+access_flags: 9
+name_index: intInstructions
+descriptor_index: (IIIIIIIII)I
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 15
+0: 21 0
+1: 2
+2: 162 <5>
+3: 4
+4: 167 <6>
+5: 3
+6: 54 9
+7: 21 1
+8: 4
+9: 164 <12>
+10: 4
+11: 167 <13>
+12: 3
+13: 54 10
+14: 21 2
+15: 5
+16: 163 <19>
+17: 4
+18: 167 <20>
+19: 3
+20: 54 11
+21: 21 3
+22: 6
+23: 161 <26>
+24: 4
+25: 167 <27>
+26: 3
+27: 54 12
+28: 21 4
+29: 7
+30: 160 <33>
+31: 4
+32: 167 <34>
+33: 3
+34: 54 13
+35: 21 5
+36: 8
+37: 159 <40>
+38: 4
+39: 167 <41>
+40: 3
+41: 54 14
+42: 21 9
+43: 153 <48>
+44: 21 6
+45: 8
+46: 96
+47: 167 <51>
+48: 21 6
+49: 8
+50: 100
+51: 54 0
+52: 21 10
+53: 153 <58>
+54: 21 7
+55: 16 100
+56: 104
+57: 167 <61>
+58: 21 7
+59: 16 100
+60: 108
+61: 54 1
+62: 21 11
+63: 153 <68>
+64: 21 8
+65: 17 10000
+66: 112
+67: 167 <71>
+68: 21 8
+69: 2
+70: 130
+71: 54 2
+72: 21 12
+73: 153 <78>
+74: 21 0
+75: 18 1000000
+76: 126
+77: 167 <81>
+78: 21 0
+79: 18 1000000
+80: 128
+81: 54 3
+82: 21 13
+83: 153 <88>
+84: 21 1
+85: 21 2
+86: 130
+87: 167 <91>
+88: 21 1
+89: 21 2
+90: 120
+91: 54 4
+92: 21 14
+93: 153 <98>
+94: 21 2
+95: 21 3
+96: 122
+97: 167 <101>
+98: 21 2
+99: 21 3
+100: 124
+101: 54 5
+102: 132 6 1
+103: 21 6
+104: 156 <108>
+105: 21 6
+106: 116
+107: 167 <109>
+108: 21 6
+109: 54 7
+110: 21 0
+111: 156 <114>
+112: 21 1
+113: 167 <115>
+114: 21 2
+115: 54 1
+116: 21 1
+117: 158 <120>
+118: 21 2
+119: 167 <121>
+120: 21 3
+121: 54 2
+122: 21 2
+123: 157 <126>
+124: 21 3
+125: 167 <127>
+126: 21 4
+127: 54 3
+128: 21 3
+129: 155 <132>
+130: 21 4
+131: 167 <133>
+132: 21 5
+133: 54 4
+134: 21 4
+135: 154 <138>
+136: 21 5
+137: 167 <139>
+138: 21 6
+139: 54 5
+140: 21 5
+141: 153 <144>
+142: 21 6
+143: 167 <145>
+144: 21 7
+145: 54 6
+146: 21 0
+147: 21 1
+148: 96
+149: 21 2
+150: 96
+151: 21 3
+152: 96
+153: 21 4
+154: 96
+155: 21 5
+156: 96
+157: 21 6
+158: 96
+159: 21 7
+160: 96
+161: 21 8
+162: 96
+163: 172
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 21
+start_pc: <0>
+line_number: 47
+start_pc: <7>
+line_number: 48
+start_pc: <14>
+line_number: 49
+start_pc: <21>
+line_number: 50
+start_pc: <28>
+line_number: 51
+start_pc: <35>
+line_number: 52
+start_pc: <42>
+line_number: 53
+start_pc: <52>
+line_number: 54
+start_pc: <62>
+line_number: 55
+start_pc: <72>
+line_number: 56
+start_pc: <82>
+line_number: 57
+start_pc: <92>
+line_number: 58
+start_pc: <102>
+line_number: 59
+start_pc: <103>
+line_number: 60
+start_pc: <110>
+line_number: 61
+start_pc: <116>
+line_number: 62
+start_pc: <122>
+line_number: 63
+start_pc: <128>
+line_number: 64
+start_pc: <134>
+line_number: 65
+start_pc: <140>
+line_number: 66
+start_pc: <146>
+line_number: 67
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 15
+start_pc: <0>
+length: <164>
+name_index: v0
+descriptor_index: I
+index: 0
+start_pc: <0>
+length: <164>
+name_index: v1
+descriptor_index: I
+index: 1
+start_pc: <0>
+length: <164>
+name_index: v2
+descriptor_index: I
+index: 2
+start_pc: <0>
+length: <164>
+name_index: v3
+descriptor_index: I
+index: 3
+start_pc: <0>
+length: <164>
+name_index: v4
+descriptor_index: I
+index: 4
+start_pc: <0>
+length: <164>
+name_index: v5
+descriptor_index: I
+index: 5
+start_pc: <0>
+length: <164>
+name_index: v6
+descriptor_index: I
+index: 6
+start_pc: <0>
+length: <164>
+name_index: v7
+descriptor_index: I
+index: 7
+start_pc: <0>
+length: <164>
+name_index: v8
+descriptor_index: I
+index: 8
+start_pc: <7>
+length: <164>
+name_index: b0
+descriptor_index: Z
+index: 9
+start_pc: <14>
+length: <164>
+name_index: b1
+descriptor_index: Z
+index: 10
+start_pc: <21>
+length: <164>
+name_index: b2
+descriptor_index: Z
+index: 11
+start_pc: <28>
+length: <164>
+name_index: b3
+descriptor_index: Z
+index: 12
+start_pc: <35>
+length: <164>
+name_index: b4
+descriptor_index: Z
+index: 13
+start_pc: <42>
+length: <164>
+name_index: b5
+descriptor_index: Z
+index: 14
+access_flags: 9
+name_index: longInstructions
+descriptor_index: (JJJJJJJJJ)J
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 4
+max_locals: 24
+0: 22 0
+1: 20 -1
+2: 148
+3: 156 <6>
+4: 4
+5: 167 <7>
+6: 3
+7: 54 18
+8: 22 2
+9: 10
+10: 148
+11: 158 <14>
+12: 4
+13: 167 <15>
+14: 3
+15: 54 19
+16: 22 4
+17: 20 2
+18: 148
+19: 157 <22>
+20: 4
+21: 167 <23>
+22: 3
+23: 54 20
+24: 22 6
+25: 20 3
+26: 148
+27: 155 <30>
+28: 4
+29: 167 <31>
+30: 3
+31: 54 21
+32: 22 8
+33: 20 4
+34: 148
+35: 154 <38>
+36: 4
+37: 167 <39>
+38: 3
+39: 54 22
+40: 22 10
+41: 20 5
+42: 148
+43: 153 <46>
+44: 4
+45: 167 <47>
+46: 3
+47: 54 23
+48: 21 18
+49: 153 <54>
+50: 22 12
+51: 20 5
+52: 97
+53: 167 <57>
+54: 22 12
+55: 20 5
+56: 101
+57: 55 0
+58: 21 19
+59: 153 <64>
+60: 22 14
+61: 20 100
+62: 105
+63: 167 <67>
+64: 22 14
+65: 20 100
+66: 109
+67: 55 2
+68: 21 20
+69: 153 <74>
+70: 22 16
+71: 20 10000
+72: 113
+73: 167 <77>
+74: 22 16
+75: 20 -1
+76: 131
+77: 55 4
+78: 21 21
+79: 153 <84>
+80: 22 0
+81: 20 1000000
+82: 127
+83: 167 <87>
+84: 22 0
+85: 20 1000000
+86: 129
+87: 55 6
+88: 21 22
+89: 153 <94>
+90: 22 2
+91: 22 4
+92: 131
+93: 167 <98>
+94: 22 2
+95: 22 4
+96: 136
+97: 121
+98: 55 8
+99: 21 23
+100: 153 <106>
+101: 22 4
+102: 22 6
+103: 136
+104: 123
+105: 167 <110>
+106: 22 4
+107: 22 6
+108: 136
+109: 125
+110: 55 10
+111: 22 12
+112: 10
+113: 97
+114: 55 12
+115: 22 12
+116: 9
+117: 148
+118: 156 <122>
+119: 22 12
+120: 117
+121: 167 <123>
+122: 22 12
+123: 55 14
+124: 22 0
+125: 22 2
+126: 97
+127: 22 4
+128: 97
+129: 22 6
+130: 97
+131: 22 8
+132: 97
+133: 22 10
+134: 97
+135: 22 12
+136: 97
+137: 22 14
+138: 97
+139: 22 16
+140: 97
+141: 173
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 15
+start_pc: <0>
+line_number: 72
+start_pc: <8>
+line_number: 73
+start_pc: <16>
+line_number: 74
+start_pc: <24>
+line_number: 75
+start_pc: <32>
+line_number: 76
+start_pc: <40>
+line_number: 77
+start_pc: <48>
+line_number: 78
+start_pc: <58>
+line_number: 79
+start_pc: <68>
+line_number: 80
+start_pc: <78>
+line_number: 81
+start_pc: <88>
+line_number: 82
+start_pc: <99>
+line_number: 83
+start_pc: <111>
+line_number: 84
+start_pc: <115>
+line_number: 85
+start_pc: <124>
+line_number: 86
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 15
+start_pc: <0>
+length: <142>
+name_index: v0
+descriptor_index: J
+index: 0
+start_pc: <0>
+length: <142>
+name_index: v1
+descriptor_index: J
+index: 2
+start_pc: <0>
+length: <142>
+name_index: v2
+descriptor_index: J
+index: 4
+start_pc: <0>
+length: <142>
+name_index: v3
+descriptor_index: J
+index: 6
+start_pc: <0>
+length: <142>
+name_index: v4
+descriptor_index: J
+index: 8
+start_pc: <0>
+length: <142>
+name_index: v5
+descriptor_index: J
+index: 10
+start_pc: <0>
+length: <142>
+name_index: v6
+descriptor_index: J
+index: 12
+start_pc: <0>
+length: <142>
+name_index: v7
+descriptor_index: J
+index: 14
+start_pc: <0>
+length: <142>
+name_index: v8
+descriptor_index: J
+index: 16
+start_pc: <8>
+length: <142>
+name_index: b0
+descriptor_index: Z
+index: 18
+start_pc: <16>
+length: <142>
+name_index: b1
+descriptor_index: Z
+index: 19
+start_pc: <24>
+length: <142>
+name_index: b2
+descriptor_index: Z
+index: 20
+start_pc: <32>
+length: <142>
+name_index: b3
+descriptor_index: Z
+index: 21
+start_pc: <40>
+length: <142>
+name_index: b4
+descriptor_index: Z
+index: 22
+start_pc: <48>
+length: <142>
+name_index: b5
+descriptor_index: Z
+index: 23
+access_flags: 9
+name_index: floatInstructions
+descriptor_index: (FFFFFFFFF)F
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 15
+0: 23 0
+1: 18 -1.0
+2: 150
+3: 156 <6>
+4: 4
+5: 167 <7>
+6: 3
+7: 54 9
+8: 23 1
+9: 12
+10: 149
+11: 158 <14>
+12: 4
+13: 167 <15>
+14: 3
+15: 54 10
+16: 23 2
+17: 13
+18: 150
+19: 157 <22>
+20: 4
+21: 167 <23>
+22: 3
+23: 54 11
+24: 23 3
+25: 18 3.0
+26: 149
+27: 155 <30>
+28: 4
+29: 167 <31>
+30: 3
+31: 54 12
+32: 23 4
+33: 18 4.0
+34: 149
+35: 154 <38>
+36: 4
+37: 167 <39>
+38: 3
+39: 54 13
+40: 23 5
+41: 18 5.0
+42: 149
+43: 153 <46>
+44: 4
+45: 167 <47>
+46: 3
+47: 54 14
+48: 21 9
+49: 153 <54>
+50: 23 6
+51: 18 5.0
+52: 98
+53: 167 <57>
+54: 23 6
+55: 18 5.0
+56: 102
+57: 56 0
+58: 21 10
+59: 153 <64>
+60: 23 7
+61: 18 100.0
+62: 106
+63: 167 <67>
+64: 23 7
+65: 18 100.0
+66: 110
+67: 56 1
+68: 21 11
+69: 153 <74>
+70: 23 8
+71: 18 10000.0
+72: 114
+73: 167 <75>
+74: 23 8
+75: 56 2
+76: 21 12
+77: 153 <81>
+78: 23 3
+79: 118
+80: 167 <82>
+81: 23 3
+82: 56 3
+83: 21 13
+84: 153 <88>
+85: 23 4
+86: 118
+87: 167 <89>
+88: 23 4
+89: 56 4
+90: 21 14
+91: 153 <95>
+92: 23 5
+93: 118
+94: 167 <96>
+95: 23 5
+96: 56 5
+97: 23 6
+98: 12
+99: 98
+100: 56 6
+101: 23 6
+102: 11
+103: 150
+104: 156 <108>
+105: 23 6
+106: 118
+107: 167 <109>
+108: 23 6
+109: 56 7
+110: 23 7
+111: 56 8
+112: 23 0
+113: 23 1
+114: 98
+115: 23 2
+116: 98
+117: 23 3
+118: 98
+119: 23 4
+120: 98
+121: 23 5
+122: 98
+123: 23 6
+124: 98
+125: 23 7
+126: 98
+127: 23 8
+128: 98
+129: 174
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 16
+start_pc: <0>
+line_number: 91
+start_pc: <8>
+line_number: 92
+start_pc: <16>
+line_number: 93
+start_pc: <24>
+line_number: 94
+start_pc: <32>
+line_number: 95
+start_pc: <40>
+line_number: 96
+start_pc: <48>
+line_number: 97
+start_pc: <58>
+line_number: 98
+start_pc: <68>
+line_number: 99
+start_pc: <76>
+line_number: 100
+start_pc: <83>
+line_number: 101
+start_pc: <90>
+line_number: 102
+start_pc: <97>
+line_number: 103
+start_pc: <101>
+line_number: 104
+start_pc: <110>
+line_number: 105
+start_pc: <112>
+line_number: 106
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 15
+start_pc: <0>
+length: <130>
+name_index: v0
+descriptor_index: F
+index: 0
+start_pc: <0>
+length: <130>
+name_index: v1
+descriptor_index: F
+index: 1
+start_pc: <0>
+length: <130>
+name_index: v2
+descriptor_index: F
+index: 2
+start_pc: <0>
+length: <130>
+name_index: v3
+descriptor_index: F
+index: 3
+start_pc: <0>
+length: <130>
+name_index: v4
+descriptor_index: F
+index: 4
+start_pc: <0>
+length: <130>
+name_index: v5
+descriptor_index: F
+index: 5
+start_pc: <0>
+length: <130>
+name_index: v6
+descriptor_index: F
+index: 6
+start_pc: <0>
+length: <130>
+name_index: v7
+descriptor_index: F
+index: 7
+start_pc: <0>
+length: <130>
+name_index: v8
+descriptor_index: F
+index: 8
+start_pc: <8>
+length: <130>
+name_index: b0
+descriptor_index: Z
+index: 9
+start_pc: <16>
+length: <130>
+name_index: b1
+descriptor_index: Z
+index: 10
+start_pc: <24>
+length: <130>
+name_index: b2
+descriptor_index: Z
+index: 11
+start_pc: <32>
+length: <130>
+name_index: b3
+descriptor_index: Z
+index: 12
+start_pc: <40>
+length: <130>
+name_index: b4
+descriptor_index: Z
+index: 13
+start_pc: <48>
+length: <130>
+name_index: b5
+descriptor_index: Z
+index: 14
+access_flags: 9
+name_index: doubleInstructions
+descriptor_index: (DDDDDDDDD)D
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 4
+max_locals: 24
+0: 24 0
+1: 20 -1.0
+2: 152
+3: 156 <6>
+4: 4
+5: 167 <7>
+6: 3
+7: 54 18
+8: 24 2
+9: 15
+10: 151
+11: 158 <14>
+12: 4
+13: 167 <15>
+14: 3
+15: 54 19
+16: 24 4
+17: 20 2.0
+18: 152
+19: 157 <22>
+20: 4
+21: 167 <23>
+22: 3
+23: 54 20
+24: 24 6
+25: 20 3.0
+26: 151
+27: 155 <30>
+28: 4
+29: 167 <31>
+30: 3
+31: 54 21
+32: 24 8
+33: 20 4.0
+34: 151
+35: 154 <38>
+36: 4
+37: 167 <39>
+38: 3
+39: 54 22
+40: 24 10
+41: 20 5.0
+42: 151
+43: 153 <46>
+44: 4
+45: 167 <47>
+46: 3
+47: 54 23
+48: 21 18
+49: 153 <54>
+50: 24 12
+51: 20 5.0
+52: 99
+53: 167 <57>
+54: 24 12
+55: 20 5.0
+56: 103
+57: 57 0
+58: 21 19
+59: 153 <64>
+60: 24 14
+61: 20 100.0
+62: 107
+63: 167 <67>
+64: 24 14
+65: 20 100.0
+66: 111
+67: 57 2
+68: 21 20
+69: 153 <74>
+70: 24 16
+71: 20 10000.0
+72: 115
+73: 167 <75>
+74: 24 16
+75: 57 4
+76: 21 21
+77: 153 <81>
+78: 24 6
+79: 119
+80: 167 <82>
+81: 24 6
+82: 57 6
+83: 21 22
+84: 153 <88>
+85: 24 8
+86: 119
+87: 167 <89>
+88: 24 8
+89: 57 8
+90: 21 23
+91: 153 <95>
+92: 24 10
+93: 119
+94: 167 <96>
+95: 24 10
+96: 57 10
+97: 24 12
+98: 15
+99: 99
+100: 57 12
+101: 24 12
+102: 14
+103: 152
+104: 156 <108>
+105: 24 12
+106: 119
+107: 167 <109>
+108: 24 12
+109: 57 14
+110: 24 0
+111: 24 2
+112: 99
+113: 24 4
+114: 99
+115: 24 6
+116: 99
+117: 24 8
+118: 99
+119: 24 10
+120: 99
+121: 24 12
+122: 99
+123: 24 14
+124: 99
+125: 24 16
+126: 99
+127: 175
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 15
+start_pc: <0>
+line_number: 119
+start_pc: <8>
+line_number: 120
+start_pc: <16>
+line_number: 121
+start_pc: <24>
+line_number: 122
+start_pc: <32>
+line_number: 123
+start_pc: <40>
+line_number: 124
+start_pc: <48>
+line_number: 125
+start_pc: <58>
+line_number: 126
+start_pc: <68>
+line_number: 127
+start_pc: <76>
+line_number: 128
+start_pc: <83>
+line_number: 129
+start_pc: <90>
+line_number: 130
+start_pc: <97>
+line_number: 131
+start_pc: <101>
+line_number: 132
+start_pc: <110>
+line_number: 133
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 15
+start_pc: <0>
+length: <128>
+name_index: v0
+descriptor_index: D
+index: 0
+start_pc: <0>
+length: <128>
+name_index: v1
+descriptor_index: D
+index: 2
+start_pc: <0>
+length: <128>
+name_index: v2
+descriptor_index: D
+index: 4
+start_pc: <0>
+length: <128>
+name_index: v3
+descriptor_index: D
+index: 6
+start_pc: <0>
+length: <128>
+name_index: v4
+descriptor_index: D
+index: 8
+start_pc: <0>
+length: <128>
+name_index: v5
+descriptor_index: D
+index: 10
+start_pc: <0>
+length: <128>
+name_index: v6
+descriptor_index: D
+index: 12
+start_pc: <0>
+length: <128>
+name_index: v7
+descriptor_index: D
+index: 14
+start_pc: <0>
+length: <128>
+name_index: v8
+descriptor_index: D
+index: 16
+start_pc: <8>
+length: <128>
+name_index: b0
+descriptor_index: Z
+index: 18
+start_pc: <16>
+length: <128>
+name_index: b1
+descriptor_index: Z
+index: 19
+start_pc: <24>
+length: <128>
+name_index: b2
+descriptor_index: Z
+index: 20
+start_pc: <32>
+length: <128>
+name_index: b3
+descriptor_index: Z
+index: 21
+start_pc: <40>
+length: <128>
+name_index: b4
+descriptor_index: Z
+index: 22
+start_pc: <48>
+length: <128>
+name_index: b5
+descriptor_index: Z
+index: 23
+access_flags: 9
+name_index: castInstructions
+descriptor_index: (IJJ)D
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 4
+max_locals: 13
+0: 21 0
+1: 145
+2: 54 5
+3: 22 1
+4: 136
+5: 146
+6: 54 6
+7: 22 3
+8: 136
+9: 147
+10: 54 7
+11: 21 5
+12: 133
+13: 55 8
+14: 21 6
+15: 134
+16: 56 10
+17: 21 7
+18: 135
+19: 57 11
+20: 22 8
+21: 55 1
+22: 22 1
+23: 55 3
+24: 24 11
+25: 143
+26: 55 8
+27: 21 0
+28: 133
+29: 22 1
+30: 97
+31: 22 3
+32: 97
+33: 21 5
+34: 133
+35: 97
+36: 21 6
+37: 133
+38: 97
+39: 21 7
+40: 133
+41: 97
+42: 22 8
+43: 97
+44: 137
+45: 23 10
+46: 98
+47: 141
+48: 24 11
+49: 99
+50: 175
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 10
+start_pc: <0>
+line_number: 137
+start_pc: <3>
+line_number: 138
+start_pc: <7>
+line_number: 139
+start_pc: <11>
+line_number: 140
+start_pc: <14>
+line_number: 141
+start_pc: <17>
+line_number: 142
+start_pc: <20>
+line_number: 143
+start_pc: <22>
+line_number: 144
+start_pc: <24>
+line_number: 145
+start_pc: <27>
+line_number: 146
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 9
+start_pc: <0>
+length: <51>
+name_index: v0
+descriptor_index: I
+index: 0
+start_pc: <0>
+length: <51>
+name_index: v1
+descriptor_index: J
+index: 1
+start_pc: <0>
+length: <51>
+name_index: v2
+descriptor_index: J
+index: 3
+start_pc: <3>
+length: <51>
+name_index: v3
+descriptor_index: B
+index: 5
+start_pc: <7>
+length: <51>
+name_index: v4
+descriptor_index: C
+index: 6
+start_pc: <11>
+length: <51>
+name_index: v5
+descriptor_index: S
+index: 7
+start_pc: <14>
+length: <51>
+name_index: v6
+descriptor_index: J
+index: 8
+start_pc: <17>
+length: <51>
+name_index: v7
+descriptor_index: F
+index: 10
+start_pc: <20>
+length: <51>
+name_index: v8
+descriptor_index: D
+index: 11
+access_flags: 9
+name_index: castInstructions
+descriptor_index: (FDD)F
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 4
+max_locals: 13
+0: 23 0
+1: 139
+2: 145
+3: 54 5
+4: 24 1
+5: 142
+6: 146
+7: 54 6
+8: 24 3
+9: 142
+10: 147
+11: 54 7
+12: 21 5
+13: 133
+14: 55 8
+15: 21 6
+16: 134
+17: 56 10
+18: 21 7
+19: 135
+20: 57 11
+21: 22 8
+22: 138
+23: 57 1
+24: 24 1
+25: 57 3
+26: 23 10
+27: 140
+28: 55 8
+29: 23 0
+30: 141
+31: 24 1
+32: 99
+33: 24 3
+34: 99
+35: 21 5
+36: 135
+37: 99
+38: 21 6
+39: 135
+40: 99
+41: 21 7
+42: 135
+43: 99
+44: 22 8
+45: 138
+46: 99
+47: 23 10
+48: 141
+49: 99
+50: 24 11
+51: 99
+52: 144
+53: 174
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 10
+start_pc: <0>
+line_number: 150
+start_pc: <4>
+line_number: 151
+start_pc: <8>
+line_number: 152
+start_pc: <12>
+line_number: 153
+start_pc: <15>
+line_number: 154
+start_pc: <18>
+line_number: 155
+start_pc: <21>
+line_number: 156
+start_pc: <24>
+line_number: 157
+start_pc: <26>
+line_number: 158
+start_pc: <29>
+line_number: 159
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 9
+start_pc: <0>
+length: <54>
+name_index: v0
+descriptor_index: F
+index: 0
+start_pc: <0>
+length: <54>
+name_index: v1
+descriptor_index: D
+index: 1
+start_pc: <0>
+length: <54>
+name_index: v2
+descriptor_index: D
+index: 3
+start_pc: <4>
+length: <54>
+name_index: v3
+descriptor_index: B
+index: 5
+start_pc: <8>
+length: <54>
+name_index: v4
+descriptor_index: C
+index: 6
+start_pc: <12>
+length: <54>
+name_index: v5
+descriptor_index: S
+index: 7
+start_pc: <15>
+length: <54>
+name_index: v6
+descriptor_index: J
+index: 8
+start_pc: <18>
+length: <54>
+name_index: v7
+descriptor_index: F
+index: 10
+start_pc: <21>
+length: <54>
+name_index: v8
+descriptor_index: D
+index: 11
+access_flags: 9
+name_index: objectInstructions
+descriptor_index: (Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 3
+max_locals: 10
+0: 25 0
+1: 25 1
+2: 166 <5>
+3: 4
+4: 167 <6>
+5: 3
+6: 54 5
+7: 25 1
+8: 25 2
+9: 165 <12>
+10: 4
+11: 167 <13>
+12: 3
+13: 54 6
+14: 25 2
+15: 199 <18>
+16: 4
+17: 167 <19>
+18: 3
+19: 54 7
+20: 25 3
+21: 198 <24>
+22: 4
+23: 167 <25>
+24: 3
+25: 54 8
+26: 25 4
+27: 193 ConstantClassInfo java/lang/String
+28: 54 9
+29: 21 5
+30: 153 <33>
+31: 1
+32: 167 <34>
+33: 25 0
+34: 58 0
+35: 21 6
+36: 153 <39>
+37: 25 1
+38: 167 <40>
+39: 25 0
+40: 58 1
+41: 21 7
+42: 153 <45>
+43: 25 2
+44: 167 <46>
+45: 25 1
+46: 58 2
+47: 21 8
+48: 153 <51>
+49: 25 3
+50: 167 <52>
+51: 25 2
+52: 58 3
+53: 21 9
+54: 153 <62>
+55: 187 ConstantClassInfo java/lang/Integer
+56: 89
+57: 25 4
+58: 192 ConstantClassInfo java/lang/String
+59: 182 ConstantMethodRefInfo java/lang/String.length()I
+60: 183 ConstantMethodRefInfo java/lang/Integer.<init>(I)V
+61: 167 <63>
+62: 25 3
+63: 58 4
+64: 25 4
+65: 176
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 11
+start_pc: <0>
+line_number: 163
+start_pc: <7>
+line_number: 164
+start_pc: <14>
+line_number: 165
+start_pc: <20>
+line_number: 166
+start_pc: <26>
+line_number: 167
+start_pc: <29>
+line_number: 168
+start_pc: <35>
+line_number: 169
+start_pc: <41>
+line_number: 170
+start_pc: <47>
+line_number: 171
+start_pc: <53>
+line_number: 172
+start_pc: <64>
+line_number: 173
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 10
+start_pc: <0>
+length: <66>
+name_index: v0
+descriptor_index: Ljava/lang/Object;
+index: 0
+start_pc: <0>
+length: <66>
+name_index: v1
+descriptor_index: Ljava/lang/Object;
+index: 1
+start_pc: <0>
+length: <66>
+name_index: v2
+descriptor_index: Ljava/lang/Object;
+index: 2
+start_pc: <0>
+length: <66>
+name_index: v3
+descriptor_index: Ljava/lang/Object;
+index: 3
+start_pc: <0>
+length: <66>
+name_index: v4
+descriptor_index: Ljava/lang/Object;
+index: 4
+start_pc: <7>
+length: <66>
+name_index: b0
+descriptor_index: Z
+index: 5
+start_pc: <14>
+length: <66>
+name_index: b1
+descriptor_index: Z
+index: 6
+start_pc: <20>
+length: <66>
+name_index: b2
+descriptor_index: Z
+index: 7
+start_pc: <26>
+length: <66>
+name_index: b3
+descriptor_index: Z
+index: 8
+start_pc: <29>
+length: <66>
+name_index: b4
+descriptor_index: Z
+index: 9
+access_flags: 9
+name_index: arrayInstructions
+descriptor_index: ([B[C[S[I[J[F[D[Ljava/lang/Object;)[Ljava/lang/Object;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 5
+max_locals: 9
+0: 25 0
+1: 4
+2: 25 0
+3: 3
+4: 51
+5: 84
+6: 25 1
+7: 4
+8: 25 1
+9: 3
+10: 52
+11: 85
+12: 25 2
+13: 4
+14: 25 2
+15: 3
+16: 53
+17: 86
+18: 25 3
+19: 4
+20: 25 3
+21: 3
+22: 46
+23: 79
+24: 25 4
+25: 4
+26: 25 4
+27: 3
+28: 47
+29: 80
+30: 25 5
+31: 4
+32: 25 5
+33: 3
+34: 48
+35: 81
+36: 25 6
+37: 4
+38: 25 6
+39: 3
+40: 49
+41: 82
+42: 25 7
+43: 4
+44: 25 7
+45: 3
+46: 50
+47: 83
+48: 25 7
+49: 190
+50: 189 ConstantClassInfo java/lang/Object
+51: 58 8
+52: 25 8
+53: 3
+54: 7
+55: 16 8
+56: 16 16
+57: 197 ConstantClassInfo [[[I 3
+58: 83
+59: 25 8
+60: 176
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 11
+start_pc: <0>
+line_number: 178
+start_pc: <6>
+line_number: 179
+start_pc: <12>
+line_number: 180
+start_pc: <18>
+line_number: 181
+start_pc: <24>
+line_number: 182
+start_pc: <30>
+line_number: 183
+start_pc: <36>
+line_number: 184
+start_pc: <42>
+line_number: 185
+start_pc: <48>
+line_number: 186
+start_pc: <52>
+line_number: 187
+start_pc: <59>
+line_number: 188
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 9
+start_pc: <0>
+length: <61>
+name_index: v0
+descriptor_index: [B
+index: 0
+start_pc: <0>
+length: <61>
+name_index: v1
+descriptor_index: [C
+index: 1
+start_pc: <0>
+length: <61>
+name_index: v2
+descriptor_index: [S
+index: 2
+start_pc: <0>
+length: <61>
+name_index: v3
+descriptor_index: [I
+index: 3
+start_pc: <0>
+length: <61>
+name_index: v4
+descriptor_index: [J
+index: 4
+start_pc: <0>
+length: <61>
+name_index: v5
+descriptor_index: [F
+index: 5
+start_pc: <0>
+length: <61>
+name_index: v6
+descriptor_index: [D
+index: 6
+start_pc: <0>
+length: <61>
+name_index: v7
+descriptor_index: [Ljava/lang/Object;
+index: 7
+start_pc: <52>
+length: <61>
+name_index: v8
+descriptor_index: [Ljava/lang/Object;
+index: 8
+access_flags: 1
+name_index: fieldInstructions
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 25 0
+1: 180 ConstantFieldRefInfo jdk3/AllInstructions.fieldLjdk3/AllInstructions;
+2: 58 1
+3: 25 0
+4: 178 ConstantFieldRefInfo jdk3/AllInstructions.staticFieldLjdk3/AllInstructions;
+5: 181 ConstantFieldRefInfo jdk3/AllInstructions.fieldLjdk3/AllInstructions;
+6: 25 1
+7: 179 ConstantFieldRefInfo jdk3/AllInstructions.staticFieldLjdk3/AllInstructions;
+8: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 4
+start_pc: <0>
+line_number: 192
+start_pc: <3>
+line_number: 193
+start_pc: <6>
+line_number: 194
+start_pc: <8>
+line_number: 195
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 2
+start_pc: <0>
+length: <9>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+start_pc: <3>
+length: <8>
+name_index: c
+descriptor_index: Ljdk3/AllInstructions;
+index: 1
+access_flags: 1
+name_index: methodInstructions
+descriptor_index: (Ljava/lang/Runnable;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 3
+0: 187 ConstantClassInfo jdk3/AllInstructions
+1: 89
+2: 183 ConstantMethodRefInfo jdk3/AllInstructions.<init>()V
+3: 58 2
+4: 25 2
+5: 182 ConstantMethodRefInfo jdk3/AllInstructions.fieldInstructions()V
+6: 25 2
+7: 184 ConstantMethodRefInfo jdk3/AllInstructions.monitorInstructions(Ljava/lang/Object;)Ljava/lang/String;
+8: 87
+9: 25 1
+10: 185 ConstantInterfaceMethodRefInfo java/lang/Runnable.run()V 1
+11: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 5
+start_pc: <0>
+line_number: 198
+start_pc: <4>
+line_number: 199
+start_pc: <6>
+line_number: 200
+start_pc: <9>
+line_number: 201
+start_pc: <11>
+line_number: 202
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 3
+start_pc: <0>
+length: <12>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+start_pc: <0>
+length: <12>
+name_index: v0
+descriptor_index: Ljava/lang/Runnable;
+index: 1
+start_pc: <4>
+length: <11>
+name_index: c
+descriptor_index: Ljdk3/AllInstructions;
+index: 2
+access_flags: 9
+name_index: lookupSwitchInstruction
+descriptor_index: (I)I
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 21 0
+1: 171
+default: <8>
+npairs: 3
+1000: <2>
+10000: <4>
+100000: <6>
+2: 4
+3: 172
+4: 5
+5: 172
+6: 6
+7: 172
+8: 2
+9: 172
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 5
+start_pc: <0>
+line_number: 205
+start_pc: <2>
+line_number: 207
+start_pc: <4>
+line_number: 209
+start_pc: <6>
+line_number: 211
+start_pc: <8>
+line_number: 213
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <10>
+name_index: v0
+descriptor_index: I
+index: 0
+access_flags: 9
+name_index: tableSwitchInstruction
+descriptor_index: (I)I
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 21 0
+1: 170
+default: <8>
+low: 0
+high: 2
+0: <2>
+1: <4>
+2: <6>
+2: 4
+3: 172
+4: 5
+5: 172
+6: 6
+7: 172
+8: 2
+9: 172
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 5
+start_pc: <0>
+line_number: 218
+start_pc: <2>
+line_number: 220
+start_pc: <4>
+line_number: 222
+start_pc: <6>
+line_number: 224
+start_pc: <8>
+line_number: 226
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <10>
+name_index: v0
+descriptor_index: I
+index: 0
+access_flags: 9
+name_index: monitorInstructions
+descriptor_index: (Ljava/lang/Object;)Ljava/lang/String;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 4
+0: 25 0
+1: 58 1
+2: 25 1
+3: 194
+4: 25 0
+5: 182 ConstantMethodRefInfo java/lang/Object.toString()Ljava/lang/String;
+6: 58 2
+7: 25 1
+8: 195
+9: 25 2
+10: 176
+11: 58 3
+12: 25 1
+13: 195
+14: 25 3
+15: 191
+exception_table_length: 1
+start_pc: <4>
+end_pc: <11>
+handler_pc: <11>
+catch_type: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 231
+start_pc: <4>
+line_number: 232
+start_pc: <11>
+line_number: 233
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <16>
+name_index: v0
+descriptor_index: Ljava/lang/Object;
+index: 0
+access_flags: 1
+name_index: dupX1Instruction
+descriptor_index: ()I
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 4
+max_locals: 1
+0: 25 0
+1: 89
+2: 180 ConstantFieldRefInfo jdk3/AllInstructions.fI
+3: 90
+4: 4
+5: 96
+6: 181 ConstantFieldRefInfo jdk3/AllInstructions.fI
+7: 172
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 237
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <8>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+access_flags: 1
+name_index: dup2Instruction
+descriptor_index: ([JII)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 7
+max_locals: 4
+0: 25 1
+1: 21 2
+2: 92
+3: 47
+4: 10
+5: 21 3
+6: 121
+7: 129
+8: 80
+9: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 2
+start_pc: <0>
+line_number: 241
+start_pc: <9>
+line_number: 242
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 4
+start_pc: <0>
+length: <10>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+start_pc: <0>
+length: <10>
+name_index: v0
+descriptor_index: [J
+index: 1
+start_pc: <0>
+length: <10>
+name_index: i
+descriptor_index: I
+index: 2
+start_pc: <0>
+length: <10>
+name_index: j
+descriptor_index: I
+index: 3
+access_flags: 1
+name_index: dup2X1Instruction
+descriptor_index: ()J
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 7
+max_locals: 1
+0: 25 0
+1: 89
+2: 180 ConstantFieldRefInfo jdk3/AllInstructions.gJ
+3: 93
+4: 10
+5: 97
+6: 181 ConstantFieldRefInfo jdk3/AllInstructions.gJ
+7: 173
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 245
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <8>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+access_flags: 1
+name_index: dup2X1InstructionVariant
+descriptor_index: ([Ljava/lang/String;ILjava/lang/Object;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 5
+max_locals: 4
+0: 187 ConstantClassInfo java/lang/StringBuffer
+1: 89
+2: 183 ConstantMethodRefInfo java/lang/StringBuffer.<init>()V
+3: 25 1
+4: 21 2
+5: 93
+6: 50
+7: 182 ConstantMethodRefInfo java/lang/StringBuffer.append(Ljava/lang/String;)Ljava/lang/StringBuffer;
+8: 18 ConstantStringInfo  
+9: 182 ConstantMethodRefInfo java/lang/StringBuffer.append(Ljava/lang/String;)Ljava/lang/StringBuffer;
+10: 25 3
+11: 182 ConstantMethodRefInfo java/lang/Object.toString()Ljava/lang/String;
+12: 182 ConstantMethodRefInfo java/lang/StringBuffer.append(Ljava/lang/String;)Ljava/lang/StringBuffer;
+13: 182 ConstantMethodRefInfo java/lang/StringBuffer.toString()Ljava/lang/String;
+14: 83
+15: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 2
+start_pc: <0>
+line_number: 249
+start_pc: <15>
+line_number: 250
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 4
+start_pc: <0>
+length: <16>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+start_pc: <0>
+length: <16>
+name_index: v0
+descriptor_index: [Ljava/lang/String;
+index: 1
+start_pc: <0>
+length: <16>
+name_index: i
+descriptor_index: I
+index: 2
+start_pc: <0>
+length: <16>
+name_index: o
+descriptor_index: Ljava/lang/Object;
+index: 3
+access_flags: 1
+name_index: dupX2Instruction
+descriptor_index: ([I[I)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 6
+max_locals: 3
+0: 25 1
+1: 3
+2: 25 2
+3: 3
+4: 3
+5: 91
+6: 79
+7: 79
+8: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 2
+start_pc: <0>
+line_number: 253
+start_pc: <8>
+line_number: 254
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 3
+start_pc: <0>
+length: <9>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+start_pc: <0>
+length: <9>
+name_index: v0
+descriptor_index: [I
+index: 1
+start_pc: <0>
+length: <9>
+name_index: v1
+descriptor_index: [I
+index: 2
+access_flags: 1
+name_index: dup2X2Instruction
+descriptor_index: ([J[J)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 8
+max_locals: 3
+0: 25 1
+1: 3
+2: 25 2
+3: 3
+4: 9
+5: 94
+6: 80
+7: 80
+8: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 2
+start_pc: <0>
+line_number: 257
+start_pc: <8>
+line_number: 258
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 3
+start_pc: <0>
+length: <9>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+start_pc: <0>
+length: <9>
+name_index: v0
+descriptor_index: [J
+index: 1
+start_pc: <0>
+length: <9>
+name_index: v1
+descriptor_index: [J
+index: 2
+access_flags: 1
+name_index: popInstructions
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 1
+0: 25 0
+1: 182 ConstantMethodRefInfo jdk3/AllInstructions.dupX1Instruction()I
+2: 87
+3: 25 0
+4: 182 ConstantMethodRefInfo jdk3/AllInstructions.dup2X1Instruction()J
+5: 88
+6: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 261
+start_pc: <3>
+line_number: 262
+start_pc: <6>
+line_number: 263
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <7>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+access_flags: 1
+name_index: jsrAndRetInstructions
+descriptor_index: (I)I
+attributes_count: 2
+attribute_name_index: Code
+max_stack: 2
+max_locals: 7
+0: 21 1
+1: 4
+2: 96
+3: 54 2
+4: 25 0
+5: 21 2
+6: 182 ConstantMethodRefInfo jdk3/AllInstructions.jsrAndRetInstructions(I)I
+7: 54 2
+8: 168 <20>
+9: 167 <23>
+10: 58 3
+11: 2
+12: 54 4
+13: 168 <20>
+14: 21 4
+15: 172
+16: 58 5
+17: 168 <20>
+18: 25 5
+19: 191
+20: 58 6
+21: 132 2 1
+22: 169 6
+23: 21 2
+24: 172
+exception_table_length: 2
+start_pc: <4>
+end_pc: <8>
+handler_pc: <10>
+catch_type: ConstantClassInfo java/lang/Throwable
+start_pc: <4>
+end_pc: <16>
+handler_pc: <16>
+catch_type: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 5
+start_pc: <0>
+line_number: 266
+start_pc: <4>
+line_number: 268
+start_pc: <10>
+line_number: 270
+start_pc: <16>
+line_number: 272
+start_pc: <23>
+line_number: 274
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 4
+start_pc: <0>
+length: <25>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+start_pc: <0>
+length: <25>
+name_index: v0
+descriptor_index: I
+index: 1
+start_pc: <4>
+length: <25>
+name_index: u0
+descriptor_index: I
+index: 2
+start_pc: <10>
+length: <23>
+name_index: t
+descriptor_index: Ljava/lang/Throwable;
+index: 3
+attribute_name_index: Exceptions
+number_of_exceptions: 1
+exception_index: ConstantClassInfo java/lang/Exception
+access_flags: 1
+name_index: readNullArray
+descriptor_index: ()Ljava/lang/Object;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 3
+0: 1
+1: 58 1
+2: 25 1
+3: 3
+4: 50
+5: 176
+6: 58 2
+7: 1
+8: 176
+exception_table_length: 1
+start_pc: <2>
+end_pc: <6>
+handler_pc: <6>
+catch_type: ConstantClassInfo java/lang/NullPointerException
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 278
+start_pc: <2>
+line_number: 280
+start_pc: <6>
+line_number: 282
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 3
+start_pc: <0>
+length: <9>
+name_index: this
+descriptor_index: Ljdk3/AllInstructions;
+index: 0
+start_pc: <2>
+length: <9>
+name_index: array
+descriptor_index: [Ljava/lang/Object;
+index: 1
+start_pc: <6>
+length: <9>
+name_index: e
+descriptor_index: Ljava/lang/NullPointerException;
+index: 2
+attributes_count: 1
+attribute_name_index: SourceFile
+sourcefile_index: AllInstructions.java

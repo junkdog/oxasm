@@ -1,0 +1,65 @@
+magic: -889275714
+minor_version: 0
+major_version: 52
+access_flags: 32
+this_class: ConstantClassInfo SerialVersionClass
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 1
+interface: ConstantClassInfo java/io/Serializable
+fields_count: 1
+access_flags: 28
+name_index: someField
+descriptor_index: I
+attributes_count: 1
+attribute_name_index: ConstantValue
+constantvalue_index: 32
+methods_count: 2
+access_flags: 0
+name_index: <init>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 45
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <3>
+name_index: this
+descriptor_index: LSerialVersionClass;
+index: 0
+access_flags: 1
+name_index: someMethod
+descriptor_index: ()[Ljava/lang/Object;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 3
+1: 189 ConstantClassInfo java/lang/Object
+2: 176
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 48
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <3>
+name_index: this
+descriptor_index: LSerialVersionClass;
+index: 0
+attributes_count: 1
+attribute_name_index: SourceFile
+sourcefile_index: SerialVersionClass.java

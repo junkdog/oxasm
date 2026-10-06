@@ -1,0 +1,266 @@
+// class version 46.0 (46)
+// access flags 0x21
+public class org/eclipse/core/runtime/internal/adaptor/BundleStopper {
+
+
+  // access flags 0x2
+  private Ljava/util/Hashtable; stoppedBundles
+
+  // access flags 0x2
+  private [Lorg/eclipse/osgi/service/resolver/BundleDescription; allToStop
+
+  // access flags 0x2
+  private Lorg/osgi/framework/BundleContext; context
+
+  // access flags 0x1
+  public <init>(Lorg/osgi/framework/BundleContext;)V
+    ALOAD 0
+    INVOKESPECIAL java/lang/Object.<init> ()V
+    ALOAD 0
+    ACONST_NULL
+    PUTFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop : [Lorg/eclipse/osgi/service/resolver/BundleDescription;
+    ALOAD 0
+    ALOAD 1
+    PUTFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.context : Lorg/osgi/framework/BundleContext;
+    RETURN
+    MAXSTACK = 2
+    MAXLOCALS = 2
+
+  // access flags 0x2
+  private logCycles([[Ljava/lang/Object;)V
+    GETSTATIC org/eclipse/osgi/framework/debug/Debug.DEBUG_ENABLED : Z
+    IFNE L0
+    RETURN
+   L0
+    ALOAD 1
+    ARRAYLENGTH
+    IFLE L1
+    NEW java/lang/StringBuffer
+    DUP
+    LDC "["
+    INVOKESPECIAL java/lang/StringBuffer.<init> (Ljava/lang/String;)V
+    ASTORE 2
+    ICONST_0
+    ISTORE 3
+    GOTO L2
+   L3
+    ALOAD 2
+    BIPUSH 91
+    INVOKEVIRTUAL java/lang/StringBuffer.append (C)Ljava/lang/StringBuffer;
+    POP
+    ICONST_0
+    ISTORE 4
+    GOTO L4
+   L5
+    ALOAD 2
+    ALOAD 1
+    ILOAD 3
+    AALOAD
+    ILOAD 4
+    AALOAD
+    CHECKCAST org/eclipse/osgi/service/resolver/BundleDescription
+    INVOKEINTERFACE org/eclipse/osgi/service/resolver/BundleDescription.getSymbolicName ()Ljava/lang/String; (itf)
+    INVOKEVIRTUAL java/lang/StringBuffer.append (Ljava/lang/String;)Ljava/lang/StringBuffer;
+    POP
+    ALOAD 2
+    BIPUSH 44
+    INVOKEVIRTUAL java/lang/StringBuffer.append (C)Ljava/lang/StringBuffer;
+    POP
+    IINC 4 1
+   L4
+    ILOAD 4
+    ALOAD 1
+    ILOAD 3
+    AALOAD
+    ARRAYLENGTH
+    IF_ICMPLT L5
+    ALOAD 2
+    ALOAD 2
+    INVOKEVIRTUAL java/lang/StringBuffer.length ()I
+    ICONST_1
+    ISUB
+    BIPUSH 93
+    INVOKEVIRTUAL java/lang/StringBuffer.insert (IC)Ljava/lang/StringBuffer;
+    POP
+    IINC 3 1
+   L2
+    ILOAD 3
+    ALOAD 1
+    ARRAYLENGTH
+    IF_ICMPLT L3
+    ALOAD 2
+    ALOAD 2
+    INVOKEVIRTUAL java/lang/StringBuffer.length ()I
+    ICONST_1
+    ISUB
+    BIPUSH 93
+    INVOKEVIRTUAL java/lang/StringBuffer.setCharAt (IC)V
+    GETSTATIC org/eclipse/core/runtime/adaptor/EclipseAdaptorMsg.ECLIPSE_BUNDLESTOPPER_CYCLES_FOUND : Ljava/lang/String;
+    ALOAD 2
+    INVOKESTATIC org/eclipse/osgi/util/NLS.bind (Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;
+    ASTORE 3
+    NEW org/eclipse/osgi/framework/log/FrameworkLogEntry
+    DUP
+    LDC "org.eclipse.osgi"
+    ALOAD 3
+    ICONST_0
+    ACONST_NULL
+    ACONST_NULL
+    INVOKESPECIAL org/eclipse/osgi/framework/log/FrameworkLogEntry.<init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;[Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;)V
+    ASTORE 4
+    INVOKESTATIC org/eclipse/core/runtime/adaptor/EclipseAdaptor.getDefault ()Lorg/eclipse/core/runtime/adaptor/EclipseAdaptor;
+    INVOKEVIRTUAL org/eclipse/core/runtime/adaptor/EclipseAdaptor.getFrameworkLog ()Lorg/eclipse/osgi/framework/log/FrameworkLog;
+    ALOAD 4
+    INVOKEINTERFACE org/eclipse/osgi/framework/log/FrameworkLog.log (Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;)V (itf)
+   L1
+    RETURN
+    MAXSTACK = 7
+    MAXLOCALS = 5
+
+  // access flags 0x1
+  public stopBundles()V
+    ALOAD 0
+    INVOKESTATIC org/eclipse/core/runtime/adaptor/EclipseAdaptor.getDefault ()Lorg/eclipse/core/runtime/adaptor/EclipseAdaptor;
+    INVOKEVIRTUAL org/eclipse/core/runtime/adaptor/EclipseAdaptor.getState ()Lorg/eclipse/osgi/service/resolver/State;
+    INVOKEINTERFACE org/eclipse/osgi/service/resolver/State.getResolvedBundles ()[Lorg/eclipse/osgi/service/resolver/BundleDescription; (itf)
+    PUTFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop : [Lorg/eclipse/osgi/service/resolver/BundleDescription;
+    INVOKESTATIC org/eclipse/core/runtime/adaptor/EclipseAdaptor.getDefault ()Lorg/eclipse/core/runtime/adaptor/EclipseAdaptor;
+    INVOKEVIRTUAL org/eclipse/core/runtime/adaptor/EclipseAdaptor.getPlatformAdmin ()Lorg/eclipse/osgi/service/resolver/PlatformAdmin;
+    INVOKEINTERFACE org/eclipse/osgi/service/resolver/PlatformAdmin.getStateHelper ()Lorg/eclipse/osgi/service/resolver/StateHelper; (itf)
+    ASTORE 1
+    ALOAD 1
+    ALOAD 0
+    GETFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop : [Lorg/eclipse/osgi/service/resolver/BundleDescription;
+    INVOKEINTERFACE org/eclipse/osgi/service/resolver/StateHelper.sortBundles ([Lorg/eclipse/osgi/service/resolver/BundleDescription;)[[Ljava/lang/Object; (itf)
+    ASTORE 2
+    ALOAD 0
+    ALOAD 2
+    INVOKESPECIAL org/eclipse/core/runtime/internal/adaptor/BundleStopper.logCycles ([[Ljava/lang/Object;)V
+    ALOAD 0
+    NEW java/util/Hashtable
+    DUP
+    ALOAD 0
+    GETFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop : [Lorg/eclipse/osgi/service/resolver/BundleDescription;
+    ARRAYLENGTH
+    INVOKESPECIAL java/util/Hashtable.<init> (I)V
+    PUTFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.stoppedBundles : Ljava/util/Hashtable;
+    ALOAD 0
+    INVOKESPECIAL org/eclipse/core/runtime/internal/adaptor/BundleStopper.basicStopBundles ()V
+    RETURN
+    MAXSTACK = 4
+    MAXLOCALS = 3
+
+  // access flags 0x2
+  private basicStopBundles()V
+    TRYCATCHBLOCK L0 L1 L1 java/lang/Exception
+    TRYCATCHBLOCK L0 L2 L2 null
+    TRYCATCHBLOCK L3 L4 L2 null
+    ALOAD 0
+    GETFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop : [Lorg/eclipse/osgi/service/resolver/BundleDescription;
+    ARRAYLENGTH
+    ICONST_1
+    ISUB
+    ISTORE 1
+    GOTO L5
+   L6
+    ALOAD 0
+    GETFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.context : Lorg/osgi/framework/BundleContext;
+    ALOAD 0
+    GETFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop : [Lorg/eclipse/osgi/service/resolver/BundleDescription;
+    ILOAD 1
+    AALOAD
+    INVOKEINTERFACE org/eclipse/osgi/service/resolver/BundleDescription.getBundleId ()J (itf)
+    INVOKEINTERFACE org/osgi/framework/BundleContext.getBundle (J)Lorg/osgi/framework/Bundle; (itf)
+    CHECKCAST org/eclipse/osgi/framework/internal/core/AbstractBundle
+    ASTORE 2
+    ALOAD 2
+    INVOKEVIRTUAL org/eclipse/osgi/framework/internal/core/AbstractBundle.getBundleId ()J
+    LCONST_0
+    LCMP
+    IFEQ L4
+    ALOAD 2
+    INVOKEVIRTUAL org/eclipse/osgi/framework/internal/core/AbstractBundle.getBundleData ()Lorg/eclipse/osgi/framework/adaptor/BundleData;
+    CHECKCAST org/eclipse/core/runtime/adaptor/EclipseBundleData
+    INVOKEVIRTUAL org/eclipse/core/runtime/adaptor/EclipseBundleData.isAutoStartable ()Z
+    IFEQ L4
+   L0
+    ALOAD 2
+    INVOKEVIRTUAL org/eclipse/osgi/framework/internal/core/AbstractBundle.getState ()I
+    BIPUSH 32
+    IF_ICMPNE L3
+    ALOAD 2
+    INSTANCEOF org/eclipse/osgi/framework/internal/core/BundleHost
+    IFEQ L3
+    ALOAD 2
+    INVOKEVIRTUAL org/eclipse/osgi/framework/internal/core/AbstractBundle.stop ()V
+    GOTO L3
+   L1
+    ASTORE 3
+    GETSTATIC org/eclipse/core/runtime/adaptor/EclipseAdaptorMsg.ECLIPSE_BUNDLESTOPPER_ERROR_STOPPING_BUNDLE : Ljava/lang/String;
+    ALOAD 0
+    GETFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.allToStop : [Lorg/eclipse/osgi/service/resolver/BundleDescription;
+    ILOAD 1
+    AALOAD
+    INVOKEINTERFACE org/eclipse/osgi/service/resolver/BundleDescription.toString ()Ljava/lang/String; (itf)
+    INVOKESTATIC org/eclipse/osgi/util/NLS.bind (Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/String;
+    ASTORE 4
+    NEW org/eclipse/osgi/framework/log/FrameworkLogEntry
+    DUP
+    LDC "org.eclipse.osgi"
+    ALOAD 4
+    ICONST_0
+    ALOAD 3
+    ACONST_NULL
+    INVOKESPECIAL org/eclipse/osgi/framework/log/FrameworkLogEntry.<init> (Ljava/lang/String;Ljava/lang/String;ILjava/lang/Throwable;[Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;)V
+    ASTORE 5
+    INVOKESTATIC org/eclipse/core/runtime/adaptor/EclipseAdaptor.getDefault ()Lorg/eclipse/core/runtime/adaptor/EclipseAdaptor;
+    INVOKEVIRTUAL org/eclipse/core/runtime/adaptor/EclipseAdaptor.getFrameworkLog ()Lorg/eclipse/osgi/framework/log/FrameworkLog;
+    ALOAD 5
+    INVOKEINTERFACE org/eclipse/osgi/framework/log/FrameworkLog.log (Lorg/eclipse/osgi/framework/log/FrameworkLogEntry;)V (itf)
+    GOTO L3
+   L2
+    ASTORE 7
+    JSR L7
+    ALOAD 7
+    ATHROW
+   L7
+    ASTORE 6
+    ALOAD 0
+    GETFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.stoppedBundles : Ljava/util/Hashtable;
+    ALOAD 2
+    ALOAD 2
+    INVOKEVIRTUAL java/util/Hashtable.put (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+    POP
+    RET 6
+   L3
+    JSR L7
+   L4
+    IINC 1 -1
+   L5
+    ILOAD 1
+    IFGE L6
+    RETURN
+    MAXSTACK = 7
+    MAXLOCALS = 8
+
+  // access flags 0x1
+  public isStopped(Lorg/osgi/framework/Bundle;)Z
+    ALOAD 0
+    GETFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.stoppedBundles : Ljava/util/Hashtable;
+    IFNONNULL L0
+    ICONST_0
+    IRETURN
+   L0
+    ALOAD 0
+    GETFIELD org/eclipse/core/runtime/internal/adaptor/BundleStopper.stoppedBundles : Ljava/util/Hashtable;
+    ALOAD 1
+    INVOKEVIRTUAL java/util/Hashtable.get (Ljava/lang/Object;)Ljava/lang/Object;
+    IFNULL L1
+    ICONST_1
+    IRETURN
+   L1
+    ICONST_0
+    IRETURN
+    MAXSTACK = 2
+    MAXLOCALS = 2
+}

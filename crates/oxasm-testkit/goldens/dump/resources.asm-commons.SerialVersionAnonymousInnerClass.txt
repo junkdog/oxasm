@@ -1,0 +1,91 @@
+magic: -889275714
+minor_version: 0
+major_version: 52
+access_flags: 32
+this_class: ConstantClassInfo SerialVersionAnonymousInnerClass
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 1
+interface: ConstantClassInfo java/io/Serializable
+fields_count: 1
+access_flags: 25
+name_index: anonymousInnerClass
+descriptor_index: LSerialVersionAnonymousInnerClass;
+attributes_count: 0
+methods_count: 3
+access_flags: 8
+name_index: <clinit>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 0
+0: 187 ConstantClassInfo SerialVersionAnonymousInnerClass$1
+1: 89
+2: 183 ConstantMethodRefInfo SerialVersionAnonymousInnerClass$1.<init>()V
+3: 179 ConstantFieldRefInfo SerialVersionAnonymousInnerClass.anonymousInnerClassLSerialVersionAnonymousInnerClass;
+4: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 3
+start_pc: <0>
+line_number: 40
+start_pc: <3>
+line_number: 39
+start_pc: <4>
+line_number: 40
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 0
+access_flags: 0
+name_index: <init>
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 42
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <3>
+name_index: this
+descriptor_index: LSerialVersionAnonymousInnerClass;
+index: 0
+access_flags: 1
+name_index: someMethod
+descriptor_index: ()V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 0
+max_locals: 1
+0: 177
+exception_table_length: 0
+attributes_count: 2
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 44
+attribute_name_index: LocalVariableTable
+local_variable_table_length: 1
+start_pc: <0>
+length: <1>
+name_index: this
+descriptor_index: LSerialVersionAnonymousInnerClass;
+index: 0
+attributes_count: 2
+attribute_name_index: InnerClasses
+number_of_classes: 1
+inner_class_info_index: ConstantClassInfo SerialVersionAnonymousInnerClass$1
+outer_class_info_index: 0
+inner_name_index: 0
+inner_class_access_flags: 0
+attribute_name_index: SourceFile
+sourcefile_index: SerialVersionAnonymousInnerClass.java

@@ -1,0 +1,309 @@
+magic: -889275714
+minor_version: 65535
+major_version: 58
+access_flags: 48
+this_class: ConstantClassInfo jdk14/AllStructures$RecordSubType
+super_class: ConstantClassInfo java/lang/Record
+interfaces_count: 0
+fields_count: 2
+access_flags: 18
+name_index: component1
+descriptor_index: I
+attributes_count: 2
+attribute_name_index: RuntimeInvisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/ITUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 3
+attribute_name_index: RuntimeVisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/VTUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 2
+access_flags: 18
+name_index: component2
+descriptor_index: Ljava/util/List;
+attributes_count: 3
+attribute_name_index: RuntimeInvisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/ITUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 7
+attribute_name_index: RuntimeVisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/VTUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 6
+attribute_name_index: Signature
+signature_index: Ljava/util/List<Ljava/lang/String;>;
+methods_count: 6
+access_flags: 1
+name_index: <init>
+descriptor_index: (ILjava/util/List;)V
+attributes_count: 5
+attribute_name_index: Code
+max_stack: 2
+max_locals: 3
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Record.<init>()V
+2: 25 0
+3: 21 1
+4: 181 ConstantFieldRefInfo jdk14/AllStructures$RecordSubType.component1I
+5: 25 0
+6: 25 2
+7: 181 ConstantFieldRefInfo jdk14/AllStructures$RecordSubType.component2Ljava/util/List;
+8: 177
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 38
+attribute_name_index: MethodParameters
+parameters_count: 2
+name_index: component1
+access_flags: 0
+name_index: component2
+access_flags: 0
+attribute_name_index: RuntimeInvisibleTypeAnnotations
+num_annotations: 2
+target_type: 22
+formal_parameter_index: 0
+path_length: 0
+type_index: Lannotations/ITUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 3
+target_type: 22
+formal_parameter_index: 1
+path_length: 0
+type_index: Lannotations/ITUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 7
+attribute_name_index: RuntimeVisibleTypeAnnotations
+num_annotations: 2
+target_type: 22
+formal_parameter_index: 0
+path_length: 0
+type_index: Lannotations/VTUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 2
+target_type: 22
+formal_parameter_index: 1
+path_length: 0
+type_index: Lannotations/VTUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 6
+attribute_name_index: Signature
+signature_index: (ILjava/util/List<Ljava/lang/String;>;)V
+access_flags: 1
+name_index: toString
+descriptor_index: ()Ljava/lang/String;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 186 ConstantInvokeDynamicInfo 0.toString(Ljdk14/AllStructures$RecordSubType;)Ljava/lang/String;
+2: 176
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 38
+access_flags: 17
+name_index: hashCode
+descriptor_index: ()I
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 186 ConstantInvokeDynamicInfo 0.hashCode(Ljdk14/AllStructures$RecordSubType;)I
+2: 172
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 38
+access_flags: 17
+name_index: equals
+descriptor_index: (Ljava/lang/Object;)Z
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 25 0
+1: 25 1
+2: 186 ConstantInvokeDynamicInfo 0.equals(Ljdk14/AllStructures$RecordSubType;Ljava/lang/Object;)Z
+3: 172
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 38
+access_flags: 1
+name_index: component1
+descriptor_index: ()I
+attributes_count: 3
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 180 ConstantFieldRefInfo jdk14/AllStructures$RecordSubType.component1I
+2: 172
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 38
+attribute_name_index: RuntimeInvisibleAnnotations
+num_annotations: 1
+type_index: Lannotations/ITUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 3
+attribute_name_index: RuntimeVisibleAnnotations
+num_annotations: 1
+type_index: Lannotations/VTUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 2
+access_flags: 1
+name_index: component2
+descriptor_index: ()Ljava/util/List;
+attributes_count: 4
+attribute_name_index: Code
+max_stack: 1
+max_locals: 1
+0: 25 0
+1: 180 ConstantFieldRefInfo jdk14/AllStructures$RecordSubType.component2Ljava/util/List;
+2: 176
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: LineNumberTable
+line_number_table_length: 1
+start_pc: <0>
+line_number: 38
+attribute_name_index: RuntimeInvisibleAnnotations
+num_annotations: 1
+type_index: Lannotations/ITUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 7
+attribute_name_index: RuntimeVisibleAnnotations
+num_annotations: 1
+type_index: Lannotations/VTUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 6
+attribute_name_index: Signature
+signature_index: ()Ljava/util/List<Ljava/lang/String;>;
+attributes_count: 5
+attribute_name_index: BootstrapMethods
+num_bootstrap_methods: 1
+bootstrap_method_ref: ConstantMethodHandleInfo 6.ConstantMethodRefInfo java/lang/runtime/ObjectMethods.bootstrap(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;
+num_bootstrap_arguments: 4
+bootstrap_argument: ConstantClassInfo jdk14/AllStructures$RecordSubType
+bootstrap_argument: ConstantStringInfo component1;component2
+bootstrap_argument: ConstantMethodHandleInfo 1.ConstantFieldRefInfo jdk14/AllStructures$RecordSubType.component1I
+bootstrap_argument: ConstantMethodHandleInfo 1.ConstantFieldRefInfo jdk14/AllStructures$RecordSubType.component2Ljava/util/List;
+attribute_name_index: InnerClasses
+number_of_classes: 2
+inner_class_info_index: ConstantClassInfo jdk14/AllStructures$RecordSubType
+outer_class_info_index: ConstantClassInfo jdk14/AllStructures
+inner_name_index: RecordSubType
+inner_class_access_flags: 24
+inner_class_info_index: ConstantClassInfo java/lang/invoke/MethodHandles$Lookup
+outer_class_info_index: ConstantClassInfo java/lang/invoke/MethodHandles
+inner_name_index: Lookup
+inner_class_access_flags: 25
+attribute_name_index: NestHost
+host_class: ConstantClassInfo jdk14/AllStructures
+attribute_name_index: Record
+number_of_component_records: 2
+record_component_name: component1
+record_component_descriptor: I
+attributes_count: 4
+attribute_name_index: RuntimeInvisibleAnnotations
+num_annotations: 1
+type_index: Lannotations/IRCA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 0
+attribute_name_index: RuntimeInvisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/ITUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 3
+attribute_name_index: RuntimeVisibleAnnotations
+num_annotations: 1
+type_index: Lannotations/VRCA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 1
+attribute_name_index: RuntimeVisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/VTUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 2
+record_component_name: component2
+record_component_descriptor: Ljava/util/List;
+attributes_count: 5
+attribute_name_index: RuntimeInvisibleAnnotations
+num_annotations: 1
+type_index: Lannotations/IRCA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 4
+attribute_name_index: RuntimeInvisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/ITUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 7
+attribute_name_index: RuntimeVisibleAnnotations
+num_annotations: 1
+type_index: Lannotations/VRCA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 5
+attribute_name_index: RuntimeVisibleTypeAnnotations
+num_annotations: 1
+target_type: 19
+path_length: 0
+type_index: Lannotations/VTUA;
+num_element_value_pairs: 1
+element_name_index: v
+I: 6
+attribute_name_index: Signature
+signature_index: Ljava/util/List<Ljava/lang/String;>;
+attribute_name_index: SourceFile
+sourcefile_index: AllStructures.java

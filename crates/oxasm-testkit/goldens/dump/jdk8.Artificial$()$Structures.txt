@@ -1,0 +1,138 @@
+magic: -889275714
+minor_version: 0
+major_version: 52
+access_flags: 33
+this_class: ConstantClassInfo jdk8/Artificial$()$Structures
+super_class: ConstantClassInfo java/lang/Object
+interfaces_count: 0
+fields_count: 1
+access_flags: 1
+name_index: value
+descriptor_index: I
+attributes_count: 0
+methods_count: 5
+access_flags: 1
+name_index: <init>
+descriptor_index: (I)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 25 0
+3: 21 1
+4: 181 ConstantFieldRefInfo jdk8/Artificial$()$Structures.valueI
+5: 177
+exception_table_length: 0
+attributes_count: 0
+access_flags: 2
+name_index: <init>
+descriptor_index: (Ljdk8/Artificial$()$Structures;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 2
+max_locals: 2
+0: 25 0
+1: 183 ConstantMethodRefInfo java/lang/Object.<init>()V
+2: 25 0
+3: 25 1
+4: 198 <8>
+5: 25 1
+6: 180 ConstantFieldRefInfo jdk8/Artificial$()$Structures.valueI
+7: 167 <9>
+8: 3
+9: 181 ConstantFieldRefInfo jdk8/Artificial$()$Structures.valueI
+10: 177
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: StackMapTable
+number_of_entries: 2
+FULL <8>
+number_of_locals: 2
+tag: 7
+cpool_index: ConstantClassInfo jdk8/Artificial$()$Structures
+tag: 7
+cpool_index: ConstantClassInfo jdk8/Artificial$()$Structures
+number_of_stack_items: 1
+tag: 7
+cpool_index: ConstantClassInfo jdk8/Artificial$()$Structures
+FULL <9>
+number_of_locals: 2
+tag: 7
+cpool_index: ConstantClassInfo jdk8/Artificial$()$Structures
+tag: 7
+cpool_index: ConstantClassInfo jdk8/Artificial$()$Structures
+number_of_stack_items: 2
+tag: 7
+cpool_index: ConstantClassInfo jdk8/Artificial$()$Structures
+tag: 1
+access_flags: 1
+name_index: clone
+descriptor_index: ()Ljdk8/Artificial$()$Structures;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 3
+max_locals: 1
+0: 187 ConstantClassInfo jdk8/Artificial$()$Structures
+1: 89
+2: 25 0
+3: 183 ConstantMethodRefInfo jdk8/Artificial$()$Structures.<init>(Ljdk8/Artificial$()$Structures;)V
+4: 176
+exception_table_length: 0
+attributes_count: 0
+access_flags: 9
+name_index: methodType
+descriptor_index: ()Ljava/lang/invoke/MethodType;
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 1
+max_locals: 0
+0: 18 ConstantMethodTypeInfo (I)I
+1: 176
+exception_table_length: 0
+attributes_count: 0
+access_flags: 9
+name_index: frameWithForwardLabelReferences
+descriptor_index: ([Ljava/lang/String;)V
+attributes_count: 1
+attribute_name_index: Code
+max_stack: 3
+max_locals: 1
+0: 178 ConstantFieldRefInfo java/lang/System.outLjava/io/PrintStream;
+1: 167 <4>
+2: 183 ConstantMethodRefInfo jdk8/Artificial$()$Structures.<init>()V
+3: 167 <7>
+4: 187 ConstantClassInfo jdk8/Artificial$()$Structures
+5: 89
+6: 167 <2>
+7: 182 ConstantMethodRefInfo java/io/PrintStream.println(Ljava/lang/Object;)V
+8: 177
+exception_table_length: 0
+attributes_count: 1
+attribute_name_index: StackMapTable
+number_of_entries: 3
+FULL <2>
+number_of_locals: 1
+tag: 7
+cpool_index: ConstantClassInfo [Ljava/lang/String;
+number_of_stack_items: 3
+tag: 7
+cpool_index: ConstantClassInfo java/io/PrintStream
+tag: 8
+offset: <4>
+tag: 8
+offset: <4>
+SAME_LOCALS_1_STACK_ITEM <4>
+tag: 7
+cpool_index: ConstantClassInfo java/io/PrintStream
+FULL <7>
+number_of_locals: 1
+tag: 7
+cpool_index: ConstantClassInfo [Ljava/lang/String;
+number_of_stack_items: 2
+tag: 7
+cpool_index: ConstantClassInfo java/io/PrintStream
+tag: 7
+cpool_index: ConstantClassInfo jdk8/Artificial$()$Structures
+attributes_count: 0

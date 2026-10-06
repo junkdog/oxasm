@@ -1,0 +1,1 @@
+org.objectweb.asm.test.ClassFormatException: Unknown wide opcode: 255

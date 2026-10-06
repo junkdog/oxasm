@@ -1,0 +1,16 @@
+// class version 49.0 (49)
+// access flags 0x20
+// signature <T:Ljava/lang/Object;>Ljava/lang/Object;
+// declaration: jdk5/AllStructures$GenericInnerClass<T>
+class jdk5/AllStructures$GenericInnerClass {
+
+  // compiled from: AllStructures.java
+  // access flags 0x0
+  INNERCLASS jdk5/AllStructures$GenericInnerClass jdk5/AllStructures GenericInnerClass
+
+  // access flags 0x1010
+  final synthetic Ljdk5/AllStructures; this$0
+
+  // access flags 0x0
+  <init>(Ljdk5/AllStructures;)V
+}
