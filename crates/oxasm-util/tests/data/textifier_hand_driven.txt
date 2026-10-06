@@ -1,0 +1,64 @@
+// class version 52.0 (52)
+// access flags 0x21
+// signature <T:Ljava/lang/Object;>Ljava/lang/Object;Ljava/lang/Comparable<TT;>;
+// declaration: pkg/Cé<T> implements java.lang.Comparable<T>
+public class pkg/Cé implements java/lang/Comparable {
+
+  // compiled from: C.java
+
+  @LA;(s="x\"\n\u0001\u20ac", c=(char)99, f=1.0E10F, d={0.1D, 4.9E-324D}, t=java.lang.String[][].class, e=LE;.V, arr={1L, @LB;()})
+
+  ATTRIBUTE Comment : comment
+  // access flags 0x0
+  INNERCLASS pkg/C$1 null null
+
+  // access flags 0x18
+  final static F F = NaNF
+
+  // access flags 0x1
+  public m(I)V throws java/io/IOException
+    // parameter final  <no name>
+    TRYCATCHBLOCK L0 L1 L2 null
+   L0
+    LINENUMBER 7 L0
+    NEWARRAY T_INT
+    BIPUSH -5
+    LDC -0.0D
+    LDC Ljava/lang/String;.class
+    // handle kind 0x2 : GETSTATIC
+    LDC o.f(I)
+    IINC 3 -1
+    TABLESWITCH
+      -1: L1
+      0: L2
+      default: L2
+    LOOKUPSWITCH
+      5: L2
+      default: L1
+    INVOKEDYNAMIC run()Ljava/lang/Runnable; [
+      // handle kind 0x6 : INVOKESTATIC
+      B.bsm()V itf
+      // arguments:
+      ()V, 
+      X.class, 
+      // constant dynamic: 
+      c : I [
+        // handle kind 0x6 : INVOKESTATIC
+        B.c()I
+        // arguments:
+        1, 
+        "s"
+      ]
+    ]
+   L1
+   FRAME FULL [pkg/C I] [L0]
+   FRAME CHOP 1
+   FRAME SAME1 [I
+    RETURN
+   L2
+  @LT;() : THROWS 0, [*0; // invisible
+    LOCALVARIABLE x I L0 L2 1
+  ATTRIBUTE CodeComment -> L2
+    MAXSTACK = 1
+    MAXLOCALS = 2
+}

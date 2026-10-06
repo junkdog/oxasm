@@ -11,10 +11,14 @@ use crate::args::Args;
 use crate::pin::{ASM_JARS, ASM_VERSION};
 use crate::{root_path, sha256_hex, walk_files};
 
-/// JVM options for every oracle run. `verify` needs the verifier on for all class loaders.
-const JVM_OPTIONS: [&str; 2] = [
+/// JVM options for every oracle run. `verify` needs the verifier on for all class loaders. The
+/// heap is capped so that a malformed class making ASM allocate a huge array (e.g. a `tableswitch`
+/// with 2^31 entries) fails with a catchable `OutOfMemoryError` (reported as ASM failing) instead
+/// of growing a dozen parallel `serve` JVMs into the kernel's OOM killer.
+const JVM_OPTIONS: [&str; 3] = [
     "-XX:+UnlockDiagnosticVMOptions",
     "-XX:+BytecodeVerificationLocal",
+    "-Xmx2g",
 ];
 
 /// The oldest JDK whose source launcher compiles multi-file programs (JEP 458).

@@ -3,3 +3,5 @@
 /corpus/t2/
 /fuzz/artifacts/
 /fuzz/corpus/
+/fuzz/target/
+/fuzz/coverage/

@@ -6,22 +6,36 @@ use crate::handle::Handle;
 use crate::jstr::JavaStr;
 use crate::label::Label;
 use crate::opcodes::FrameKind;
+use crate::reader::ClassReader;
 use crate::type_path::TypePath;
 use crate::type_reference::TypeReference;
 use crate::visitor::AnnotationVisitor;
 
-/// What a class reader offers a method writer for the method copy optimization (ADR-08): the raw
-/// `method_info` of a method that can be copied as is, if nothing changes it on the way.
+/// What a class reader offers a method writer for the method copy optimization (ADR-08): the
+/// `method_info` of a method that can be copied as is, if nothing changes it on the way (ASM's
+/// arguments of `MethodWriter.canCopyMethodAttributes` and `setMethodAttributesSource`).
 ///
 /// Internal: only the class reader creates these, and only the method writer uses them.
 #[doc(hidden)]
 #[derive(Debug)]
-#[allow(dead_code)] // read by the reader (P2) and the writer (P5)
-pub struct MethodCopySource<'r> {
-    /// The id of the class reader the bytes come from.
-    pub(crate) reader_id: u64,
-    /// The `method_info` structure, attributes included.
-    pub(crate) method_info: &'r [u8],
+#[allow(dead_code)] // read by the writer (P5)
+pub struct MethodCopySource<'r, 'b> {
+    /// The class reader the method comes from.
+    pub(crate) reader: &'r ClassReader<'b>,
+    /// Whether the method has a Synthetic attribute.
+    pub(crate) has_synthetic_attribute: bool,
+    /// Whether the method has a Deprecated attribute.
+    pub(crate) has_deprecated_attribute: bool,
+    /// The method's descriptor_index field.
+    pub(crate) descriptor_index: u16,
+    /// The constant pool index contained in the Signature attribute of the method, or 0.
+    pub(crate) signature_index: u16,
+    /// The offset in the class file of the Exceptions attribute of the method, or 0.
+    pub(crate) exceptions_offset: i64,
+    /// The offset in the class file of the method_info structure.
+    pub(crate) method_info_offset: i64,
+    /// The length of the method_info structure, attributes included.
+    pub(crate) method_info_length: i64,
 }
 
 /// A visitor to visit a Java method. The methods of this trait must be called in the following
@@ -57,7 +71,7 @@ pub trait MethodVisitor {
     /// that transforms methods must not be bypassed because its downstream is a writer. (The
     /// `&mut V` and `Box<V>` impls do forward it, since they are the same visitor.)
     #[doc(hidden)]
-    fn try_copy_method(&mut self, _source: &MethodCopySource<'_>) -> bool {
+    fn try_copy_method(&mut self, _source: &MethodCopySource<'_, '_>) -> bool {
         false
     }
 
@@ -607,7 +621,7 @@ macro_rules! forward_method_visitor {
             fn delegate(&mut self) -> Option<&mut dyn MethodVisitor> {
                 (**self).delegate()
             }
-            fn try_copy_method(&mut self, source: &MethodCopySource<'_>) -> bool {
+            fn try_copy_method(&mut self, source: &MethodCopySource<'_, '_>) -> bool {
                 (**self).try_copy_method(source)
             }
             fn visit_parameter(&mut self, name: Option<&JavaStr>, access: u32) {

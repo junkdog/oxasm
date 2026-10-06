@@ -1,0 +1,32 @@
+[package]
+name = "oxasm-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "BSD-3-Clause"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+oxasm = { path = "../crates/oxasm" }
+oxasm-util = { path = "../crates/oxasm-util" }
+
+# Not part of the oxasm workspace: cargo-fuzz builds it on its own, with nightly.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "read_noop"
+path = "fuzz_targets/read_noop.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "read_textify"
+path = "fuzz_targets/read_textify.rs"
+test = false
+doc = false
+bench = false

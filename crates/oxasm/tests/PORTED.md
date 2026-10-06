@@ -19,8 +19,8 @@ test class of ASM at tag `ASM_9_10_1` (`asm/src/test/java`). A phase is done onl
 | `TypePathTest` | P1 | 3 | 3 | 0 | ported | `tests/type_path_test.rs` |
 | `TypeReferenceTest` | P1 | 8 | 8 | 0 | ported | `tests/type_reference_test.rs` |
 | `TypeTest` | P1 | 36 | 29 | 7 | ported | `tests/type_test.rs`, plus descriptor proptests; the 7 reflection tests (`getType(Class/Method/Constructor)`, ...) dropped |
-| `ClassReaderTest` | P2 | 26 | 0 | 0 | pending |  |
-| `AttributeTest` | P2 (read) / P5 (write) | 4 | 0 | 0 | pending |  |
+| `ClassReaderTest` | P2 | 26 | 23 | 3 | ported | `tests/class_reader_test.rs`; the class-loader and `InputStream` constructor tests (`testStringConstructor`, `testStreamConstructor`, `testStreamConstructor_nullStream`) dropped; `testStreamConstructor_emptyStream` reads an empty slice; plus a `Send + Sync` test |
+| `AttributeTest` | P2 (read) / P5 (write) | 4 | 2 | 0 | partial | `tests/attribute_test.rs`: the read half (`testIsUnknown`, `testGetLabels`) plus oxasm's codec read tests (ADR-10); `testStaticWrite` and `testCachedContent` pending P5 (they write attributes) |
 | `AnnotationVisitorTest` | P5 | 4 | 0 | 0 | pending |  |
 | `ByteVectorTest` | P5 | 13 | 0 | 0 | pending |  |
 | `ClassVisitorTest` | P5 | 11 | 0 | 0 | pending |  |
@@ -34,7 +34,7 @@ test class of ASM at tag `ASM_9_10_1` (`asm/src/test/java`). A phase is done onl
 | `ModuleVisitorTest` | P5 | 3 | 0 | 0 | pending |  |
 | `RecordComponentVisitorTest` | P5 | 3 | 0 | 0 | pending |  |
 | `ClassWriterComputeMaxsTest` | P6 | 14 | 0 | 0 | pending |  |
-| **total** | | **234** | **56** | **15** | | |
+| **total** | | **234** | **81** | **18** | | |
 
 **Test support classes** (no tests of their own):
 

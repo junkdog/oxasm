@@ -34,10 +34,13 @@ tasks:
         extract the JDK runtime image of $JAVA_HOME into corpus/t1
   corpus t2
         fetch the jars listed in corpus/t2.txt into corpus/t2
-  parity --tier <t0|t1|t2> [--mode <mode>]... [--sample <n>] [--jobs <n>]
-         [--hierarchy <file>] --oracle-only
-        fill the oracle result cache under target/oracle/<tier>/ for each mode
-        (default: all of them); the oxasm side lands with the reader (P2) and writer (P5)
+  parity --tier <t0|t1|t2|dir:<path>> [--mode <mode>]... [--sample <n>] [--jobs <n>]
+         [--hierarchy <file>] [--oracle-only]
+        fill the oracle result cache under target/oracle/<tier>/ for each mode, then compare
+        oxasm's output with it (mismatches are written under target/parity/<tier>/<mode>/);
+        default modes: the Textifier ones (textify, textify-skip-code, textify-skip-debug,
+        textify-skip-frames, textify-expand-frames), or all of them with --oracle-only (the
+        writer modes have no oxasm side until P5)
 ";
 
 fn main() -> ExitCode {

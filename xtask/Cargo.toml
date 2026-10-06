@@ -8,6 +8,8 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
+oxasm.workspace = true
+oxasm-util.workspace = true
 sha2.workspace = true
 zip.workspace = true
 

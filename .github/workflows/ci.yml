@@ -77,3 +77,35 @@ jobs:
           cargo xtask corpus t1
           cargo xtask parity --tier t0 --oracle-only
           cargo xtask parity --tier t1 --sample 2000 --oracle-only
+      # Textifier parity (P2): oxasm's reader + Textifier against ASM's, with every reader option.
+      - name: Textifier parity over T0 and a T1 sample
+        run: |
+          cargo xtask parity --tier t0
+          cargo xtask parity --tier t1 --sample 2000
+
+  fuzz-smoke:
+    name: fuzz smoke (60 s per target)
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: ""
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [read_noop, read_textify]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      # Seeds: the T0 corpus (valid and invalid classes) and the regression inputs.
+      - name: seed corpus
+        run: |
+          mkdir -p fuzz/corpus/${{ matrix.target }}
+          find corpus/t0 fuzz/regressions -type f \( -name '*.class' -o -name '*.clazz' -o -path '*/regressions/*' \) \
+            -exec sh -c 'cp "$1" "fuzz/corpus/${{ matrix.target }}/$(sha1sum "$1" | cut -c1-16)"' _ {} \;
+      # A reduced stack surfaces unbounded recursion (ADR-06); debug assertions catch overflows.
+      - run: |
+          ulimit -s 2048
+          cd fuzz && cargo fuzz run -O -a ${{ matrix.target }} -- -max_total_time=60 -max_len=200000 -rss_limit_mb=2048

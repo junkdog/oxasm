@@ -3,9 +3,10 @@
 A Rust port of [OW2 ASM](https://asm.ow2.io/) 9.10.1, the JVM bytecode read/analyze/transform/write
 library: same capabilities, same output (byte for byte), with a Rust-shaped API.
 
-**Status: P1 (value types, visitor traits, signatures) done.** The `oxasm` crate has its value types
-(`JavaStr`, `Type`, `Handle`, `Label`, ...), the six visitor traits and the signature package; the class
-reader (P2) is next. The oracle, corpus and golden machinery that the port is verified against is in place.
+**Status: P2 (class reader, Textifier) done.** `oxasm` reads class files (`ClassReader`, with ASM's
+options and leniencies) into the visitor traits, and `oxasm-util` prints them with ASM's `Textifier`, byte for
+byte: the Textifier output equals ASM 9.10.1's on every class of the JDK runtime image and of the T2 jars, with
+every reader option. The tree (P3) is next.
 
 | Crate | Ports |
 |---|---|
@@ -25,7 +26,15 @@ MIRIFLAGS=-Zmiri-disable-isolation PROPTEST_CASES=16 \
   cargo +nightly miri test -p oxasm --lib jstr   # the unsafe in jstr, under Miri (ADR-18)
 cargo xtask oracle textify corpus/t0/jdk8/AllFrames.class
 cargo xtask corpus t1             # extract $JAVA_HOME's runtime image (about 32k classes)
-cargo xtask parity --tier t1 --sample 2000 --oracle-only
+cargo xtask parity --tier t1      # Textifier parity, all reader options, vs ASM (target/parity/)
+cargo xtask parity --tier t1 --sample 2000 --oracle-only   # only fill the oracle cache (all modes)
+```
+
+Fuzzing uses [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) with nightly; `fuzz/` is its own workspace
+(seed `fuzz/corpus/<target>/` with class files, e.g. `corpus/t0`):
+
+```zsh
+cd fuzz && cargo +nightly fuzz run -O -a read_textify -- -max_total_time=60
 ```
 
 The oracle (`oracle/Oracle.java`) needs Java 22 or newer (CI uses 25) and the released

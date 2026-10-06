@@ -15,6 +15,7 @@ pub mod hierarchy;
 pub mod jstr;
 pub mod label;
 pub mod opcodes;
+pub mod reader;
 pub mod signature;
 pub mod ty;
 pub mod type_path;
@@ -25,7 +26,7 @@ pub(crate) mod constants;
 #[cfg(test)]
 mod constants_test;
 
-pub use attribute::{Attribute, CustomAttribute, UnknownAttribute};
+pub use attribute::{Attribute, AttributeCodec, CustomAttribute, UnknownAttribute};
 pub use constant::{AnnotationValue, Constant, FrameValue};
 pub use constant_dynamic::ConstantDynamic;
 pub use handle::Handle;
@@ -33,6 +34,7 @@ pub use hierarchy::{ChainedHierarchy, ClassHierarchy, MapHierarchy, ObjectHierar
 pub use jstr::{JavaStr, JavaString};
 pub use label::Label;
 pub use opcodes::{FrameKind, HandleKind};
+pub use reader::{ClassReader, ParsingOptions};
 pub use ty::{Type, TypeSort};
 pub use type_path::TypePath;
 pub use type_reference::TypeReference;

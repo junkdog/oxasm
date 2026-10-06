@@ -4,6 +4,7 @@
 use super::*;
 use crate::jstr;
 use crate::jstr::JavaStr;
+use crate::reader::ClassReader;
 
 /// Records the events it receives; accepts method copies, like a method writer would.
 #[derive(Default)]
@@ -30,7 +31,7 @@ impl ClassVisitor for Sink {
 }
 
 impl MethodVisitor for Sink {
-    fn try_copy_method(&mut self, _: &MethodCopySource<'_>) -> bool {
+    fn try_copy_method(&mut self, _: &MethodCopySource<'_, '_>) -> bool {
         self.copied = true;
         true
     }
@@ -78,16 +79,23 @@ impl MethodVisitor for Wrapped<'_> {
     }
 }
 
-fn source() -> MethodCopySource<'static> {
+fn source<'r, 'b>(reader: &'r ClassReader<'b>) -> MethodCopySource<'r, 'b> {
     MethodCopySource {
-        reader_id: 1,
-        method_info: &[],
+        reader,
+        has_synthetic_attribute: false,
+        has_deprecated_attribute: false,
+        descriptor_index: 0,
+        signature_index: 0,
+        exceptions_offset: 0,
+        method_info_offset: 0,
+        method_info_length: 0,
     }
 }
 
 fn drive(cv: &mut dyn ClassVisitor) {
+    let reader = ClassReader::new(oxasm_testkit::PrecompiledClass::DefaultPackage.bytes()).unwrap();
     if let Some(mut mv) = cv.visit_method(0, jstr!("m"), jstr!("()V"), None, &[]) {
-        if !mv.try_copy_method(&source()) {
+        if !mv.try_copy_method(&source(&reader)) {
             mv.visit_insn(0xb1);
         }
         mv.visit_end();

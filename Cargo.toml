@@ -1,5 +1,7 @@
 [workspace]
 resolver = "3"
+# The fuzz targets are their own workspace, built by cargo-fuzz with nightly.
+exclude = ["fuzz"]
 members = [
     "crates/oxasm",
     "crates/oxasm-tree",
@@ -24,6 +26,7 @@ oxasm-commons = { path = "crates/oxasm-commons" }
 oxasm-util = { path = "crates/oxasm-util" }
 oxasm-testkit = { path = "crates/oxasm-testkit" }
 
+bitflags = "2.13.2"
 dyn-clone = "1.0.20"
 rustc-hash = "2.1.3"
 thiserror = "2.0.21"

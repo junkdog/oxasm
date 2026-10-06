@@ -1,12 +1,18 @@
-//! Parity sweeps over a corpus tier. Until the oxasm reader (P2) and writer (P5) exist, this only
-//! fills the oracle result cache, `target/oracle/<tier>/<mode>/<sha256>.{ok,err}`, keyed by the
-//! SHA-256 of each class file, so that later sweeps only pay for classes they have not seen.
+//! Parity sweeps over a corpus tier. Each sweep first fills the oracle result cache,
+//! `target/oracle/<tier>/<mode>/<sha256>.{ok,err}`, keyed by the SHA-256 of each class file, so
+//! that later sweeps only pay for classes they have not seen; then (unless `--oracle-only`) it
+//! computes oxasm's side of each mode and compares the two.
+//!
+//! The oxasm side exists for the Textifier modes (P2); the writer modes arrive with the writer
+//! (P5, P6). A class on which ASM fails agrees with oxasm iff oxasm fails too ("both reject").
 
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
+use oxasm::{ClassReader, ParsingOptions};
+use oxasm_util::TraceClassVisitor;
 
 use crate::args::Args;
 use crate::oracle::{Oracle, ServeRequest};
@@ -18,10 +24,32 @@ struct Mode {
     name: &'static str,
     command: &'static str,
     needs_hierarchy: bool,
+    /// For a Textifier mode, the reader options: oxasm's side is a `TraceClassVisitor` output.
+    textify: Option<ParsingOptions>,
 }
 
-const MODES: [Mode; 12] = [
-    Mode::new("textify", "textify"),
+const MODES: [Mode; 16] = [
+    Mode::textify("textify", "textify", ParsingOptions::empty()),
+    Mode::textify(
+        "textify-skip-code",
+        "textify --opts SKIP_CODE",
+        ParsingOptions::SKIP_CODE,
+    ),
+    Mode::textify(
+        "textify-skip-debug",
+        "textify --opts SKIP_DEBUG",
+        ParsingOptions::SKIP_DEBUG,
+    ),
+    Mode::textify(
+        "textify-skip-frames",
+        "textify --opts SKIP_FRAMES",
+        ParsingOptions::SKIP_FRAMES,
+    ),
+    Mode::textify(
+        "textify-expand-frames",
+        "textify --opts EXPAND_FRAMES",
+        ParsingOptions::EXPAND_FRAMES,
+    ),
     Mode::new("copy", "roundtrip --mode 0 --copy-pool"),
     Mode::new("plain", "roundtrip --mode 0"),
     Mode::new("maxs", "roundtrip --mode maxs"),
@@ -41,6 +69,7 @@ impl Mode {
             name,
             command,
             needs_hierarchy: false,
+            textify: None,
         }
     }
 
@@ -49,6 +78,16 @@ impl Mode {
             name,
             command,
             needs_hierarchy: true,
+            textify: None,
+        }
+    }
+
+    const fn textify(name: &'static str, command: &'static str, options: ParsingOptions) -> Mode {
+        Mode {
+            name,
+            command,
+            needs_hierarchy: false,
+            textify: Some(options),
         }
     }
 }
@@ -64,7 +103,9 @@ struct Class {
 }
 
 pub fn cli(mut args: Args) -> Result<()> {
-    let tier = args.value("--tier")?.context("missing --tier <t0|t1|t2>")?;
+    let tier = args
+        .value("--tier")?
+        .context("missing --tier <t0|t1|t2|dir:<path>>")?;
     let mode_names = args.values("--mode")?;
     let sample = args
         .value("--sample")?
@@ -80,14 +121,12 @@ pub fn cli(mut args: Args) -> Result<()> {
     let oracle_only = args.flag("--oracle-only");
     args.finish()?;
 
-    if !oracle_only {
-        bail!(
-            "the oxasm side of parity sweeps lands with the reader (P2) and writer (P5); pass \
-             --oracle-only to fill the oracle cache"
-        );
-    }
     let modes: Vec<&Mode> = if mode_names.is_empty() {
-        MODES.iter().collect()
+        // Without --oracle-only, the modes that have an oxasm side.
+        MODES
+            .iter()
+            .filter(|m| oracle_only || m.textify.is_some())
+            .collect()
     } else {
         mode_names
             .iter()
@@ -119,12 +158,179 @@ pub fn cli(mut args: Args) -> Result<()> {
         None
     };
 
-    for mode in modes {
-        fill_mode(&oracle, &tier, mode, &classes, hierarchy.as_deref(), jobs)?;
+    if !oracle_only && let Some(mode) = modes.iter().find(|m| m.textify.is_none()) {
+        bail!(
+            "mode {} has no oxasm side yet (it needs the writer, P5/P6); pass --oracle-only to \
+             only fill the oracle cache",
+            mode.name
+        );
     }
+    let mut mismatched_modes = Vec::new();
+    for mode in modes {
+        let cache = fill_mode(&oracle, &tier, mode, &classes, hierarchy.as_deref(), jobs)?;
+        if !oracle_only && compare_mode(&tier, mode, &classes, &cache, jobs)? > 0 {
+            mismatched_modes.push(mode.name);
+        }
+    }
+    ensure!(
+        mismatched_modes.is_empty(),
+        "mismatches in {}",
+        mismatched_modes.join(", ")
+    );
     Ok(())
 }
 
+/// The result of one side of a mode for one class.
+#[derive(PartialEq, Eq)]
+enum Outcome {
+    Ok(Vec<u8>),
+    /// The side failed: the oracle's exception, or oxasm's error (or panic).
+    Err(String),
+}
+
+/// oxasm's side of a mode for one class.
+fn oxasm_outcome(mode: &Mode, class_file: &[u8]) -> Outcome {
+    let options = mode
+        .textify
+        .expect("only Textifier modes have an oxasm side");
+    let result = std::panic::catch_unwind(|| -> Result<Vec<u8>, String> {
+        let mut output = Vec::new();
+        let mut trace_class_visitor = TraceClassVisitor::new(&mut output);
+        ClassReader::new(class_file)
+            .and_then(|reader| reader.accept(&mut trace_class_visitor, options))
+            .map_err(|e| e.to_string())?;
+        trace_class_visitor
+            .take_io_error()
+            .map_err(|e| e.to_string())?;
+        Ok(output)
+    });
+    match result {
+        Ok(Ok(output)) => Outcome::Ok(output),
+        Ok(Err(error)) => Outcome::Err(error),
+        Err(panic) => Outcome::Err(format!(
+            "PANIC: {}",
+            panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("?")
+        )),
+    }
+}
+
+/// Compares oxasm's side of a mode with the cached oracle results, prints a summary and the
+/// first mismatches, and writes each mismatch's outputs under `target/parity/<tier>/<mode>/`.
+/// Returns the number of mismatched classes.
+fn compare_mode(
+    tier: &str,
+    mode: &Mode,
+    classes: &[Class],
+    cache: &Path,
+    jobs: usize,
+) -> Result<usize> {
+    let out = root_path("target/parity")
+        .join(tier_key(tier))
+        .join(mode.name);
+    if out.exists() {
+        fs::remove_dir_all(&out)?;
+    }
+    let chunk_size = classes.len().div_ceil(jobs.max(1)).max(1);
+    let results: Vec<Result<Vec<(usize, String)>>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = classes
+            .chunks(chunk_size)
+            .enumerate()
+            .map(|(chunk_index, chunk)| {
+                let out = out.as_path();
+                scope.spawn(move || -> Result<Vec<(usize, String)>> {
+                    let mut mismatches = Vec::new();
+                    for (i, class) in chunk.iter().enumerate() {
+                        let oracle = oracle_outcome(cache, class)?;
+                        let oxasm = oxasm_outcome(mode, &class.bytes);
+                        if let Some(report) = mismatch(&oracle, &oxasm) {
+                            fs::create_dir_all(out)?;
+                            let base = out.join(&class.sha256);
+                            fs::write(base.with_extension("class"), &class.bytes)?;
+                            for (side, outcome) in [("oracle", &oracle), ("oxasm", &oxasm)] {
+                                let bytes = match outcome {
+                                    Outcome::Ok(bytes) => bytes.as_slice(),
+                                    Outcome::Err(error) => error.as_bytes(),
+                                };
+                                fs::write(base.with_extension(side), bytes)?;
+                            }
+                            mismatches.push((chunk_index * chunk_size + i, report));
+                        }
+                    }
+                    Ok(mismatches)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().expect("comparison thread panicked"))
+            .collect()
+    });
+    let mut mismatches = Vec::new();
+    for result in results {
+        mismatches.extend(result?);
+    }
+    mismatches.sort();
+    println!(
+        "{tier}/{}: {} classes, {} mismatched",
+        mode.name,
+        classes.len(),
+        mismatches.len()
+    );
+    for (index, report) in mismatches.iter().take(20) {
+        let class = &classes[*index];
+        println!("  {} ({}): {report}", class.id, &class.sha256[..12]);
+    }
+    if !mismatches.is_empty() {
+        println!("  outputs: {}", out.display());
+    }
+    Ok(mismatches.len())
+}
+
+/// The cached oracle result of a class.
+fn oracle_outcome(cache: &Path, class: &Class) -> Result<Outcome> {
+    let ok = cache.join(format!("{}.ok", class.sha256));
+    if ok.exists() {
+        return Ok(Outcome::Ok(fs::read(ok)?));
+    }
+    let err = cache.join(format!("{}.err", class.sha256));
+    Ok(Outcome::Err(
+        String::from_utf8_lossy(&fs::read(&err).with_context(|| {
+            format!("no oracle result for {} in {}", class.id, cache.display())
+        })?)
+        .into_owned(),
+    ))
+}
+
+/// A description of how the two outcomes disagree, or `None` if they agree.
+fn mismatch(oracle: &Outcome, oxasm: &Outcome) -> Option<String> {
+    match (oracle, oxasm) {
+        (Outcome::Ok(a), Outcome::Ok(b)) if a == b => None,
+        (Outcome::Err(_), Outcome::Err(error)) if !error.starts_with("PANIC") => None,
+        (Outcome::Ok(a), Outcome::Ok(b)) => {
+            let (a, b) = (String::from_utf8_lossy(a), String::from_utf8_lossy(b));
+            let line = a
+                .lines()
+                .zip(b.lines())
+                .position(|(x, y)| x != y)
+                .unwrap_or_else(|| a.lines().count().min(b.lines().count()));
+            Some(format!(
+                "line {}: oracle {:?} / oxasm {:?}",
+                line + 1,
+                a.lines().nth(line).unwrap_or("<end>"),
+                b.lines().nth(line).unwrap_or("<end>")
+            ))
+        }
+        (Outcome::Ok(_), Outcome::Err(error)) => Some(format!("only oxasm fails: {error}")),
+        (Outcome::Err(error), Outcome::Ok(_)) => Some(format!("only ASM fails: {error}")),
+        (Outcome::Err(error), Outcome::Err(oxasm)) => Some(format!("{oxasm} (ASM: {error})")),
+    }
+}
+
+/// Fills the oracle cache of a mode, and returns its directory.
 fn fill_mode(
     oracle: &Oracle,
     tier: &str,
@@ -132,7 +338,7 @@ fn fill_mode(
     classes: &[Class],
     hierarchy: Option<&Path>,
     jobs: usize,
-) -> Result<()> {
+) -> Result<PathBuf> {
     let mut command = mode.command.to_owned();
     let mut key = mode.name.to_owned();
     if mode.needs_hierarchy {
@@ -148,7 +354,7 @@ fn fill_mode(
         // Results depend on the hierarchy, so it is part of the cache key.
         key.push_str(&format!("-h{}", &sha256_hex(&tsv)[..12]));
     }
-    let cache = root_path("target/oracle").join(tier).join(&key);
+    let cache = root_path("target/oracle").join(tier_key(tier)).join(&key);
     fs::create_dir_all(&cache)?;
 
     let misses: Vec<&Class> = classes
@@ -204,14 +410,16 @@ fn fill_mode(
         classes.len() - misses.len(),
         misses.len()
     );
-    Ok(())
+    Ok(cache)
 }
 
 /// `target/oracle/<tier>/hierarchy.tsv`: the hierarchy of the tier plus, for tiers other than T1,
 /// the JDK classes of T1 (when extracted). It is regenerated on every run, so it follows the
 /// corpus; cached results stay valid because their key includes its hash.
 fn tier_hierarchy(oracle: &Oracle, tier: &str) -> Result<PathBuf> {
-    let path = root_path("target/oracle").join(tier).join("hierarchy.tsv");
+    let path = root_path("target/oracle")
+        .join(tier_key(tier))
+        .join("hierarchy.tsv");
     let mut words = vec!["hierarchy".to_owned()];
     words.extend(tier_inputs(tier)?);
     let t1 = root_path("corpus/t1");
@@ -232,8 +440,22 @@ fn tier_hierarchy(oracle: &Oracle, tier: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// The oracle inputs (directories or jars) that make up a tier.
+/// The directory name of a tier under `target/oracle` and `target/parity`: the tier itself, or
+/// `dir-<hash of the path>` for a `dir:<path>` tier.
+fn tier_key(tier: &str) -> String {
+    match tier.strip_prefix("dir:") {
+        Some(path) => format!("dir-{}", &sha256_hex(path.as_bytes())[..12]),
+        None => tier.to_owned(),
+    }
+}
+
+/// The oracle inputs (directories or jars) that make up a tier: `corpus/<tier>`, or the
+/// directory of a `dir:<path>` tier (any directory of class files, e.g. fuzzer mutants).
 fn tier_inputs(tier: &str) -> Result<Vec<String>> {
+    if let Some(path) = tier.strip_prefix("dir:") {
+        ensure!(Path::new(path).is_dir(), "{path} is not a directory");
+        return Ok(vec![path.to_owned()]);
+    }
     let dir = root_path(&format!("corpus/{tier}"));
     ensure!(
         dir.is_dir(),

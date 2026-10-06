@@ -1,15 +1,19 @@
 //! Test support shared by the oxasm crates: the T0 corpus, the committed oracle goldens, and
-//! (from P2) the `ClassFile` structural dumper. This is the port of ASM's `asm-test` module.
+//! the `ClassFile` structural dumper (`classfile_dump`). This is the port of ASM's `asm-test` module.
 //!
 //! Not published. It deliberately does not depend on `oxasm`, so every oxasm crate can use it
 //! as a dev-dependency without a dependency cycle.
 
+pub mod classfile_dump;
 pub mod golden;
+pub mod java_fmt;
+pub mod oracle_records;
 pub mod precompiled;
 pub mod signatures;
 
 use std::path::{Path, PathBuf};
 
+pub use classfile_dump::{ClassFile, ClassFormatError};
 pub use precompiled::{InvalidClass, JdkVersion, PrecompiledClass};
 
 /// The workspace root.

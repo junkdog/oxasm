@@ -12,5 +12,5 @@ test class of ASM at tag `ASM_9_10_1` (`asm-test/src/test/java`). A phase is don
 | Java test class | Phase | Java tests | Ported | Dropped | Status | Notes |
 |---|---|---:|---:|---:|---|---|
 | `AsmTestTest` | P0 | 5 | 4 | 1 | ported | `tests/asm_test_test.rs`; the two `allClassesAnd*Api` tests merge into `test_get_all_classes`; `testApi_allMethods` dropped (ADR-09) |
-| `ClassFileTest` | P2 | 9 | 0 | 0 | pending |  |
-| **total** | | **14** | **4** | **1** | | |
+| `ClassFileTest` | P2 | 9 | 7 | 2 | ported | `tests/class_file_test.rs`; `testNewInstance_validClass` and `testStaticNewInstance_invalidClass` dropped (they load classes in a JVM; the oracle's `verify` replaces `newInstance`); `testNewInstance_invalidClass` checks the dump's `ClassFormatException`, which is what `newInstance` throws. Plus `tests/classfile_dump_goldens.rs` (all 73 T0 dumps == the oracle goldens), `tests/classfile_dump_robustness.rs` and the opt-in oracle cross-check `tests/classfile_dump_oracle.rs` |
+| **total** | | **14** | **11** | **3** | | |
