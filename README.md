@@ -3,10 +3,11 @@
 A Rust port of [OW2 ASM](https://asm.ow2.io/) 9.10.1, the JVM bytecode read/analyze/transform/write
 library: same capabilities, same output (byte for byte), with a Rust-shaped API.
 
-**Status: P2 (class reader, Textifier) done.** `oxasm` reads class files (`ClassReader`, with ASM's
-options and leniencies) into the visitor traits, and `oxasm-util` prints them with ASM's `Textifier`, byte for
-byte: the Textifier output equals ASM 9.10.1's on every class of the JDK runtime image and of the T2 jars, with
-every reader option. The tree (P3) is next.
+**Status: P3 (tree) done.** `oxasm` reads class files (`ClassReader`, with ASM's options and leniencies) into
+the visitor traits, `oxasm-tree` holds them as `ClassNode`s (an arena-backed `InsnList` with generational
+handles), and `oxasm-util` prints them with ASM's `Textifier`, byte for byte: the Textifier output equals ASM
+9.10.1's, directly and through a `ClassNode`, on every class of the JDK runtime image and of the T2 jars, with
+every reader option. Analysis (P4) is next.
 
 | Crate | Ports |
 |---|---|
@@ -34,7 +35,7 @@ Fuzzing uses [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) with nightly;
 (seed `fuzz/corpus/<target>/` with class files, e.g. `corpus/t0`):
 
 ```zsh
-cd fuzz && cargo +nightly fuzz run -O -a read_textify -- -max_total_time=60
+cd fuzz && cargo +nightly fuzz run -O -a read_textify -- -max_total_time=60   # or read_noop, read_tree, tree_ops
 ```
 
 The oracle (`oracle/Oracle.java`) needs Java 22 or newer (CI uses 25) and the released

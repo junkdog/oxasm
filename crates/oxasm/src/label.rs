@@ -55,10 +55,11 @@ impl Label {
     }
 
     /// This label, with ASM's `FLAG_DEBUG_ONLY` set or cleared (the same label for every other
-    /// purpose).
+    /// purpose). The tree clears it, as ASM's `LabelNode` hands out fresh labels.
+    #[doc(hidden)]
     #[inline]
     #[must_use]
-    pub(crate) fn with_debug_only(self, debug_only: bool) -> Label {
+    pub fn with_debug_only(self, debug_only: bool) -> Label {
         let value = if debug_only {
             self.0.get() | DEBUG_ONLY
         } else {

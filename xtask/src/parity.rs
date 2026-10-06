@@ -3,8 +3,8 @@
 //! that later sweeps only pay for classes they have not seen; then (unless `--oracle-only`) it
 //! computes oxasm's side of each mode and compares the two.
 //!
-//! The oxasm side exists for the Textifier modes (P2); the writer modes arrive with the writer
-//! (P5, P6). A class on which ASM fails agrees with oxasm iff oxasm fails too ("both reject").
+//! The oxasm side exists for the Textifier modes (P2), direct and through a `ClassNode` (P3); the
+//! writer modes arrive with the writer (P5, P6). A class on which ASM fails agrees with oxasm iff oxasm fails too ("both reject").
 
 use std::fs;
 use std::io::Read;
@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use oxasm::{ClassReader, ParsingOptions};
+use oxasm_tree::ClassNode;
 use oxasm_util::TraceClassVisitor;
 
 use crate::args::Args;
@@ -26,9 +27,12 @@ struct Mode {
     needs_hierarchy: bool,
     /// For a Textifier mode, the reader options: oxasm's side is a `TraceClassVisitor` output.
     textify: Option<ParsingOptions>,
+    /// For a Textifier mode, whether the class is read into a `ClassNode` first (which then
+    /// visits the `TraceClassVisitor`).
+    tree: bool,
 }
 
-const MODES: [Mode; 16] = [
+const MODES: [Mode; 21] = [
     Mode::textify("textify", "textify", ParsingOptions::empty()),
     Mode::textify(
         "textify-skip-code",
@@ -48,6 +52,27 @@ const MODES: [Mode; 16] = [
     Mode::textify(
         "textify-expand-frames",
         "textify --opts EXPAND_FRAMES",
+        ParsingOptions::EXPAND_FRAMES,
+    ),
+    Mode::tree_textify("tree-textify", "tree-textify", ParsingOptions::empty()),
+    Mode::tree_textify(
+        "tree-textify-skip-code",
+        "tree-textify --opts SKIP_CODE",
+        ParsingOptions::SKIP_CODE,
+    ),
+    Mode::tree_textify(
+        "tree-textify-skip-debug",
+        "tree-textify --opts SKIP_DEBUG",
+        ParsingOptions::SKIP_DEBUG,
+    ),
+    Mode::tree_textify(
+        "tree-textify-skip-frames",
+        "tree-textify --opts SKIP_FRAMES",
+        ParsingOptions::SKIP_FRAMES,
+    ),
+    Mode::tree_textify(
+        "tree-textify-expand-frames",
+        "tree-textify --opts EXPAND_FRAMES",
         ParsingOptions::EXPAND_FRAMES,
     ),
     Mode::new("copy", "roundtrip --mode 0 --copy-pool"),
@@ -70,6 +95,7 @@ impl Mode {
             command,
             needs_hierarchy: false,
             textify: None,
+            tree: false,
         }
     }
 
@@ -79,6 +105,7 @@ impl Mode {
             command,
             needs_hierarchy: true,
             textify: None,
+            tree: false,
         }
     }
 
@@ -88,6 +115,18 @@ impl Mode {
             command,
             needs_hierarchy: false,
             textify: Some(options),
+            tree: false,
+        }
+    }
+
+    const fn tree_textify(
+        name: &'static str,
+        command: &'static str,
+        options: ParsingOptions,
+    ) -> Mode {
+        Mode {
+            tree: true,
+            ..Mode::textify(name, command, options)
         }
     }
 }
@@ -196,9 +235,18 @@ fn oxasm_outcome(mode: &Mode, class_file: &[u8]) -> Outcome {
     let result = std::panic::catch_unwind(|| -> Result<Vec<u8>, String> {
         let mut output = Vec::new();
         let mut trace_class_visitor = TraceClassVisitor::new(&mut output);
-        ClassReader::new(class_file)
-            .and_then(|reader| reader.accept(&mut trace_class_visitor, options))
-            .map_err(|e| e.to_string())?;
+        let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
+        if mode.tree {
+            let mut class_node = ClassNode::default();
+            reader
+                .accept(&mut class_node, options)
+                .map_err(|e| e.to_string())?;
+            class_node.accept(&mut trace_class_visitor);
+        } else {
+            reader
+                .accept(&mut trace_class_visitor, options)
+                .map_err(|e| e.to_string())?;
+        }
         trace_class_visitor
             .take_io_error()
             .map_err(|e| e.to_string())?;

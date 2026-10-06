@@ -26,13 +26,14 @@ impl ReaderOptions {
         ReaderOptions::ExpandFrames,
     ];
 
-    fn dir(self) -> &'static str {
+    /// The directory name of the goldens read with these options, e.g. `skip_debug`.
+    pub fn dir_name(self) -> &'static str {
         match self {
-            ReaderOptions::Default => "textifier/default",
-            ReaderOptions::SkipCode => "textifier/skip_code",
-            ReaderOptions::SkipDebug => "textifier/skip_debug",
-            ReaderOptions::SkipFrames => "textifier/skip_frames",
-            ReaderOptions::ExpandFrames => "textifier/expand_frames",
+            ReaderOptions::Default => "default",
+            ReaderOptions::SkipCode => "skip_code",
+            ReaderOptions::SkipDebug => "skip_debug",
+            ReaderOptions::SkipFrames => "skip_frames",
+            ReaderOptions::ExpandFrames => "expand_frames",
         }
     }
 }
@@ -71,7 +72,19 @@ pub fn goldens_dir() -> PathBuf {
 /// ASM's Textifier output for the class `name` read with `options`; panics if there is none.
 #[track_caller]
 pub fn textifier(name: &str, options: ReaderOptions) -> Golden {
-    load(options.dir(), name)
+    load(&format!("textifier/{}", options.dir_name()), name)
+}
+
+/// ASM's Textifier output for the class `name` read into a `ClassNode` with `options`, then
+/// visited from the `ClassNode` (the oracle's `tree-textify`); panics if there is none.
+///
+/// The `textifier_tree` sets are deltas: they hold only the goldens that differ from the
+/// direct path's (some Code attributes and try catch block annotations are visited in another
+/// order); for the other classes, this is [`textifier`].
+#[track_caller]
+pub fn textifier_tree(name: &str, options: ReaderOptions) -> Golden {
+    try_load(&format!("textifier_tree/{}", options.dir_name()), name)
+        .unwrap_or_else(|| textifier(name, options))
 }
 
 /// The `ClassFile` structural dump of the class `name`; panics if there is none.
@@ -82,15 +95,20 @@ pub fn dump(name: &str) -> Golden {
 
 #[track_caller]
 fn load(set: &str, name: &str) -> Golden {
-    let dir = goldens_dir().join(set);
-    if let Ok(bytes) = std::fs::read(dir.join(format!("{name}.txt"))) {
-        return Golden::Ok(bytes);
-    }
-    match std::fs::read_to_string(dir.join(format!("{name}.err"))) {
-        Ok(error) => Golden::Err(error),
-        Err(_) => panic!(
+    try_load(set, name).unwrap_or_else(|| {
+        panic!(
             "no golden {set}/{name}.{{txt,err}} under {}; run `cargo xtask golden --regen`",
             goldens_dir().display()
-        ),
+        )
+    })
+}
+
+fn try_load(set: &str, name: &str) -> Option<Golden> {
+    let dir = goldens_dir().join(set);
+    if let Ok(bytes) = std::fs::read(dir.join(format!("{name}.txt"))) {
+        return Some(Golden::Ok(bytes));
     }
+    std::fs::read_to_string(dir.join(format!("{name}.err")))
+        .ok()
+        .map(Golden::Err)
 }

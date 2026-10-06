@@ -19,33 +19,73 @@ const T0: &str = "corpus/t0";
 struct GoldenSet {
     dir: &'static str,
     command: &'static [&'static str],
+    /// For a delta set, the set it is a delta of: only the goldens that differ from that set's
+    /// are committed, and the others are that set's (`oxasm_testkit::golden` falls back to it).
+    base: Option<&'static str>,
 }
 
-const SETS: [GoldenSet; 6] = [
-    GoldenSet {
-        dir: "textifier/default",
-        command: &["textify"],
-    },
-    GoldenSet {
-        dir: "textifier/skip_code",
-        command: &["textify", "--opts", "SKIP_CODE"],
-    },
-    GoldenSet {
-        dir: "textifier/skip_debug",
-        command: &["textify", "--opts", "SKIP_DEBUG"],
-    },
-    GoldenSet {
-        dir: "textifier/skip_frames",
-        command: &["textify", "--opts", "SKIP_FRAMES"],
-    },
-    GoldenSet {
-        dir: "textifier/expand_frames",
-        command: &["textify", "--opts", "EXPAND_FRAMES"],
-    },
-    GoldenSet {
-        dir: "dump",
-        command: &["dump"],
-    },
+impl GoldenSet {
+    const fn new(dir: &'static str, command: &'static [&'static str]) -> GoldenSet {
+        GoldenSet {
+            dir,
+            command,
+            base: None,
+        }
+    }
+
+    const fn delta(
+        dir: &'static str,
+        command: &'static [&'static str],
+        base: &'static str,
+    ) -> GoldenSet {
+        GoldenSet {
+            dir,
+            command,
+            base: Some(base),
+        }
+    }
+}
+
+const SETS: [GoldenSet; 11] = [
+    GoldenSet::new("textifier/default", &["textify"]),
+    GoldenSet::new("textifier/skip_code", &["textify", "--opts", "SKIP_CODE"]),
+    GoldenSet::new("textifier/skip_debug", &["textify", "--opts", "SKIP_DEBUG"]),
+    GoldenSet::new(
+        "textifier/skip_frames",
+        &["textify", "--opts", "SKIP_FRAMES"],
+    ),
+    GoldenSet::new(
+        "textifier/expand_frames",
+        &["textify", "--opts", "EXPAND_FRAMES"],
+    ),
+    GoldenSet::new("dump", &["dump"]),
+    // ASM's tree path (reader -> ClassNode -> Textifier) prints some classes differently from its
+    // direct path (Code attributes and try catch block annotations move), hence deltas.
+    GoldenSet::delta(
+        "textifier_tree/default",
+        &["tree-textify"],
+        "textifier/default",
+    ),
+    GoldenSet::delta(
+        "textifier_tree/skip_code",
+        &["tree-textify", "--opts", "SKIP_CODE"],
+        "textifier/skip_code",
+    ),
+    GoldenSet::delta(
+        "textifier_tree/skip_debug",
+        &["tree-textify", "--opts", "SKIP_DEBUG"],
+        "textifier/skip_debug",
+    ),
+    GoldenSet::delta(
+        "textifier_tree/skip_frames",
+        &["tree-textify", "--opts", "SKIP_FRAMES"],
+        "textifier/skip_frames",
+    ),
+    GoldenSet::delta(
+        "textifier_tree/expand_frames",
+        &["tree-textify", "--opts", "EXPAND_FRAMES"],
+        "textifier/expand_frames",
+    ),
 ];
 
 /// File name → content, for one golden set.
@@ -77,18 +117,39 @@ pub fn cli(mut args: Args) -> Result<()> {
             .collect()
     });
 
+    let generated: Vec<Goldens> = SETS
+        .iter()
+        .zip(generated)
+        .map(|(set, goldens)| goldens.with_context(|| format!("generating {}", set.dir)))
+        .collect::<Result<_>>()?;
     let mut problems = 0usize;
-    for (set, goldens) in SETS.iter().zip(generated) {
-        let goldens = goldens.with_context(|| format!("generating {}", set.dir))?;
+    for (set, goldens) in SETS.iter().zip(&generated) {
+        let delta;
+        let goldens = match set.base {
+            None => goldens,
+            Some(base) => {
+                let base = SETS
+                    .iter()
+                    .position(|s| s.dir == base)
+                    .map(|i| &generated[i])
+                    .with_context(|| format!("no golden set {base}"))?;
+                delta = goldens
+                    .iter()
+                    .filter(|(name, content)| base.get(*name) != Some(content))
+                    .map(|(name, content)| (name.clone(), content.clone()))
+                    .collect();
+                &delta
+            }
+        };
         let dir = root_path(GOLDENS).join(set.dir);
         problems += if regen {
-            write_set(set, &dir, &goldens)?;
+            write_set(set, &dir, goldens)?;
             0
         } else {
-            check_set(set, &dir, &goldens)?
+            check_set(set, &dir, goldens)?
         };
         if set.dir == "textifier/default" {
-            problems += check_upstream(&goldens)?;
+            problems += check_upstream(goldens)?;
         }
     }
     if problems > 0 {

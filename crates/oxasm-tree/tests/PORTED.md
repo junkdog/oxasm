@@ -7,38 +7,43 @@ test class of ASM at tag `ASM_9_10_1` (`asm-tree/src/test/java`). A phase is don
 - **Java tests:** `@Test`/`@ParameterizedTest` methods in the Java class.
 - **Ported / Dropped:** Java tests covered by Rust tests / deliberately not ported (each drop names its reason
   in a comment in the Rust file, e.g. ADR-09 for `api`-version tests).
-- **Status:** *pending*, *partial* or *ported*.
+- **Status:** *pending*, *partial* or *ported*. The 4 tests missing from the counts compare `ClassWriter`
+  outputs (with `ClassFile` dumps) and are pending P5, as the plan schedules writer-dependent tree tests; each
+  has an interim Textifier-based version until then.
 
 | Java test class | Phase | Java tests | Ported | Dropped | Status | Notes |
 |---|---|---:|---:|---:|---|---|
-| `AnnotationNodeTest` | P3 | 4 | 0 | 0 | pending |  |
-| `ClassNodeTest` | P3 | 6 | 0 | 0 | pending |  |
-| `FieldInsnNodeTest` | P3 | 2 | 0 | 0 | pending |  |
-| `FieldNodeTest` | P3 | 2 | 0 | 0 | pending |  |
-| `FrameNodeTest` | P3 | 2 | 0 | 0 | pending |  |
-| `IincInsnNodeTest` | P3 | 1 | 0 | 0 | pending |  |
-| `InsnListTest` | P3 | 63 | 0 | 0 | pending |  |
-| `InsnNodeTest` | P3 | 1 | 0 | 0 | pending |  |
-| `IntInsnNodeTest` | P3 | 2 | 0 | 0 | pending |  |
-| `InvokeDynamicInsnNodeTest` | P3 | 1 | 0 | 0 | pending |  |
-| `JumpInsnNodeTest` | P3 | 2 | 0 | 0 | pending |  |
-| `LabelNodeTest` | P3 | 1 | 0 | 0 | pending |  |
-| `LdcInsnNodeTest` | P3 | 1 | 0 | 0 | pending |  |
-| `LineNumberNodeTest` | P3 | 1 | 0 | 0 | pending |  |
-| `LookupSwitchInsnNodeTest` | P3 | 1 | 0 | 0 | pending |  |
-| `MethodInsnNodeTest` | P3 | 3 | 0 | 0 | pending |  |
-| `MethodNodeTest` | P3 | 4 | 0 | 0 | pending |  |
-| `ModuleNodeTest` | P3 | 3 | 0 | 0 | pending |  |
-| `MultiANewArrayInsnNodeTest` | P3 | 1 | 0 | 0 | pending |  |
-| `RecordComponentNodeTest` | P3 | 2 | 0 | 0 | pending |  |
-| `TableSwitchInsnNodeTest` | P3 | 1 | 0 | 0 | pending |  |
-| `TypeAnnotationNodeTest` | P3 | 2 | 0 | 0 | pending |  |
-| `TypeInsnNodeTest` | P3 | 2 | 0 | 0 | pending |  |
-| `UtilTest` | P3 | 3 | 0 | 0 | pending |  |
-| `VarInsnNodeTest` | P3 | 2 | 0 | 0 | pending |  |
-| **total** | | **113** | **0** | **0** | | |
+| `AnnotationNodeTest` | P3 | 4 | 3 | 1 | ported | `testConstructor_illegalState` dropped (no subclassing, ADR-09); plus a test of every kind of value |
+| `ClassNodeTest` | P3 / P5 | 6 | 1 | 2 | partial | `testConstructor_illegalState` and `testCheck` dropped (ADR-09); `testVisitAndAccept`, `testVisitAndAccept_cloneInstructions` and `testVisitAndAccept_removeMembersVisitor` pending P5 (writer), with interim Textifier versions (the first is `tree_textify_test.rs`); plus a `Send + Sync` test |
+| `FieldInsnNodeTest` | P3 | 2 | 2 | 0 | ported |  |
+| `FieldNodeTest` | P3 | 2 | 1 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09) |
+| `FrameNodeTest` | P3 | 2 | 1 | 1 | ported | `testConstructor_illegalArgument` dropped (`FrameKind` cannot hold an unknown type); plus a test of what each kind keeps |
+| `IincInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
+| `InsnListTest` | P3 | 63 | 57 | 6 | ported | the 4 `*_illegalArgument` tests dropped (a list owns its nodes, and cannot be added to itself), `testIterator_cacheIsNull` (private cache) and `testResetLabels` (ADR-03) dropped; `NoSuchElementException` cases are panics or `None`; plus handle, label cache, iterator and cursor tests, and a proptest of random edits against a `Vec` model |
+| `InsnNodeTest` | P3 | 1 | 1 | 0 | ported | plus `InsnKind` values and an `Insn` size bound |
+| `IntInsnNodeTest` | P3 | 2 | 2 | 0 | ported |  |
+| `InvokeDynamicInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
+| `JumpInsnNodeTest` | P3 | 2 | 2 | 0 | ported |  |
+| `LabelNodeTest` | P3 | 1 | 1 | 0 | ported |  |
+| `LdcInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
+| `LineNumberNodeTest` | P3 | 1 | 1 | 0 | ported |  |
+| `LookupSwitchInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
+| `MethodInsnNodeTest` | P3 | 3 | 3 | 0 | ported |  |
+| `MethodNodeTest` | P3 / P5 | 4 | 2 | 1 | partial | `testConstructor_illegalState` dropped (ADR-09); `testVisitAndAccept_withUninitializedMethodNode` pending P5 (writer), with an interim Textifier version; plus try catch annotation index and label flag tests |
+| `ModuleNodeTest` | P3 | 3 | 2 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09); plus a test of every directive |
+| `MultiANewArrayInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
+| `RecordComponentNodeTest` | P3 | 2 | 1 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09) |
+| `TableSwitchInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
+| `TypeAnnotationNodeTest` | P3 | 2 | 1 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09) |
+| `TypeInsnNodeTest` | P3 | 2 | 2 | 0 | ported |  |
+| `UtilTest` | P3 | 3 | 1 | 2 | ported | `Util` is not ported; `testAsArrayList_nullArray` and `testAsArrayList_withLength` dropped (no null arrays; a chop frame carries its count); `testAsArrayList_withLengthAndArray` is `FrameNode::new` keeping one stack item |
+| `VarInsnNodeTest` | P3 | 2 | 2 | 0 | ported |  |
+| **total** | | **113** | **92** | **17** | | 4 pending P5 |
+
+**oxasm-specific:** `tree_textify_test.rs`, the P3 gate on T0: reader → `ClassNode` → Textifier equals ASM's
+tree path (`textifier_tree` goldens) for every T0 class and reader option.
 
 **Test support classes** (no tests of their own):
 
-- `CodeComment` → `oxasm-testkit` `CustomAttribute` impl (ADR-10)
-- `Comment` → `oxasm-testkit` `CustomAttribute` impl (ADR-10)
+- `CodeComment` → `tests/common/mod.rs`, a `CustomAttribute` + `AttributeCodec` (ADR-10)
+- `Comment` → `tests/common/mod.rs`, a `CustomAttribute` + `AttributeCodec` (ADR-10)

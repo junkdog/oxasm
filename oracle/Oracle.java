@@ -26,6 +26,8 @@
  * Commands:
  *
  *   textify [--opts O]           ClassReader.accept(TraceClassVisitor(Textifier), O)
+ *   tree-textify [--opts O]      as textify, but through a ClassNode: ClassReader.accept(ClassNode,
+ *                                O), then ClassNode.accept(TraceClassVisitor(Textifier))
  *   dump                         new ClassFile(bytes).toString()
  *   roundtrip --mode M [--copy-pool] [--opts O] [--hierarchy F]
  *                                ClassReader -> ClassWriter(flags); M is 0, maxs or frames;
@@ -52,8 +54,8 @@
  *             u32 m, m bytes of class file
  *   response: u8 status (0 ok, 1 err), u32 k, k bytes of payload
  *
- * All integers are big-endian. Only the per-class commands (textify, dump, roundtrip,
- * tree-roundtrip, analyze) are served.
+ * All integers are big-endian. Only the per-class commands (textify, tree-textify, dump,
+ * roundtrip, tree-roundtrip, analyze) are served.
  *
  * The hierarchy model (--hierarchy F, a file in the format printed by `hierarchy`) replaces class
  * loading for COMPUTE_FRAMES and SimpleVerifier, so that results never depend on which classes
@@ -163,7 +165,7 @@ public final class Oracle {
   private static void usage(final String message) {
     System.err.println("oracle: " + message);
     System.err.println(
-        "usage: Oracle {textify|dump|roundtrip|tree-roundtrip|analyze|verify|hierarchy|serve"
+        "usage: Oracle {textify|tree-textify|dump|roundtrip|tree-roundtrip|analyze|verify|hierarchy|serve"
             + "|version} [options] <inputs...>");
     System.exit(2);
   }
@@ -180,10 +182,11 @@ public final class Oracle {
 
     static ClassCommand create(final String command, final Args args) {
       return switch (command) {
-        case "textify" -> {
+        case "textify", "tree-textify" -> {
           args.allow("--opts");
+          boolean tree = command.equals("tree-textify");
           int opts = parseReaderOptions(args.get("--opts"));
-          yield classFile -> textify(classFile, opts);
+          yield classFile -> textify(classFile, tree, opts);
         }
         case "dump" -> {
           args.allow();
@@ -230,11 +233,17 @@ public final class Oracle {
     }
   }
 
-  static byte[] textify(final byte[] classFile, final int readerOptions) {
+  static byte[] textify(final byte[] classFile, final boolean tree, final int readerOptions) {
     StringWriter text = new StringWriter();
     PrintWriter printWriter = new PrintWriter(text);
-    new ClassReader(classFile)
-        .accept(new TraceClassVisitor(null, new Textifier(), printWriter), readerOptions);
+    TraceClassVisitor traceClassVisitor = new TraceClassVisitor(null, new Textifier(), printWriter);
+    if (tree) {
+      ClassNode classNode = new ClassNode();
+      new ClassReader(classFile).accept(classNode, readerOptions);
+      classNode.accept(traceClassVisitor);
+    } else {
+      new ClassReader(classFile).accept(traceClassVisitor, readerOptions);
+    }
     printWriter.flush();
     return semiUtf8(text.toString());
   }

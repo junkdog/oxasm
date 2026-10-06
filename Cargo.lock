@@ -267,6 +267,10 @@ name = "oxasm-tree"
 version = "0.0.0"
 dependencies = [
  "oxasm",
+ "oxasm-testkit",
+ "oxasm-util",
+ "proptest",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -560,6 +564,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "oxasm",
+ "oxasm-tree",
  "oxasm-util",
  "sha2",
  "zip",

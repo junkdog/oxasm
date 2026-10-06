@@ -105,6 +105,7 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "oxasm",
+ "oxasm-tree",
  "oxasm-util",
 ]
 
@@ -113,6 +114,7 @@ name = "oxasm-tree"
 version = "0.0.0"
 dependencies = [
  "oxasm",
+ "rustc-hash",
 ]
 
 [[package]]

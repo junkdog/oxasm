@@ -8,6 +8,12 @@ license.workspace = true
 
 [dependencies]
 oxasm.workspace = true
+rustc-hash.workspace = true
+
+[dev-dependencies]
+oxasm-testkit.workspace = true
+oxasm-util.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true
