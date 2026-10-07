@@ -7,6 +7,7 @@ use crate::error::{ReadError, WriteError};
 use crate::handle::Handle;
 use crate::hierarchy::ClassHierarchy;
 use crate::jstr::JavaStr;
+use crate::label::Label;
 use crate::opcodes;
 use crate::reader::{ClassReader, ParsingOptions};
 use crate::type_path::TypePath;
@@ -59,7 +60,6 @@ pub struct ClassWriter<'h> {
     /// `COMPUTE_FRAMES`.
     flags: ClassWriterFlags,
     /// The class hierarchy that computing stack map frames uses (ASM's `getCommonSuperClass`).
-    #[allow(dead_code)] // used by the frame computation (P6)
     hierarchy: Option<&'h dyn ClassHierarchy>,
 
     // Note: fields are ordered as in the ClassFile structure, and those related to attributes are
@@ -244,6 +244,22 @@ impl<'h> ClassWriter<'h> {
     // ---------------------------------------------------------------------------------------------
     // Accessors
     // ---------------------------------------------------------------------------------------------
+
+    /// The control flow graph that `COMPUTE_MAXS` built for the last visited method, from the
+    /// basic block of `start` on: for each basic block, in bytecode order, its bytecode offset
+    /// and those of its successors (without the virtual successor of a block that ends with a
+    /// jsr). Empty if `start` is not a basic block of this method.
+    ///
+    /// For the port of ASM's `ClassWriterComputeMaxsTest`, which reads the graph from
+    /// package-private fields. Not part of the API.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn last_method_control_flow_graph(&self, start: Label) -> Vec<(i32, Vec<i32>)> {
+        self.methods
+            .last()
+            .map(|method| method.control_flow_graph(start))
+            .unwrap_or_default()
+    }
 
     /// Returns true if all the given flags were passed to the constructor.
     #[must_use]
@@ -928,6 +944,7 @@ impl ClassVisitor for ClassWriter<'_> {
         Some(Box::new(MethodWriter {
             symbol_table: &mut self.symbol_table,
             state: self.methods.last_mut().expect("pushed above"),
+            hierarchy: self.hierarchy,
         }))
     }
 

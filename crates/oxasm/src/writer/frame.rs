@@ -3,17 +3,19 @@
 //! An abstract type is an `i32` with ASM's exact layout (DIM, KIND, FLAGS and VALUE fields), so
 //! that type table indices and frame comparisons are those of ASM. This module holds what a
 //! method writer needs to write frames given to it (the conversions from the API format, the
-//! implicit first frame of an expanded method, and `putAbstractType`). The frame computation
-//! (`execute`, `merge`) arrives with `COMPUTE_FRAMES` (P6).
+//! implicit first frame of an expanded method, and `putAbstractType`), and the frame computation
+//! (`execute`, `merge`).
 
 use crate::constant::FrameValue;
 use crate::constants::ACC_CONSTRUCTOR;
 use crate::error::WriteError;
+use crate::hierarchy::ClassHierarchy;
 use crate::jstr::{JavaCodePoint, JavaStr, JavaString};
 use crate::label::Label;
 use crate::opcodes;
 use crate::ty::Type;
 use crate::writer::byte_vector::ByteVector;
+use crate::writer::label_table::BlockId;
 use crate::writer::symbol_table::SymbolTable;
 
 // Constants used in the StackMapTable attribute.
@@ -52,7 +54,6 @@ const VALUE_SIZE: i32 = 32 - DIM_SIZE - KIND_SIZE - FLAGS_SIZE;
 
 const DIM_SHIFT: i32 = KIND_SIZE + FLAGS_SIZE + VALUE_SIZE;
 const KIND_SHIFT: i32 = FLAGS_SIZE + VALUE_SIZE;
-#[allow(dead_code)] // used by the frame computation (P6)
 const FLAGS_SHIFT: i32 = VALUE_SIZE;
 
 // Bitmasks to get each field of an abstract type.
@@ -76,7 +77,6 @@ pub(crate) const INTEGER: i32 = CONSTANT_KIND | ITEM_INTEGER;
 pub(crate) const FLOAT: i32 = CONSTANT_KIND | ITEM_FLOAT;
 pub(crate) const LONG: i32 = CONSTANT_KIND | ITEM_LONG;
 pub(crate) const DOUBLE: i32 = CONSTANT_KIND | ITEM_DOUBLE;
-#[allow(dead_code)] // used by the frame computation (P6)
 pub(crate) const NULL: i32 = CONSTANT_KIND | ITEM_NULL;
 pub(crate) const UNINITIALIZED_THIS: i32 = CONSTANT_KIND | ITEM_UNINITIALIZED_THIS;
 
@@ -96,7 +96,6 @@ pub(crate) fn api_integer_value(value: &FrameValue<'_>) -> Option<i32> {
 }
 
 /// Whether a frame type in ASM's API format is `Opcodes.LONG` or `Opcodes.DOUBLE`.
-#[allow(dead_code)] // used by the frame computation (P6)
 pub(crate) fn is_long_or_double(value: &FrameValue<'_>) -> bool {
     matches!(value, FrameValue::Long | FrameValue::Double)
 }
@@ -138,7 +137,6 @@ pub(crate) fn get_abstract_type_from_api_format(
 }
 
 /// Returns the abstract type corresponding to the internal name of a class.
-#[allow(dead_code)] // used by the frame computation (P6)
 pub(crate) fn get_abstract_type_from_internal_name(
     symbol_table: &mut SymbolTable,
     internal_name: &JavaStr,
@@ -451,11 +449,13 @@ const ELEMENT_OF: i32 = -1 << DIM_SHIFT;
 /// documentation for the abstract types and the two steps of the frame computation.
 ///
 /// ASM keeps the maximum output stack size of a basic block in its label (`outputStackMax`),
-/// which a frame updates through its `owner`; here the frame holds it.
+/// which a frame updates through its `owner`; here the frame holds it. (This only differs for a
+/// label visited twice in a method, which shares the frame of another label but keeps the stack
+/// size of its first visit in ASM.)
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Frame {
     /// The basic block to which these input and output stack map frames correspond.
-    pub(crate) owner: Option<Label>,
+    pub(crate) owner: Option<BlockId>,
     /// The maximum height reached by the output stack, relative to the top of the input stack,
     /// in the basic block of this frame (ASM's `owner.outputStackMax`).
     pub(crate) output_stack_max: i16,
@@ -518,7 +518,7 @@ impl SymbolArg {
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // Java's int arithmetic
 impl Frame {
     /// Constructs a new frame for the given basic block.
-    pub(crate) fn new(owner: Option<Label>) -> Frame {
+    pub(crate) fn new(owner: Option<BlockId>) -> Frame {
         Frame {
             owner,
             ..Frame::default()
@@ -614,7 +614,6 @@ impl Frame {
     }
 
     /// Returns the input stack size of this frame.
-    #[allow(dead_code)] // used by the frame computation (P6)
     pub(crate) fn get_input_stack_size(&self) -> usize {
         self.input_stack().len()
     }
@@ -753,50 +752,6 @@ impl Frame {
     /// block.
     fn add_initialized_type(&mut self, abstract_type: i32) {
         self.initializations.push(abstract_type);
-    }
-
-    /// Returns the "initialized" abstract type corresponding to the given abstract type.
-    fn get_initialized_type(
-        &self,
-        symbol_table: &mut SymbolTable,
-        abstract_type: i32,
-    ) -> Result<i32, WriteError> {
-        if abstract_type == UNINITIALIZED_THIS
-            || abstract_type & (DIM_MASK | KIND_MASK) == UNINITIALIZED_KIND
-            || abstract_type & (DIM_MASK | KIND_MASK) == FORWARD_UNINITIALIZED_KIND
-        {
-            for &initialization in &self.initializations {
-                let mut initialized_type = initialization;
-                let dim = initialized_type & DIM_MASK;
-                let kind = initialized_type & KIND_MASK;
-                let value = initialized_type & VALUE_MASK;
-                if kind == LOCAL_KIND {
-                    initialized_type =
-                        dim.wrapping_add(element(self.input_locals(), i64::from(value))?);
-                } else if kind == STACK_KIND {
-                    let input_stack = self.input_stack();
-                    initialized_type = dim.wrapping_add(element(
-                        input_stack,
-                        input_stack.len() as i64 - i64::from(value),
-                    )?);
-                }
-                if abstract_type == initialized_type {
-                    let internal_name = if abstract_type == UNINITIALIZED_THIS {
-                        symbol_table.class_name().to_owned()
-                    } else {
-                        symbol_table
-                            .try_get_type(abstract_type & VALUE_MASK)
-                            .ok_or_else(|| {
-                                WriteError::InvalidArgument("java.lang.AssertionError".to_owned())
-                            })?
-                            .value()
-                            .to_owned()
-                    };
-                    return Ok(REFERENCE_KIND | symbol_table.add_type(&internal_name));
-                }
-            }
-        }
-        Ok(abstract_type)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1134,146 +1089,72 @@ impl Frame {
     // Frame merging methods, used in the second step of the stack map frame computation algorithm
     // ---------------------------------------------------------------------------------------------
 
-    /// Computes the concrete output type corresponding to a given abstract output type.
-    fn get_concrete_output_type(
-        &self,
-        abstract_output_type: i32,
-        num_stack: usize,
-    ) -> Result<i32, WriteError> {
-        let dim = abstract_output_type & DIM_MASK;
-        let kind = abstract_output_type & KIND_MASK;
-        let concrete_output_type = if kind == LOCAL_KIND {
-            // By definition, a LOCAL_KIND type designates the concrete type of a local variable
-            // at the beginning of the basic block corresponding to this frame (which is known
-            // when this method is called, but was not when the abstract type was computed).
-            dim.wrapping_add(element(
-                self.input_locals(),
-                i64::from(abstract_output_type & VALUE_MASK),
-            )?)
-        } else if kind == STACK_KIND {
-            // By definition, a STACK_KIND type designates the concrete type of a local variable
-            // at the beginning of the basic block corresponding to this frame (which is known
-            // when this method is called, but was not when the abstract type was computed).
-            dim.wrapping_add(element(
-                self.input_stack(),
-                num_stack as i64 - i64::from(abstract_output_type & VALUE_MASK),
-            )?)
-        } else {
-            return Ok(abstract_output_type);
-        };
-        if abstract_output_type & TOP_IF_LONG_OR_DOUBLE_FLAG != 0
-            && (concrete_output_type == LONG || concrete_output_type == DOUBLE)
-        {
-            return Ok(TOP);
+    /// What a merge reads of this frame, besides its input frame.
+    fn merge_source(&self) -> MergeSource<'_> {
+        MergeSource {
+            output_locals: self.output_locals.as_deref(),
+            output_stack: self.output_stack.as_deref().unwrap_or_default(),
+            output_stack_start: self.output_stack_start,
+            output_stack_top: self.output_stack_top,
+            initializations: &self.initializations,
         }
-        Ok(concrete_output_type)
     }
 
     /// Merges the input frame of the given frame with the input and output frames of this frame
     /// (ASM's `merge`). Returns whether the input frame of the given frame has been changed by
     /// this operation.
     ///
+    /// - `hierarchy`: the class hierarchy that gives the common super class of two classes
+    ///   (ASM's `ClassWriter.getCommonSuperClass`), if any.
     /// - `catch_type_index`: if `dst_frame` corresponds to an exception handler basic block, the
     ///   type table index of the caught exception type, otherwise 0.
     pub(crate) fn merge(
         &self,
         symbol_table: &mut SymbolTable,
+        hierarchy: Option<&dyn ClassHierarchy>,
         dst_frame: &mut Frame,
         catch_type_index: i32,
     ) -> Result<bool, WriteError> {
-        let mut frame_changed = false;
-        // Compute the concrete types of the local variables at the end of the basic block
-        // corresponding to this frame, by resolving its abstract output types, and merge these
-        // concrete types with those of the local variables in the input frame of dst_frame.
-        let input_locals = self.input_locals();
-        let num_local = input_locals.len();
-        let num_stack = self.input_stack().len();
-        if dst_frame.input_locals.is_none() {
-            dst_frame.input_locals = Some(vec![0; num_local]);
-            frame_changed = true;
-        }
-        for (i, &input_local) in input_locals.iter().enumerate() {
-            let mut concrete_output_type = match &self.output_locals {
-                Some(output_locals) if i < output_locals.len() && output_locals[i] != 0 => {
-                    self.get_concrete_output_type(output_locals[i], num_stack)?
-                }
-                // If the local variable has never been assigned in this basic block, it is equal
-                // to its value at the beginning of the block.
-                _ => input_local,
-            };
-            // concreteOutputType might be an uninitialized type from the input locals or from
-            // the input stack. However, if a constructor has been called for this class type in
-            // the basic block, then this type is no longer uninitialized at the end of basic
-            // block.
-            if !self.initializations.is_empty() {
-                concrete_output_type =
-                    self.get_initialized_type(symbol_table, concrete_output_type)?;
-            }
-            let dst_locals = dst_frame.input_locals.as_mut().expect("created above");
-            frame_changed |= merge_type(symbol_table, concrete_output_type, dst_locals, i)?;
-        }
-        // If dst_frame is an exception handler block, it can be reached from any instruction of
-        // the basic block corresponding to this frame, in particular from the first one.
-        // Therefore, the input locals of dst_frame should be compatible (i.e. merged) with the
-        // input locals of this frame (and the input stack of dst_frame should be compatible,
-        // i.e. merged, with a one element stack containing the caught exception type).
-        if catch_type_index > 0 {
-            for (i, &input_local) in input_locals.iter().enumerate() {
-                let dst_locals = dst_frame.input_locals.as_mut().expect("created above");
-                frame_changed |= merge_type(symbol_table, input_local, dst_locals, i)?;
-            }
-            if dst_frame.input_stack.is_none() {
-                dst_frame.input_stack = Some(vec![0; 1]);
-                frame_changed = true;
-            }
-            let dst_stack = dst_frame.input_stack.as_mut().expect("created above");
-            frame_changed |= merge_type(symbol_table, catch_type_index, dst_stack, 0)?;
-            return Ok(frame_changed);
-        }
-        // Compute the concrete types of the stack operands at the end of the basic block
-        // corresponding to this frame, by resolving its abstract output types, and merge these
-        // concrete types with those of the stack operands in the input frame of dst_frame.
-        let num_input_stack = num_stack as i64 + i64::from(self.output_stack_start);
-        let output_stack_top = usize::try_from(self.output_stack_top).unwrap_or(0);
-        let Ok(num_input_stack) = usize::try_from(num_input_stack) else {
-            // ASM's NegativeArraySizeException (more elements popped than the input stack has).
-            return Err(WriteError::IndexOutOfBounds(format!("{num_input_stack}")));
+        merge_frames(
+            symbol_table,
+            hierarchy,
+            &self.merge_source(),
+            SourceInputs::Own {
+                locals: self.input_locals(),
+                stack: self.input_stack(),
+            },
+            dst_frame,
+            catch_type_index,
+        )
+    }
+
+    /// Merges the input frame of this frame with its own input and output frames: ASM's
+    /// `frame.merge(symbolTable, frame, catchTypeIndex)`, for a basic block that is its own
+    /// successor. ASM then reads the input frame as it updates it, and so does this method.
+    pub(crate) fn merge_into_self(
+        &mut self,
+        symbol_table: &mut SymbolTable,
+        hierarchy: Option<&dyn ClassHierarchy>,
+        catch_type_index: i32,
+    ) -> Result<bool, WriteError> {
+        let output_locals = self.output_locals.clone();
+        let output_stack = self.output_stack.clone();
+        let initializations = self.initializations.clone();
+        let source = MergeSource {
+            output_locals: output_locals.as_deref(),
+            output_stack: output_stack.as_deref().unwrap_or_default(),
+            output_stack_start: self.output_stack_start,
+            output_stack_top: self.output_stack_top,
+            initializations: &initializations,
         };
-        if dst_frame.input_stack.is_none() {
-            dst_frame.input_stack = Some(vec![0; num_input_stack + output_stack_top]);
-            frame_changed = true;
-        }
-        // First, do this for the stack operands that have not been popped in the basic block
-        // corresponding to this frame, and which are therefore equal to their value in the
-        // input frame (except for uninitialized types, which may have been initialized).
-        for i in 0..num_input_stack {
-            let mut concrete_output_type = element(self.input_stack(), i as i64)?;
-            if !self.initializations.is_empty() {
-                concrete_output_type =
-                    self.get_initialized_type(symbol_table, concrete_output_type)?;
-            }
-            let dst_stack = dst_frame.input_stack.as_mut().expect("created above");
-            frame_changed |= merge_type(symbol_table, concrete_output_type, dst_stack, i)?;
-        }
-        // Then, do this for the stack operands that have pushed in the basic block (this code
-        // is the same as the one above for local variables).
-        for i in 0..output_stack_top {
-            let abstract_output_type = self.output_stack.as_ref().expect("pushed")[i];
-            let mut concrete_output_type =
-                self.get_concrete_output_type(abstract_output_type, num_stack)?;
-            if !self.initializations.is_empty() {
-                concrete_output_type =
-                    self.get_initialized_type(symbol_table, concrete_output_type)?;
-            }
-            let dst_stack = dst_frame.input_stack.as_mut().expect("created above");
-            frame_changed |= merge_type(
-                symbol_table,
-                concrete_output_type,
-                dst_stack,
-                num_input_stack + i,
-            )?;
-        }
-        Ok(frame_changed)
+        merge_frames(
+            symbol_table,
+            hierarchy,
+            &source,
+            SourceInputs::Destination,
+            self,
+            catch_type_index,
+        )
     }
 
     /// The elements to visit for this frame (the first half of ASM's `accept`): its input locals
@@ -1297,39 +1178,299 @@ impl Frame {
     ) -> Result<(), WriteError> {
         self.execute(opcode, arg, arg_symbol, symbol_table)?;
         let mut successor = Frame::new(None);
-        self.merge(symbol_table, &mut successor, 0)?;
+        // The successor's input frame is new: no reference types are merged.
+        self.merge(symbol_table, None, &mut successor, 0)?;
         self.copy_from(successor);
         Ok(())
     }
+}
+
+/// What a merge reads of its source frame, besides the input frame: the output frame and the
+/// initializations of its basic block.
+struct MergeSource<'a> {
+    output_locals: Option<&'a [i32]>,
+    output_stack: &'a [i32],
+    output_stack_start: i16,
+    output_stack_top: i16,
+    initializations: &'a [i32],
+}
+
+/// Where a merge reads the input frame of its source frame.
+#[derive(Clone, Copy)]
+enum SourceInputs<'a> {
+    /// The source frame's own input locals and stack.
+    Own { locals: &'a [i32], stack: &'a [i32] },
+    /// The input frame of the destination frame, which is the source frame: ASM's merge then
+    /// reads the arrays it updates.
+    Destination,
+}
+
+impl SourceInputs<'_> {
+    /// The input locals and stack of the source frame, given the destination frame.
+    fn get<'b>(self, dst_frame: &'b Frame) -> (&'b [i32], &'b [i32])
+    where
+        Self: 'b,
+    {
+        match self {
+            SourceInputs::Own { locals, stack } => (locals, stack),
+            SourceInputs::Destination => (dst_frame.input_locals(), dst_frame.input_stack()),
+        }
+    }
+}
+
+/// Computes the concrete output type corresponding to a given abstract output type (ASM's
+/// `getConcreteOutputType`), given the input frame of the basic block.
+fn get_concrete_output_type(
+    abstract_output_type: i32,
+    num_stack: usize,
+    input_locals: &[i32],
+    input_stack: &[i32],
+) -> Result<i32, WriteError> {
+    let dim = abstract_output_type & DIM_MASK;
+    let kind = abstract_output_type & KIND_MASK;
+    let concrete_output_type = if kind == LOCAL_KIND {
+        // By definition, a LOCAL_KIND type designates the concrete type of a local variable at
+        // the beginning of the basic block corresponding to this frame (which is known when this
+        // method is called, but was not when the abstract type was computed).
+        dim.wrapping_add(element(
+            input_locals,
+            i64::from(abstract_output_type & VALUE_MASK),
+        )?)
+    } else if kind == STACK_KIND {
+        // By definition, a STACK_KIND type designates the concrete type of a local variable at
+        // the beginning of the basic block corresponding to this frame (which is known when this
+        // method is called, but was not when the abstract type was computed).
+        dim.wrapping_add(element(
+            input_stack,
+            num_stack as i64 - i64::from(abstract_output_type & VALUE_MASK),
+        )?)
+    } else {
+        return Ok(abstract_output_type);
+    };
+    if abstract_output_type & TOP_IF_LONG_OR_DOUBLE_FLAG != 0
+        && (concrete_output_type == LONG || concrete_output_type == DOUBLE)
+    {
+        return Ok(TOP);
+    }
+    Ok(concrete_output_type)
+}
+
+/// Returns the "initialized" abstract type corresponding to the given abstract type (ASM's
+/// `getInitializedType`), given the initializations and the input frame of the basic block.
+fn get_initialized_type(
+    symbol_table: &mut SymbolTable,
+    initializations: &[i32],
+    input_locals: &[i32],
+    input_stack: &[i32],
+    abstract_type: i32,
+) -> Result<i32, WriteError> {
+    if abstract_type == UNINITIALIZED_THIS
+        || abstract_type & (DIM_MASK | KIND_MASK) == UNINITIALIZED_KIND
+        || abstract_type & (DIM_MASK | KIND_MASK) == FORWARD_UNINITIALIZED_KIND
+    {
+        for &initialization in initializations {
+            let mut initialized_type = initialization;
+            let dim = initialized_type & DIM_MASK;
+            let kind = initialized_type & KIND_MASK;
+            let value = initialized_type & VALUE_MASK;
+            if kind == LOCAL_KIND {
+                initialized_type = dim.wrapping_add(element(input_locals, i64::from(value))?);
+            } else if kind == STACK_KIND {
+                initialized_type = dim.wrapping_add(element(
+                    input_stack,
+                    input_stack.len() as i64 - i64::from(value),
+                )?);
+            }
+            if abstract_type == initialized_type {
+                let internal_name = if abstract_type == UNINITIALIZED_THIS {
+                    symbol_table.class_name().to_owned()
+                } else {
+                    symbol_table
+                        .try_get_type(abstract_type & VALUE_MASK)
+                        .ok_or_else(|| {
+                            WriteError::InvalidArgument("java.lang.AssertionError".to_owned())
+                        })?
+                        .value()
+                        .to_owned()
+                };
+                return Ok(REFERENCE_KIND | symbol_table.add_type(&internal_name));
+            }
+        }
+    }
+    Ok(abstract_type)
+}
+
+/// Merges the input frame of `dst_frame` with the input and output frames of a source frame
+/// (ASM's `merge`). Returns whether the input frame of `dst_frame` has been changed.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // Java's int arithmetic
+fn merge_frames(
+    symbol_table: &mut SymbolTable,
+    hierarchy: Option<&dyn ClassHierarchy>,
+    source: &MergeSource<'_>,
+    inputs: SourceInputs<'_>,
+    dst_frame: &mut Frame,
+    catch_type_index: i32,
+) -> Result<bool, WriteError> {
+    let mut frame_changed = false;
+    // Compute the concrete types of the local variables at the end of the basic block
+    // corresponding to the source frame, by resolving its abstract output types, and merge these
+    // concrete types with those of the local variables in the input frame of dst_frame.
+    let (num_local, num_stack) = {
+        let (input_locals, input_stack) = inputs.get(dst_frame);
+        (input_locals.len(), input_stack.len())
+    };
+    if dst_frame.input_locals.is_none() {
+        dst_frame.input_locals = Some(vec![0; num_local]);
+        frame_changed = true;
+    }
+    for i in 0..num_local {
+        let (input_locals, input_stack) = inputs.get(dst_frame);
+        let mut concrete_output_type = match source.output_locals {
+            Some(output_locals) if i < output_locals.len() && output_locals[i] != 0 => {
+                get_concrete_output_type(output_locals[i], num_stack, input_locals, input_stack)?
+            }
+            // If the local variable has never been assigned in this basic block, it is equal to
+            // its value at the beginning of the block.
+            _ => input_locals[i],
+        };
+        // concreteOutputType might be an uninitialized type from the input locals or from the
+        // input stack. However, if a constructor has been called for this class type in the
+        // basic block, then this type is no longer uninitialized at the end of basic block.
+        if !source.initializations.is_empty() {
+            concrete_output_type = get_initialized_type(
+                symbol_table,
+                source.initializations,
+                input_locals,
+                input_stack,
+                concrete_output_type,
+            )?;
+        }
+        let dst_locals = dst_frame.input_locals.as_mut().expect("created above");
+        frame_changed |= merge_type(
+            symbol_table,
+            hierarchy,
+            concrete_output_type,
+            dst_locals,
+            i as i64,
+        )?;
+    }
+    // If dst_frame is an exception handler block, it can be reached from any instruction of the
+    // basic block corresponding to the source frame, in particular from the first one.
+    // Therefore, the input locals of dst_frame should be compatible (i.e. merged) with the input
+    // locals of the source frame (and the input stack of dst_frame should be compatible, i.e.
+    // merged, with a one element stack containing the caught exception type).
+    if catch_type_index > 0 {
+        for i in 0..num_local {
+            let input_local = inputs.get(dst_frame).0[i];
+            let dst_locals = dst_frame.input_locals.as_mut().expect("created above");
+            frame_changed |=
+                merge_type(symbol_table, hierarchy, input_local, dst_locals, i as i64)?;
+        }
+        if dst_frame.input_stack.is_none() {
+            dst_frame.input_stack = Some(vec![0; 1]);
+            frame_changed = true;
+        }
+        let dst_stack = dst_frame.input_stack.as_mut().expect("created above");
+        frame_changed |= merge_type(symbol_table, hierarchy, catch_type_index, dst_stack, 0)?;
+        return Ok(frame_changed);
+    }
+    // Compute the concrete types of the stack operands at the end of the basic block
+    // corresponding to the source frame, by resolving its abstract output types, and merge these
+    // concrete types with those of the stack operands in the input frame of dst_frame.
+    let num_input_stack = num_stack as i64 + i64::from(source.output_stack_start);
+    let output_stack_top = i64::from(source.output_stack_top);
+    if dst_frame.input_stack.is_none() {
+        let Ok(length) = usize::try_from(num_input_stack + output_stack_top) else {
+            // ASM's NegativeArraySizeException (more elements popped than the input stack has).
+            return Err(WriteError::IndexOutOfBounds(format!(
+                "{}",
+                num_input_stack + output_stack_top
+            )));
+        };
+        dst_frame.input_stack = Some(vec![0; length]);
+        frame_changed = true;
+    }
+    // First, do this for the stack operands that have not been popped in the basic block
+    // corresponding to the source frame, and which are therefore equal to their value in the
+    // input frame (except for uninitialized types, which may have been initialized).
+    for i in 0..num_input_stack.max(0) {
+        let (input_locals, input_stack) = inputs.get(dst_frame);
+        let mut concrete_output_type = element(input_stack, i)?;
+        if !source.initializations.is_empty() {
+            concrete_output_type = get_initialized_type(
+                symbol_table,
+                source.initializations,
+                input_locals,
+                input_stack,
+                concrete_output_type,
+            )?;
+        }
+        let dst_stack = dst_frame.input_stack.as_mut().expect("created above");
+        frame_changed |= merge_type(symbol_table, hierarchy, concrete_output_type, dst_stack, i)?;
+    }
+    // Then, do this for the stack operands that have pushed in the basic block (this code is the
+    // same as the one above for local variables).
+    for i in 0..output_stack_top.max(0) {
+        let (input_locals, input_stack) = inputs.get(dst_frame);
+        let abstract_output_type = element(source.output_stack, i)?;
+        let mut concrete_output_type =
+            get_concrete_output_type(abstract_output_type, num_stack, input_locals, input_stack)?;
+        if !source.initializations.is_empty() {
+            concrete_output_type = get_initialized_type(
+                symbol_table,
+                source.initializations,
+                input_locals,
+                input_stack,
+                concrete_output_type,
+            )?;
+        }
+        let dst_stack = dst_frame.input_stack.as_mut().expect("created above");
+        frame_changed |= merge_type(
+            symbol_table,
+            hierarchy,
+            concrete_output_type,
+            dst_stack,
+            num_input_stack + i,
+        )?;
+    }
+    Ok(frame_changed)
 }
 
 /// Merges the type at the given index in the given abstract type array with the given type
 /// (ASM's static `merge`). Returns whether the type array has been modified by this operation.
 fn merge_type(
     symbol_table: &mut SymbolTable,
+    hierarchy: Option<&dyn ClassHierarchy>,
     source_type: i32,
     dst_types: &mut [i32],
-    dst_index: usize,
+    dst_index: i64,
 ) -> Result<bool, WriteError> {
-    let Some(&dst_type) = dst_types.get(dst_index) else {
-        return Err(array_index_out_of_bounds(dst_index as i64, dst_types.len()));
+    let length = dst_types.len();
+    let Some(dst_type) = usize::try_from(dst_index)
+        .ok()
+        .and_then(|i| dst_types.get_mut(i))
+    else {
+        return Err(array_index_out_of_bounds(dst_index, length));
     };
-    if dst_type == source_type {
+    let dst_type_value = *dst_type;
+    if dst_type_value == source_type {
         // If the types are equal, merge(sourceType, dstType) = dstType, so there is no change.
         return Ok(false);
     }
     let mut src_type = source_type;
     if source_type & !DIM_MASK == NULL {
-        if dst_type == NULL {
+        if dst_type_value == NULL {
             return Ok(false);
         }
         src_type = NULL;
     }
-    if dst_type == 0 {
+    if dst_type_value == 0 {
         // If dstTypes[dstIndex] has never been assigned, merge(srcType, dstType) = srcType.
-        dst_types[dst_index] = src_type;
+        *dst_type = src_type;
         return Ok(true);
     }
+    let dst_type_ref = dst_type;
+    let dst_type = dst_type_value;
     let merged_type;
     if dst_type & DIM_MASK != 0 || dst_type & KIND_MASK == REFERENCE_KIND {
         // If dstType is a reference type of any array dimension.
@@ -1342,15 +1483,22 @@ fn merge_type(
             if dst_type & KIND_MASK == REFERENCE_KIND {
                 // If srcType and dstType are reference types with the same array dimension,
                 // merge(srcType, dstType) = dim(srcType) | common super class of srcType and
-                // dstType (computing it needs the class hierarchy, P6).
-                return Err(WriteError::NotYetPorted("merging reference types (P6)"));
+                // dstType.
+                merged_type = (src_type & DIM_MASK)
+                    | REFERENCE_KIND
+                    | symbol_table.add_merged_type(
+                        hierarchy,
+                        src_type & VALUE_MASK,
+                        dst_type & VALUE_MASK,
+                    )?;
+            } else {
+                // If srcType and dstType are array types of equal dimension but different
+                // element types, merge(srcType, dstType) = dim(srcType) - 1 | java/lang/Object.
+                let merged_dim = ELEMENT_OF.wrapping_add(src_type & DIM_MASK);
+                merged_type = merged_dim
+                    | REFERENCE_KIND
+                    | symbol_table.add_type(crate::jstr!("java/lang/Object"));
             }
-            // If srcType and dstType are array types of equal dimension but different element
-            // types, merge(srcType, dstType) = dim(srcType) - 1 | java/lang/Object.
-            let merged_dim = ELEMENT_OF.wrapping_add(src_type & DIM_MASK);
-            merged_type = merged_dim
-                | REFERENCE_KIND
-                | symbol_table.add_type(crate::jstr!("java/lang/Object"));
         } else if src_type & DIM_MASK != 0 || src_type & KIND_MASK == REFERENCE_KIND {
             // If srcType is any other reference or array type,
             // merge(srcType, dstType) = min(srcDdim, dstDim) | java/lang/Object
@@ -1384,7 +1532,7 @@ fn merge_type(
         merged_type = TOP;
     }
     if merged_type != dst_type {
-        dst_types[dst_index] = merged_type;
+        *dst_type_ref = merged_type;
         return Ok(true);
     }
     Ok(false)

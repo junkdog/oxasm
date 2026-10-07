@@ -955,7 +955,7 @@ fn testanalyze_implicit_exit_to_another_subroutine2() {
 
 #[test]
 #[ignore = "needs the JVM oracle"]
-fn testanalyze_implicit_exit_to_another_subroutine2_new_instance() {
+fn test_analyze_implicit_exit_to_another_subroutine2_new_instance() {
     assert_new_instance(&testanalyze_implicit_exit_to_another_subroutine2_method_node());
 }
 

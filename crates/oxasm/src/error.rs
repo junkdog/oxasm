@@ -147,11 +147,6 @@ pub enum WriteError {
     /// needed.
     #[error(transparent)]
     Hierarchy(#[from] HierarchyError),
-    /// A feature of ASM's class writer that oxasm does not have yet: computing the maximum stack
-    /// size, the number of locals or the stack map frames (P6).
-    #[doc(hidden)]
-    #[error("not yet ported: {0}")]
-    NotYetPorted(&'static str),
     /// The class file written before replacing the ASM specific instructions could not be read
     /// back (this would be an oxasm bug).
     #[error("rereading the class: {0}")]

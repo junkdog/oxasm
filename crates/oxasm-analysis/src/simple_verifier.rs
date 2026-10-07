@@ -521,7 +521,9 @@ fn hierarchy_error(error: HierarchyError) -> AnalyzerError {
             message.push_java_str(name);
             message.push_str(" not present");
         }
-        HierarchyError::BrokenSuperClassChain(_) => message.push_str(&error.to_string()),
+        HierarchyError::BrokenSuperClassChain(_) | HierarchyError::NoHierarchy(..) => {
+            message.push_str(&error.to_string());
+        }
     }
     AnalyzerError::runtime(message)
 }

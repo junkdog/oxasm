@@ -3,14 +3,15 @@
 A Rust port of [OW2 ASM](https://asm.ow2.io/) 9.10.1, the JVM bytecode read/analyze/transform/write
 library: same capabilities, same output (byte for byte), with a Rust-shaped API.
 
-**Status: P5 (the class writer, without computation) done.** `oxasm` reads class files (`ClassReader`, with
-ASM's options and leniencies) into the visitor traits and writes them back (`ClassWriter`), `oxasm-tree` holds
-them as `ClassNode`s (an arena-backed `InsnList` with generational handles), `oxasm-analysis` computes their
-frames (`Analyzer` with ASM's four stock interpreters), and `oxasm-util` prints them with ASM's `Textifier`,
-byte for byte: the Textifier output, the frames of every method and the class files written back (with a new or
-a copied constant pool, with expanded frames, directly or through a `ClassNode`) equal ASM 9.10.1's, on every
-class of the JDK runtime image and of the T2 jars. Next: P6 (`COMPUTE_MAXS`, `COMPUTE_FRAMES`), and M1's
-acceptance check (a probe of sift's analyses).
+**Status: P6 (the class writer's computations) done.** `oxasm` reads class files (`ClassReader`, with ASM's
+options and leniencies) into the visitor traits and writes them back (`ClassWriter`, computing the maximum stack
+sizes and the stack map frames on request, through a pluggable `ClassHierarchy`), `oxasm-tree` holds them as
+`ClassNode`s (an arena-backed `InsnList` with generational handles), `oxasm-analysis` computes their frames
+(`Analyzer` with ASM's four stock interpreters), and `oxasm-util` prints them with ASM's `Textifier`, byte for
+byte: the Textifier output, the frames of every method and the class files written back (with a new or a copied
+constant pool, with expanded frames, with `COMPUTE_MAXS` or `COMPUTE_FRAMES`, directly or through a `ClassNode`)
+equal ASM 9.10.1's, on every class of the JDK runtime image and of the T2 jars. Next: M1's acceptance check (a
+probe of sift's analyses), then P7 (util's checkers and `ASMifier`) and P8 (commons).
 
 | Crate | Ports |
 |---|---|

@@ -58,3 +58,36 @@ pub fn verify_classes(classes: &[&[u8]]) -> Result<(), String> {
 pub fn verify_class(class: &[u8]) -> Result<(), String> {
     verify_classes(&[class])
 }
+
+/// The class hierarchy that ASM's tests get from class loading, in the `hierarchy.tsv` format
+/// (`oxasm::MapHierarchy::from_tsv` reads it): the classes of T0 (the test classes) and of the
+/// JDK (`corpus/t1`, which `cargo xtask corpus t1` extracts), as the oracle's `hierarchy`
+/// command prints them. Computed once per process.
+///
+/// # Panics
+///
+/// If the oracle cannot run (no Java, no ASM jars), or if `corpus/t1` is not extracted.
+pub fn class_loader_hierarchy_tsv() -> &'static [u8] {
+    static TSV: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    TSV.get_or_init(|| {
+        let t1 = workspace_root().join("corpus/t1");
+        assert!(
+            t1.is_dir(),
+            "corpus/t1 (the JDK classes) is not extracted: run `cargo xtask corpus t1`"
+        );
+        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_owned());
+        let output = Command::new(cargo)
+            .current_dir(workspace_root())
+            .args(["xtask", "oracle", "hierarchy"])
+            .arg(workspace_root().join("corpus/t0"))
+            .arg(t1)
+            .output()
+            .expect("run cargo xtask oracle hierarchy");
+        assert!(
+            output.status.success(),
+            "the oracle failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    })
+}

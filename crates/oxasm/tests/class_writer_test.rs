@@ -3,9 +3,10 @@
 //! - ASM's `new ClassFile(bytes).newInstance()` checks (the JVM loads and verifies the class) run
 //!   the oracle's `verify` (`oxasm_testkit::jvm`): they are in `#[ignore = "needs the JVM
 //!   oracle"]` tests, run by CI's oracle job with `--ignored`.
-//! - The tests of `COMPUTE_MAXS` and `COMPUTE_FRAMES` are ported, but ignored until P6 ports the
-//!   computation. Computing frames needs a class hierarchy (ADR-07), where ASM loads classes:
-//!   they use [`frames_hierarchy`] for now.
+//! - Computing frames needs a class hierarchy (ADR-07), where ASM loads classes: the tests that
+//!   check the computed frames (byte equality, JVM verification) use [`class_loader_hierarchy`],
+//!   the hierarchy of T0 and the JDK, which the oracle computes; the others use
+//!   [`frames_hierarchy`].
 //! - The `Api` dimension of the parameterized tests is gone (ADR-09).
 //!
 //! Dropped:
@@ -137,6 +138,7 @@ fn read_and_write(
     flags: ClassWriterFlags,
     copy_pool: bool,
     options: ParsingOptions,
+    hierarchy: &dyn ClassHierarchy,
 ) -> Result<Vec<u8>, WriteError> {
     let class_reader = ClassReader::new(class_file).unwrap();
     let class_writer = if copy_pool {
@@ -144,18 +146,26 @@ fn read_and_write(
     } else {
         ClassWriter::new(flags)
     };
-    let hierarchy = frames_hierarchy();
-    let mut class_writer = class_writer.with_hierarchy(&hierarchy);
+    let mut class_writer = class_writer.with_hierarchy(hierarchy);
     class_reader
         .accept_with_codecs(&mut class_writer, &attributes(), options)
         .unwrap();
     class_writer.to_bytes()
 }
 
-/// The class hierarchy used where ASM computes frames with class loading (P6 decides whether
-/// these tests need more than this).
+/// The class hierarchy used where ASM computes frames with class loading, in the tests whose
+/// result does not depend on it.
 fn frames_hierarchy() -> ObjectHierarchy {
     ObjectHierarchy
+}
+
+/// The class hierarchy ASM's tests get from class loading: the classes of T0 and of the JDK, as
+/// the oracle sees them (it needs the JVM oracle and `corpus/t1`).
+fn class_loader_hierarchy() -> &'static MapHierarchy {
+    static HIERARCHY: std::sync::OnceLock<MapHierarchy> = std::sync::OnceLock::new();
+    HIERARCHY.get_or_init(|| {
+        MapHierarchy::from_tsv(oxasm_testkit::jvm::class_loader_hierarchy_tsv()).unwrap()
+    })
 }
 
 /// Whether the given class has JSR or RET instructions.
@@ -443,7 +453,6 @@ fn test_to_byte_array_large_source_debug_extension() {
 /// Tests that the COMPUTE_MAXS option works correctly on classes with very large or deeply
 /// nested subroutines (#307600, #311642).
 #[test]
-#[ignore = "needs P6"]
 fn test_to_byte_array_compute_maxs_large_subroutines() {
     for class_file_name in ["Issue307600.class", "Issue311642.class"] {
         let class_file = oxasm_testkit::t0_resource("asm", class_file_name);
@@ -452,6 +461,7 @@ fn test_to_byte_array_compute_maxs_large_subroutines() {
             ClassWriterFlags::COMPUTE_MAXS,
             false,
             ParsingOptions::empty(),
+            &frames_hierarchy(),
         );
         assert!(result.is_ok(), "{class_file_name}: {result:?}");
     }
@@ -513,14 +523,12 @@ fn merge_long_or_double_class() -> Result<Vec<u8>, WriteError> {
 }
 
 #[test]
-#[ignore = "needs P6"]
 fn test_to_byte_array_compute_frames_merge_long_or_double() {
     let class_file = merge_long_or_double_class().unwrap();
     oxasm_testkit::jvm::verify_class(&class_file).unwrap();
 }
 
 #[test]
-#[ignore = "needs P6"]
 fn test_to_byte_array_compute_frames_high_dimension_arrays() {
     // ASM loads the classes; the hierarchy says the same.
     let mut hierarchy = MapHierarchy::new();
@@ -747,6 +755,7 @@ fn test_read_and_write() {
             ClassWriterFlags::empty(),
             false,
             ParsingOptions::empty(),
+            &frames_hierarchy(),
         )
         .unwrap();
         assert_eq!(
@@ -792,6 +801,7 @@ fn test_read_and_write_copy_pool() {
             ClassWriterFlags::empty(),
             true,
             ParsingOptions::empty(),
+            &frames_hierarchy(),
         )
         .unwrap();
         assert_eq!(
@@ -813,6 +823,7 @@ fn test_read_and_write_expand_frames() {
             ClassWriterFlags::empty(),
             false,
             ParsingOptions::EXPAND_FRAMES,
+            &frames_hierarchy(),
         )
         .unwrap();
         assert_eq!(
@@ -828,7 +839,6 @@ fn test_read_and_write_expand_frames() {
 /// given method are not unique), but this should be the case with our precompiled classes
 /// (except jdk3.SubOptimalMaxStackAndLocals, which has non optimal max values on purpose).
 #[test]
-#[ignore = "needs P6"]
 fn test_read_and_write_compute_maxs() {
     for &class_parameter in PrecompiledClass::ALL {
         if class_parameter == PrecompiledClass::Jdk3SubOptimalMaxStackAndLocals {
@@ -855,7 +865,7 @@ fn test_read_and_write_compute_maxs() {
 /// Tests that classes going through a ClassReader -> ClassWriter transform with the
 /// COMPUTE_MAXS option can be loaded and pass bytecode verification.
 #[test]
-#[ignore = "needs P6 (and the JVM oracle)"]
+#[ignore = "needs the JVM oracle"]
 fn test_read_and_write_compute_maxs_new_instance() {
     for &class_parameter in PrecompiledClass::ALL {
         let new_class_file = read_and_write(
@@ -863,6 +873,7 @@ fn test_read_and_write_compute_maxs_new_instance() {
             ClassWriterFlags::COMPUTE_MAXS,
             false,
             ParsingOptions::empty(),
+            &frames_hierarchy(),
         )
         .unwrap();
         assert_new_instance(class_parameter, &new_class_file);
@@ -872,7 +883,7 @@ fn test_read_and_write_compute_maxs_new_instance() {
 /// Tests that classes going through a ClassReader -> ClassWriter transform with the
 /// COMPUTE_FRAMES option can be loaded and pass bytecode verification.
 #[test]
-#[ignore = "needs P6 (and the JVM oracle)"]
+#[ignore = "needs the JVM oracle"]
 fn test_read_and_write_compute_frames() {
     for &class_parameter in PrecompiledClass::ALL {
         if has_jsr_or_ret_instructions(class_parameter) {
@@ -880,9 +891,8 @@ fn test_read_and_write_compute_frames() {
         }
         let class_file = class_parameter.bytes();
         let class_reader = ClassReader::new(class_file).unwrap();
-        let hierarchy = frames_hierarchy();
-        let mut class_writer =
-            ClassWriter::new(ClassWriterFlags::COMPUTE_FRAMES).with_hierarchy(&hierarchy);
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::COMPUTE_FRAMES)
+            .with_hierarchy(class_loader_hierarchy());
         class_reader
             .accept_with_codecs(&mut class_writer, &attributes(), ParsingOptions::empty())
             .unwrap();
@@ -911,7 +921,6 @@ fn test_read_and_write_compute_frames() {
 /// Tests that classes with JSR or RET instructions are rejected by a class writer that computes
 /// frames.
 #[test]
-#[ignore = "needs P6"]
 fn test_read_and_write_compute_frames_jsr_instructions() {
     for &class_parameter in PrecompiledClass::ALL {
         if !has_jsr_or_ret_instructions(class_parameter) {
@@ -922,6 +931,7 @@ fn test_read_and_write_compute_frames_jsr_instructions() {
             ClassWriterFlags::COMPUTE_FRAMES,
             false,
             ParsingOptions::empty(),
+            &frames_hierarchy(),
         );
         assert_eq!(
             result,
@@ -936,7 +946,7 @@ fn test_read_and_write_compute_frames_jsr_instructions() {
 /// Tests that classes going through a ClassReader -> ClassWriter transform with the SKIP_FRAMES
 /// and COMPUTE_FRAMES options can be loaded and pass bytecode verification.
 #[test]
-#[ignore = "needs P6 (and the JVM oracle)"]
+#[ignore = "needs the JVM oracle"]
 fn test_read_and_write_skip_and_compute_frames() {
     for &class_parameter in PrecompiledClass::ALL {
         if has_jsr_or_ret_instructions(class_parameter) {
@@ -948,6 +958,7 @@ fn test_read_and_write_skip_and_compute_frames() {
             ClassWriterFlags::COMPUTE_FRAMES,
             false,
             ParsingOptions::SKIP_FRAMES,
+            class_loader_hierarchy(),
         )
         .unwrap();
         // See test_read_and_write_compute_frames.
@@ -967,16 +978,15 @@ fn test_read_and_write_skip_and_compute_frames() {
 /// Tests that classes with dead code going through a ClassWriter with the COMPUTE_FRAMES option
 /// can be loaded and pass bytecode verification.
 #[test]
-#[ignore = "needs P6 (and the JVM oracle)"]
+#[ignore = "needs the JVM oracle"]
 fn test_read_and_write_compute_frames_and_dead_code() {
     for &class_parameter in PrecompiledClass::ALL {
         if has_jsr_or_ret_instructions(class_parameter) {
             continue;
         }
         let class_reader = ClassReader::new(class_parameter.bytes()).unwrap();
-        let hierarchy = frames_hierarchy();
-        let mut class_writer =
-            ClassWriter::new(ClassWriterFlags::COMPUTE_FRAMES).with_hierarchy(&hierarchy);
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::COMPUTE_FRAMES)
+            .with_hierarchy(class_loader_hierarchy());
         {
             let mut class_visitor = DeadCodeInserter {
                 next: &mut class_writer,

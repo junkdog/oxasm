@@ -42,7 +42,8 @@
  *                                forces linking; run the JVM with -XX:+UnlockDiagnosticVMOptions
  *                                -XX:+BytecodeVerificationLocal (xtask does)
  *   hierarchy                    prints "name \t super \t is_interface(0|1)" for every input
- *                                class, sorted by name (no records)
+ *                                class, sorted by name (no records); classes whose name or
+ *                                super class name contains a tab or line terminator are left out
  *   serve                        persistent mode, see below
  *   gen <scenario...>            writes the T3 synthetic classes (one record per scenario: the
  *                                class file, or the exception of ClassWriter.toByteArray); oxasm's
@@ -515,7 +516,11 @@ public final class Oracle {
     private static Hierarchy read(final String path) {
       Hierarchy hierarchy = new Hierarchy();
       try {
-        for (String line : Files.readAllLines(Path.of(path), StandardCharsets.UTF_8)) {
+        // The file is semi-UTF-8 (see semiUtf8): names may hold unpaired surrogates.
+        for (String line : fromSemiUtf8(Files.readAllBytes(Path.of(path))).split("\n", -1)) {
+          if (line.endsWith("\r")) {
+            line = line.substring(0, line.length() - 1);
+          }
           if (line.isEmpty()) {
             continue;
           }
@@ -600,9 +605,15 @@ public final class Oracle {
             if ((access & Opcodes.ACC_MODULE) != 0) {
               return;
             }
+            String className = classReader.getClassName();
             String superName = classReader.getSuperName();
+            if (!isTsvField(className) || (superName != null && !isTsvField(superName))) {
+              // A name the format cannot represent: the class is unknown to both sides.
+              System.err.println("oracle: skipping " + input.id() + ": a name with a tab or EOL");
+              return;
+            }
             lines.putIfAbsent(
-                classReader.getClassName(),
+                className,
                 (superName == null ? "" : superName)
                     + '\t'
                     + ((access & Opcodes.ACC_INTERFACE) != 0 ? '1' : '0'));
@@ -613,6 +624,11 @@ public final class Oracle {
     for (Map.Entry<String, String> line : lines.entrySet()) {
       out.write(semiUtf8(line.getKey() + '\t' + line.getValue() + '\n'));
     }
+  }
+
+  /** Whether a name can be a field of a hierarchy.tsv line (no tab, no line terminator). */
+  static boolean isTsvField(final String name) {
+    return name.indexOf('\t') < 0 && name.indexOf('\n') < 0 && name.indexOf('\r') < 0;
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -1007,6 +1023,34 @@ public final class Oracle {
   }
 
   /** Encodes text as UTF-8, except that unpaired surrogates become 3-byte sequences. */
+  /** Decodes the output of {@link #semiUtf8} (which must be well-formed). */
+  static String fromSemiUtf8(final byte[] bytes) {
+    StringBuilder text = new StringBuilder(bytes.length);
+    int i = 0;
+    while (i < bytes.length) {
+      int b = bytes[i] & 0xFF;
+      if (b < 0x80) {
+        text.append((char) b);
+        i += 1;
+      } else if (b < 0xE0) {
+        text.append((char) (((b & 0x1F) << 6) | (bytes[i + 1] & 0x3F)));
+        i += 2;
+      } else if (b < 0xF0) {
+        text.append(
+            (char) (((b & 0x0F) << 12) | ((bytes[i + 1] & 0x3F) << 6) | (bytes[i + 2] & 0x3F)));
+        i += 3;
+      } else {
+        text.appendCodePoint(
+            ((b & 0x07) << 18)
+                | ((bytes[i + 1] & 0x3F) << 12)
+                | ((bytes[i + 2] & 0x3F) << 6)
+                | (bytes[i + 3] & 0x3F));
+        i += 4;
+      }
+    }
+    return text.toString();
+  }
+
   static byte[] semiUtf8(final String text) {
     int length = text.length();
     var out = new java.io.ByteArrayOutputStream(length + 16);

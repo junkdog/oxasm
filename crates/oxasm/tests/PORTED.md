@@ -23,18 +23,18 @@ test class of ASM at tag `ASM_9_10_1` (`asm/src/test/java`). A phase is done onl
 | `AttributeTest` | P2 (read) / P5 (write) | 4 | 4 | 0 | ported | `tests/attribute_test.rs`: the read half (`testIsUnknown`, `testGetLabels`) plus oxasm's codec read tests (ADR-10), and the write half (`testStaticWrite`, `testCachedContent`) through a `ClassWriter`, since `Attribute.write` is not public here |
 | `AnnotationVisitorTest` | P5 | 4 | 3 | 1 | ported | `tests/annotation_visitor_test.rs`; `testConstructor_invalidApi` dropped (ADR-09) |
 | `ByteVectorTest` | P5 | 13 | 13 | 0 | ported | `tests/byte_vector_test.rs`, plus the crate-private `put11`/`put12`/`put112`/`put122` in a unit test of `writer/byte_vector.rs`; plus an oxasm test of a supplementary character's 6 bytes against the 65535 bytes limit |
-| `ClassVisitorTest` | P5 | 11 | 9 | 1 | partial | `tests/class_visitor_test.rs`; `testConstructor_invalidApi` dropped (ADR-09); `testReadAndWrite_copyPool_changeMethodDescriptor` pending P6 (it computes maxs) |
-| `ClassWriterFlagsTest` | P5 | 4 | 1 | 0 | partial | `tests/class_writer_flags_test.rs`; `switchesModesThreeTimes`, `computesFramesAsUsual` and `computesMaxsAsUsual` pending P6 (written, `#[ignore = "needs P6"]`) |
-| `ClassWriterTest` | P5 | 36 | 23 | 4 | partial | `tests/class_writer_test.rs`, plus 2 JVM-verify twins (`newInstance()`, ignored without the oracle); `testInstanceFields` and `testVisitMethods_final` (reflection), `testNewConst_illegalArgument` (`Constant` is an enum, ADR-05) and `testDeprecatedNewHandle` (not ported) dropped; `testGetCommonSuperClass` runs against a `MapHierarchy` (ADR-07); 9 COMPUTE_MAXS/COMPUTE_FRAMES tests pending P6 (written, `#[ignore = "needs P6"]`) |
+| `ClassVisitorTest` | P5 | 11 | 10 | 1 | ported | `tests/class_visitor_test.rs`; `testConstructor_invalidApi` dropped (ADR-09); `testReadAndWrite_copyPool_changeMethodDescriptor` (it computes maxs) with P6 |
+| `ClassWriterFlagsTest` | P5 / P6 | 4 | 4 | 0 | ported | `tests/class_writer_flags_test.rs`; `switchesModesThreeTimes`, `computesFramesAsUsual` and `computesMaxsAsUsual` with P6 |
+| `ClassWriterTest` | P5 / P6 | 36 | 32 | 4 | ported | `tests/class_writer_test.rs`, plus 2 JVM-verify twins (`newInstance()`, ignored without the oracle); `testInstanceFields` and `testVisitMethods_final` (reflection), `testNewConst_illegalArgument` (`Constant` is an enum, ADR-05) and `testDeprecatedNewHandle` (not ported) dropped; `testGetCommonSuperClass` runs against a `MapHierarchy` (ADR-07); the 9 COMPUTE_MAXS/COMPUTE_FRAMES tests with P6: those whose result depends on the class hierarchy (byte equality of recomputed frames, JVM verification) use the hierarchy of T0 and the JDK, from the oracle (`oxasm_testkit::jvm::class_loader_hierarchy_tsv`, needs `corpus/t1`), where ASM loads classes |
 | `FieldVisitorTest` | P5 | 3 | 2 | 1 | ported | `tests/field_visitor_test.rs`; `testConstructor_invalidApi` dropped (ADR-09) |
-| `HandlerTest` | P5 (list) / P6 (`removeRange`) | 9 | 4 | 0 | partial | a unit test of `writer/handler.rs`; `testGetExceptionTableSize` and `testPutExceptionTable` build their two handlers directly; `testCopyConstructor` and the four `testRemoveRange_*` pending P6 |
+| `HandlerTest` | P5 (list) / P6 (`removeRange`) | 9 | 9 | 0 | ported | a unit test of `writer/handler.rs`; a handler list is a `Vec` (ASM's `null` list is empty); the copy constructor is `Handler::with_range` |
 | `LabelTest` | P5 | 3 | 3 | 0 | ported | a unit test of `writer/method_writer` (`Label` is an id, ADR-03: `getOffset` is the method writer's `label_offset`) |
 | `MethodVisitorTest` | P5 | 28 | 12 | 16 | ported | `tests/method_visitor_test.rs`; dropped (ADR-09): `testConstructor_invalidApi`, the six `test*_asm4Visitor`, the seven `testDeprecatedVisitMethodInsn_*` (the 4-argument `visitMethodInsn` is not ported) and the two `testVisitMethodInsn_*asm4Visitor_isInterface` |
 | `MethodWriterTest` | P5 | 2 | 2 | 0 | ported | a unit test of `writer/method_writer`; `testCanCopyMethodAttributesUpdated` reads the attribute names of `constants.rs` (no reflection) |
 | `ModuleVisitorTest` | P5 | 3 | 2 | 1 | ported | `tests/module_visitor_test.rs`; `testConstructor_invalidApi` dropped (ADR-09) |
 | `RecordComponentVisitorTest` | P5 | 3 | 2 | 1 | ported | `tests/record_component_visitor_test.rs`; `testConstructor_invalidApi` dropped (ADR-09) |
-| `ClassWriterComputeMaxsTest` | P6 | 14 | 0 | 0 | pending |  |
-| **total** | | **234** | **159** | **43** | | 32 pending P6 (`ClassWriterComputeMaxsTest` and the compute tests above) |
+| `ClassWriterComputeMaxsTest` | P6 | 14 | 14 | 0 | ported | `tests/class_writer_compute_maxs_test.rs`; the `TestCaseBuilder` records the instructions and replays them into a class writer; the control flow graph assertions read the graph through the hidden `ClassWriter::last_method_control_flow_graph` (ASM reads package-private `Label` fields); the `newInstance()` checks of 12 tests are one ignored JVM twin, `test_visit_maxs_new_instance` |
+| **total** | | **234** | **191** | **43** | | |
 
 **oxasm-specific tests** (no Java counterpart):
 
@@ -43,6 +43,9 @@ test class of ASM at tag `ASM_9_10_1` (`asm/src/test/java`). A phase is done onl
   the oracle's `gen` command and compared with ASM's output, committed in `oxasm-testkit/goldens/t3/`.
 - `tests/method_copy_test.rs`: the method copy optimization never bypasses a method adapter, even one that
   overrides nothing (`try_copy_method` is not forwarded, ADR-08).
+- `fuzz/regressions/compute/`: the frame computation is not idempotent on the first rewrite (in ASM too: the
+  maximum number of locals counts the variable instructions of dead code, which the first write replaces with
+  `NOP ... ATHROW`); the `compute` fuzz target checks stability from the second rewrite on.
 
 **Test support classes** (no tests of their own):
 

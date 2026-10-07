@@ -1,5 +1,5 @@
 //! Port of ASM's `ClassWriterFlagsTest`: a class writer can be configured to compute maxs and
-//! frames for each method. Only `computesNothingAsUsual` runs before P6 ports the computations.
+//! frames for each method.
 
 use std::cell::Cell;
 
@@ -10,7 +10,6 @@ use oxasm::{
 };
 
 #[test]
-#[ignore = "needs P6"]
 fn switches_modes_three_times() {
     let hierarchy = ObjectHierarchy;
     let mut writer = ClassWriter::new(ClassWriterFlags::empty()).with_hierarchy(&hierarchy);
@@ -50,7 +49,6 @@ fn switches_modes_three_times() {
 }
 
 #[test]
-#[ignore = "needs P6"]
 fn computes_frames_as_usual() {
     computes_as_usual(
         ClassWriterFlags::COMPUTE_FRAMES,
@@ -63,7 +61,6 @@ fn computes_frames_as_usual() {
 }
 
 #[test]
-#[ignore = "needs P6"]
 fn computes_maxs_as_usual() {
     computes_as_usual(
         ClassWriterFlags::COMPUTE_MAXS,

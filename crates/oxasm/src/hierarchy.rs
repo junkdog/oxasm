@@ -30,6 +30,11 @@ pub enum HierarchyError {
     /// The super class chain of a class ends (or cycles) without reaching a common super class.
     #[error("broken super class chain from {0}")]
     BrokenSuperClassChain(JavaString),
+    /// Computing stack map frames needed the common super class of two classes, but the
+    /// [`ClassWriter`](crate::ClassWriter) has no class hierarchy (see
+    /// [`ClassWriter::with_hierarchy`](crate::ClassWriter::with_hierarchy)).
+    #[error("no class hierarchy to compute the common super class of {0} and {1}")]
+    NoHierarchy(JavaString, JavaString),
 }
 
 /// The class hierarchy facts needed to merge reference types: super classes and interfaces.

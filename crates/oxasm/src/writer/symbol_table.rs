@@ -18,6 +18,7 @@ use crate::constant_dynamic::ConstantDynamic;
 use crate::constants;
 use crate::error::{ReadError, ReadErrorKind, WriteError};
 use crate::handle::Handle;
+use crate::hierarchy::{ClassHierarchy, HierarchyError};
 use crate::jstr::{JavaCompactStr, JavaStr};
 use crate::label::Label;
 use crate::opcodes::HandleKind;
@@ -75,7 +76,6 @@ pub(crate) const UNINITIALIZED_TYPE_TAG: u8 = 129;
 /// constructor call is visited.
 pub(crate) const FORWARD_UNINITIALIZED_TYPE_TAG: u8 = 130;
 /// The tag value of a merged type entry in the (ASM specific) type table of a class.
-#[allow(dead_code)] // used by the frame computation (P6)
 pub(crate) const MERGED_TYPE_TAG: u8 = 131;
 
 /// An entry of the constant pool, of the BootstrapMethods attribute, or of the (ASM specific)
@@ -1462,6 +1462,66 @@ impl SymbolTable {
             hash_code,
             next: None,
         })
+    }
+
+    /// Adds a merged type in the type table of this symbol table. Does nothing if the type table
+    /// already contains a similar type. Returns the index of the common super type of the two
+    /// given types, in the type table (ASM's `addMergedType`).
+    ///
+    /// The common super class comes from the given class hierarchy (ASM's
+    /// `ClassWriter.getCommonSuperClass`).
+    ///
+    /// # Errors
+    ///
+    /// If there is no hierarchy, or if it cannot answer.
+    pub(crate) fn add_merged_type(
+        &mut self,
+        hierarchy: Option<&dyn ClassHierarchy>,
+        type_table_index1: i32,
+        type_table_index2: i32,
+    ) -> Result<i32, WriteError> {
+        let data = if type_table_index1 < type_table_index2 {
+            i64::from(type_table_index1) | (i64::from(type_table_index2) << 32)
+        } else {
+            i64::from(type_table_index2) | (i64::from(type_table_index1) << 32)
+        };
+        let hash_code = hash(MERGED_TYPE_TAG, |h| {
+            type_table_index1.wrapping_add(type_table_index2).hash(h);
+        });
+        if let Some(entry) = self.find(hash_code, |s| s.tag == MERGED_TYPE_TAG && s.data == data) {
+            return Ok(self.symbol(entry).info);
+        }
+        let assertion_error = || WriteError::InvalidArgument("java.lang.AssertionError".to_owned());
+        let type1 = self
+            .try_get_type(type_table_index1)
+            .ok_or_else(assertion_error)?
+            .value()
+            .to_owned();
+        let type2 = self
+            .try_get_type(type_table_index2)
+            .ok_or_else(assertion_error)?
+            .value()
+            .to_owned();
+        let common_super_class = match hierarchy {
+            Some(hierarchy) => hierarchy.common_super_class(&type1, &type2)?,
+            None => return Err(HierarchyError::NoHierarchy(type1, type2).into()),
+        };
+        let common_super_type_index = self.add_type(&common_super_class);
+        let index = self.type_table.len() as i32;
+        self.put(Entry {
+            symbol: Symbol {
+                index,
+                tag: MERGED_TYPE_TAG,
+                owner: None,
+                name: None,
+                value: None,
+                data,
+                info: common_super_type_index,
+            },
+            hash_code,
+            next: None,
+        });
+        Ok(common_super_type_index)
     }
 
     /// Adds the given type entry to the type table. Its index must be the current size of the

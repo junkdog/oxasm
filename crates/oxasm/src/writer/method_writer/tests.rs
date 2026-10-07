@@ -148,6 +148,7 @@ fn test_get_offset() {
         let mut method_visitor = MethodWriter {
             symbol_table: &mut symbol_table,
             state: &mut state,
+            hierarchy: None,
         };
         method_visitor.visit_code();
         method_visitor.visit_var_insn(opcodes::ALOAD, 0);

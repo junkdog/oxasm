@@ -270,7 +270,6 @@ fn test_read_and_write_copy_pool_change_class_version_and_method_synthetic_flag(
 /// Tests that a ClassReader -> class adapter -> ClassWriter chain gives the same result with or
 /// without the copy pool option, and a class adapter that changes the method descriptors.
 #[test]
-#[ignore = "needs P6 (COMPUTE_MAXS)"]
 fn test_read_and_write_copy_pool_change_method_descriptor() {
     let mut source_class_writer = ClassWriter::new(ClassWriterFlags::COMPUTE_MAXS);
     source_class_writer.visit(

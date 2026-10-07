@@ -4,9 +4,8 @@
 //! computes oxasm's side of each mode and compares the two.
 //!
 //! The oxasm side exists for the Textifier modes (P2), direct and through a `ClassNode` (P3), the
-//! analysis modes (P4), and the writer modes that compute nothing (P5); `maxs` and `frames`
-//! arrive with P6. A class on which ASM fails agrees with oxasm iff oxasm fails too ("both
-//! reject").
+//! analysis modes (P4), the writer modes that compute nothing (P5), and `maxs` and `frames` (P6).
+//! A class on which ASM fails agrees with oxasm iff oxasm fails too ("both reject").
 
 use std::fs;
 use std::io::Read;
@@ -56,10 +55,7 @@ struct Roundtrip {
 impl Mode {
     /// Whether oxasm computes its side of this mode (yet).
     fn has_oxasm_side(&self) -> bool {
-        self.textify.is_some()
-            || self.analyze.is_some()
-            // Computing max stack, max locals and frames arrives in P6.
-            || self.roundtrip.is_some_and(|r| r.flags.is_empty())
+        self.textify.is_some() || self.analyze.is_some() || self.roundtrip.is_some()
     }
 }
 

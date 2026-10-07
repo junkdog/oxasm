@@ -6,13 +6,13 @@
 //! with the symbol table. `MethodWriter.java` is split along its sections:
 //!
 //! - this module: the constructor, and the implementation of the method visitor;
+//! - `control_flow`: the control flow graph (`visitLabel`), and the computation of the maximum
+//!   stack size and of the stack map frames from it (`visitMaxs`);
 //! - `frames`: the stack map frames;
 //! - `attributes`: the method copy optimization, and the size and content of the `method_info`.
-//!
-//! Only `COMPUTE_NOTHING` is implemented: the computation of the maximum stack size, of the
-//! number of locals and of the stack map frames arrives in P6.
 
 mod attributes;
+mod control_flow;
 mod frames;
 
 use crate::attribute::Attribute;
@@ -23,6 +23,7 @@ use crate::constants::{
 };
 use crate::error::WriteError;
 use crate::handle::Handle;
+use crate::hierarchy::ClassHierarchy;
 use crate::jstr::{JavaCompactStr, JavaStr};
 use crate::label::Label;
 use crate::opcodes::{self, FrameKind};
@@ -35,7 +36,10 @@ use crate::writer::attributes::AttributeList;
 use crate::writer::byte_vector::ByteVector;
 use crate::writer::frame::SymbolArg;
 use crate::writer::handler::Handler;
-use crate::writer::label_table::LabelTable;
+use crate::writer::label_table::{
+    BlockId, EDGE_JUMP, FLAG_JUMP_TARGET, FLAG_SUBROUTINE_CALLER, FLAG_SUBROUTINE_END,
+    FLAG_SUBROUTINE_START, LabelTable,
+};
 use crate::writer::symbol_table::{
     CONSTANT_DOUBLE_TAG, CONSTANT_DYNAMIC_TAG, CONSTANT_LONG_TAG, Symbol, SymbolTable,
 };
@@ -139,12 +143,37 @@ pub(crate) struct MethodWriterState {
     // frames.
     /// Indicates what must be computed.
     compute: Compute,
-    /// The labels of this method (what ASM stores in its `Label`s).
+    /// The labels of this method (what ASM stores in its `Label`s), and its control flow graph.
     labels: LabelTable,
+    /// The first basic block of the method. The next ones (in bytecode offset order) can be
+    /// accessed with the `next_basic_block` field of the basic block states.
+    first_basic_block: Option<BlockId>,
+    /// The last basic block of the method (in bytecode offset order). This field is updated each
+    /// time a basic block is encountered, and is used to append it at the end of the basic block
+    /// list.
+    last_basic_block: Option<BlockId>,
     /// The current basic block, i.e. the basic block of the last visited instruction. When
-    /// `compute` is `InsertedFrames`, this field corresponds to the first basic block (the
-    /// frame of the current instruction is computed in its frame, and its owner is updated).
-    current_basic_block: Option<Label>,
+    /// `compute` is `MaxStackAndLocal` or `AllFrames`, this field is `None` for unreachable
+    /// code. When `compute` is `MaxStackAndLocalFromFrames` or `InsertedFrames`, this field
+    /// stays unchanged throughout the whole method (i.e. the whole code is seen as a single
+    /// basic block; indeed, the existing frames are sufficient by hypothesis to compute any
+    /// intermediate frame - and the maximum stack size as well - without using any control flow
+    /// graph).
+    current_basic_block: Option<BlockId>,
+    /// The relative stack size after the last visited instruction. This size is relative to the
+    /// beginning of `current_basic_block`, i.e. the true stack size after the last visited
+    /// instruction is equal to the `input_stack_size` of the current basic block plus
+    /// `relative_stack_size`. When `compute` is `MaxStackAndLocalFromFrames`,
+    /// `current_basic_block` is always the start of the method, so this relative size is also
+    /// equal to the absolute stack size after the last visited instruction.
+    relative_stack_size: i32,
+    /// The maximum relative stack size after the last visited instruction. This size is relative
+    /// to the beginning of `current_basic_block`, i.e. the true maximum stack size after the
+    /// last visited instruction is equal to the `input_stack_size` of the current basic block
+    /// plus `max_relative_stack_size`. When `compute` is `MaxStackAndLocalFromFrames`,
+    /// `current_basic_block` is always the start of the method, so this relative size is also
+    /// equal to the absolute maximum stack size after the last visited instruction.
+    max_relative_stack_size: i32,
     /// The number of local variables in the last visited stack map frame.
     current_locals: i32,
     /// The bytecode offset of the last frame that was written in `stack_map_table_entries`.
@@ -163,6 +192,8 @@ pub(crate) struct MethodWriterState {
     current_frame: Vec<i32>,
 
     // Other miscellaneous status fields
+    /// Whether this method contains subroutines.
+    has_subroutines: bool,
     /// Whether this method contains ASM specific instructions.
     has_asm_instructions: bool,
     /// The start offset of the last visited instruction. Used to set the offset field of type
@@ -198,14 +229,6 @@ impl MethodWriterState {
             .iter()
             .map(|exception| symbol_table.add_constant_class(exception).index)
             .collect();
-        let compute = if matches!(compute, Compute::Nothing | Compute::InsertedFrames) {
-            compute
-        } else {
-            symbol_table.fail(WriteError::NotYetPorted(
-                "computing max stack, max locals or stack map frames (P6)",
-            ));
-            Compute::Nothing
-        };
         let mut state = MethodWriterState {
             access_flags,
             name_index,
@@ -240,11 +263,16 @@ impl MethodWriterState {
             attributes: AttributeList::default(),
             compute,
             labels: LabelTable::default(),
+            first_basic_block: None,
+            last_basic_block: None,
             current_basic_block: None,
+            relative_stack_size: 0,
+            max_relative_stack_size: 0,
             current_locals: 0,
             previous_frame_offset: 0,
             previous_frame: None,
             current_frame: Vec::new(),
+            has_subroutines: false,
             has_asm_instructions: false,
             last_bytecode_offset: 0,
             copied_method_info: None,
@@ -264,49 +292,34 @@ impl MethodWriterState {
             state.max_locals = arguments_size;
             state.current_locals = arguments_size;
             // Create and visit the label for the first basic block.
-            state.visit_label(Label::new());
+            let first_basic_block = Label::new();
+            state.visit_label(first_basic_block);
+            state.first_basic_block = Some(state.labels.id(first_basic_block));
         }
         state
-    }
-
-    /// ASM's `visitLabel`.
-    fn visit_label(&mut self, label: Label) {
-        // Resolve the forward references to this label, if any.
-        let code_length = self.code_length();
-        self.has_asm_instructions |= self.labels.resolve(
-            label,
-            &mut self.code,
-            self.stack_map_table_entries.as_mut(),
-            code_length,
-        );
-        // visitLabel starts a new basic block (except for debug only labels), so we need to
-        // update the previous and current block references and list of successors.
-        if label.is_debug_only() {
-            return;
-        }
-        if self.compute == Compute::InsertedFrames {
-            match self.current_basic_block {
-                // This case should happen only once, for the visitLabel call in the constructor.
-                // Indeed, if compute is equal to COMPUTE_INSERTED_FRAMES, currentBasicBlock stays
-                // unchanged.
-                None => self.current_basic_block = Some(label),
-                // Update the frame owner so that a correct frame offset is computed in
-                // Frame.accept().
-                Some(current_basic_block) => {
-                    if let Some(frame) = self.labels.block_mut(current_basic_block).frame.as_mut() {
-                        frame.owner = Some(label);
-                    }
-                }
-            }
-        }
-        // The other computations (COMPUTE_ALL_FRAMES, COMPUTE_MAX_STACK_AND_LOCAL...) arrive in
-        // P6.
     }
 
     /// Whether the stack map frames are computed, i.e. the instructions are executed on the
     /// frame of the current basic block.
     fn computes_frames(&self) -> bool {
         matches!(self.compute, Compute::AllFrames | Compute::InsertedFrames)
+    }
+
+    /// Whether the relative stack size is tracked after each instruction: when the maximum stack
+    /// size is computed without computing frames, in reachable code.
+    fn tracks_stack_size(&self) -> bool {
+        self.current_basic_block.is_some() && !self.computes_frames()
+    }
+
+    /// Updates the relative stack size, and its maximum, after an instruction with the stack
+    /// size variation of the given opcode (if the stack size is tracked).
+    fn update_relative_stack_size_by_opcode(&mut self, symbol_table: &mut SymbolTable, opcode: u8) {
+        if self.tracks_stack_size() {
+            match control_flow::stack_size_delta(opcode) {
+                Ok(delta) => self.update_relative_stack_size(delta),
+                Err(error) => symbol_table.fail(error),
+            }
+        }
     }
 
     /// Simulates the given instruction on the frame of the current basic block, if the stack
@@ -328,12 +341,8 @@ impl MethodWriterState {
             return;
         }
         let inserted = self.compute == Compute::InsertedFrames;
-        let result = match self
-            .labels
-            .block_mut(current_basic_block)
-            .frame
-            .as_deref_mut()
-        {
+        let frame = self.labels.get(current_basic_block).frame;
+        let result = match frame.map(|frame| self.labels.frame_mut(frame)) {
             Some(frame) if inserted => frame.execute_current(opcode, arg, arg_symbol, symbol_table),
             Some(frame) => frame.execute(opcode, arg, arg_symbol, symbol_table),
             // ASM's NullPointerException (no frame visited before the instruction).
@@ -385,6 +394,9 @@ impl MethodWriterState {
 pub(crate) struct MethodWriter<'a> {
     pub(crate) symbol_table: &'a mut SymbolTable,
     pub(crate) state: &'a mut MethodWriterState,
+    /// The class hierarchy that computing stack map frames uses (ASM's
+    /// `ClassWriter.getCommonSuperClass`), if any.
+    pub(crate) hierarchy: Option<&'a dyn ClassHierarchy>,
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // Java's int arithmetic
@@ -515,7 +527,12 @@ impl MethodVisitor for MethodWriter<'_> {
         state.code.put_byte(i32::from(opcode));
         // If needed, update the maximum stack size and number of locals, and stack map frames.
         state.execute(self.symbol_table, opcode, 0, None);
-        // COMPUTE_MAX_STACK_AND_LOCAL and the end of the basic block arrive in P6.
+        state.update_relative_stack_size_by_opcode(self.symbol_table, opcode);
+        if state.current_basic_block.is_some()
+            && ((opcodes::IRETURN..=opcodes::RETURN).contains(&opcode) || opcode == opcodes::ATHROW)
+        {
+            state.end_current_basic_block_with_no_successor();
+        }
     }
 
     fn visit_int_insn(&mut self, opcode: u8, operand: i32) {
@@ -530,6 +547,10 @@ impl MethodVisitor for MethodWriter<'_> {
         }
         // If needed, update the maximum stack size and number of locals, and stack map frames.
         state.execute(self.symbol_table, opcode, operand, None);
+        if state.tracks_stack_size() && opcode != opcodes::NEWARRAY {
+            // The stack size delta is 1 for BIPUSH or SIPUSH, and 0 for NEWARRAY.
+            state.update_relative_stack_size(1);
+        }
     }
 
     fn visit_var_insn(&mut self, opcode: u8, var_index: u16) {
@@ -555,6 +576,20 @@ impl MethodVisitor for MethodWriter<'_> {
         }
         // If needed, update the maximum stack size and number of locals, and stack map frames.
         state.execute(self.symbol_table, opcode as u8, var_index, None);
+        if let Some(current_basic_block) = state.current_basic_block
+            && state.tracks_stack_size()
+        {
+            if opcode == i32::from(opcodes::RET) {
+                // No stack size delta.
+                let block = state.labels.get_mut(current_basic_block);
+                block.flags |= FLAG_SUBROUTINE_END;
+                block.output_stack_size = state.relative_stack_size as i16;
+                state.end_current_basic_block_with_no_successor();
+            } else {
+                // xLOAD or xSTORE
+                state.update_relative_stack_size_by_opcode(self.symbol_table, opcode as u8);
+            }
+        }
         let long_or_double = [
             opcodes::LLOAD,
             opcodes::DLOAD,
@@ -563,8 +598,20 @@ impl MethodVisitor for MethodWriter<'_> {
         ]
         .contains(&(opcode as u8));
         state.update_max_locals(var_index + if long_or_double { 2 } else { 1 });
-        // The new basic block after an xSTORE in a handler range (COMPUTE_ALL_FRAMES) arrives
-        // in P6.
+        if opcode >= i32::from(opcodes::ISTORE)
+            && state.compute == Compute::AllFrames
+            && !state.handlers.is_empty()
+        {
+            // If there are exception handler blocks, each instruction within a handler range is,
+            // in theory, a basic block (since execution can jump from this instruction to the
+            // exception handler). As a consequence, the local variable types at the beginning of
+            // the handler block should be the merge of the local variable types at all the
+            // instructions within the handler range. However, instead of creating a basic block
+            // for each instruction, we can get the same result in a more efficient way. Namely,
+            // by starting a new basic block after each xSTORE instruction, which is what we do
+            // here.
+            state.visit_label(Label::new());
+        }
     }
 
     fn visit_type_insn(&mut self, opcode: u8, type_: &JavaStr) {
@@ -582,6 +629,10 @@ impl MethodVisitor for MethodWriter<'_> {
             last_bytecode_offset,
             type_symbol.as_ref(),
         );
+        if state.tracks_stack_size() && opcode == opcodes::NEW {
+            // The stack size delta is 1 for NEW, and 0 for ANEWARRAY, CHECKCAST, or INSTANCEOF.
+            state.update_relative_stack_size(1);
+        }
     }
 
     fn visit_field_insn(
@@ -602,6 +653,42 @@ impl MethodVisitor for MethodWriter<'_> {
         state.code.put12(i32::from(opcode), fieldref_index);
         // If needed, update the maximum stack size and number of locals, and stack map frames.
         state.execute(self.symbol_table, opcode, 0, fieldref_symbol.as_ref());
+        if state.tracks_stack_size() {
+            let Some(&first_desc_char) = descriptor.as_bytes().first() else {
+                // The descriptor's charAt(0).
+                self.symbol_table.fail(WriteError::IndexOutOfBounds(
+                    "Index 0 out of bounds for length 0".to_owned(),
+                ));
+                return;
+            };
+            let long_or_double = first_desc_char == b'D' || first_desc_char == b'J';
+            let delta = match opcode {
+                opcodes::GETSTATIC => {
+                    if long_or_double {
+                        2
+                    } else {
+                        1
+                    }
+                }
+                opcodes::PUTSTATIC => {
+                    if long_or_double {
+                        -2
+                    } else {
+                        -1
+                    }
+                }
+                opcodes::GETFIELD => i32::from(long_or_double),
+                // PUTFIELD
+                _ => {
+                    if long_or_double {
+                        -3
+                    } else {
+                        -2
+                    }
+                }
+            };
+            state.update_relative_stack_size(delta);
+        }
     }
 
     fn visit_method_insn(
@@ -638,6 +725,23 @@ impl MethodVisitor for MethodWriter<'_> {
         }
         // If needed, update the maximum stack size and number of locals, and stack map frames.
         state.execute(self.symbol_table, opcode, 0, methodref_symbol.as_ref());
+        if state.tracks_stack_size() {
+            let argument_and_return_sizes =
+                match Type::try_get_arguments_and_return_sizes_of(descriptor) {
+                    Ok(sizes) => sizes as i32,
+                    Err(error) => {
+                        self.symbol_table.fail(error.into());
+                        return;
+                    }
+                };
+            let stack_size_delta =
+                (argument_and_return_sizes & 3) - (argument_and_return_sizes >> 2);
+            if opcode == opcodes::INVOKESTATIC {
+                state.update_relative_stack_size(stack_size_delta + 1);
+            } else {
+                state.update_relative_stack_size(stack_size_delta);
+            }
+        }
     }
 
     fn visit_invoke_dynamic_insn(
@@ -671,6 +775,19 @@ impl MethodVisitor for MethodWriter<'_> {
             0,
             invoke_dynamic_symbol.as_ref(),
         );
+        if state.tracks_stack_size() {
+            let argument_and_return_sizes =
+                match Type::try_get_arguments_and_return_sizes_of(descriptor) {
+                    Ok(sizes) => sizes as i32,
+                    Err(error) => {
+                        self.symbol_table.fail(error.into());
+                        return;
+                    }
+                };
+            let stack_size_delta =
+                (argument_and_return_sizes & 3) - (argument_and_return_sizes >> 2) + 1;
+            state.update_relative_stack_size(stack_size_delta);
+        }
     }
 
     fn visit_jump_insn(&mut self, opcode: u8, label: Label) {
@@ -684,6 +801,7 @@ impl MethodVisitor for MethodWriter<'_> {
         } else {
             opcode
         };
+        let mut next_insn_is_jump_target = false;
         let code_length = state.code_length();
         let backward_offset = state
             .labels
@@ -721,8 +839,8 @@ impl MethodVisitor for MethodWriter<'_> {
                 // would not have been really necessary, but we can't know this at this point).
                 state.code.put_byte(i32::from(ASM_GOTO_W));
                 state.has_asm_instructions = true;
-                // The instruction after the GOTO_W becomes the target of the IFNOT instruction
-                // (which only matters to the frame computation, P6).
+                // The instruction after the GOTO_W becomes the target of the IFNOT instruction.
+                next_insn_is_jump_target = true;
             }
             let source = state.code_length() - 1;
             state.labels.put(label, &mut state.code, source, true);
@@ -742,10 +860,87 @@ impl MethodVisitor for MethodWriter<'_> {
             state.labels.put(label, &mut state.code, source, false);
         }
         // If needed, update the maximum stack size and number of locals, and stack map frames.
-        // The control flow graph (COMPUTE_ALL_FRAMES, COMPUTE_MAX_STACK_AND_LOCAL...) arrives in
-        // P6.
-        if state.current_basic_block.is_some() && state.compute == Compute::InsertedFrames {
-            state.execute(self.symbol_table, base_opcode, 0, None);
+        let Some(current_basic_block) = state.current_basic_block else {
+            return;
+        };
+        let mut next_basic_block = None;
+        match state.compute {
+            Compute::AllFrames => {
+                state.execute(self.symbol_table, base_opcode, 0, None);
+                // Record the fact that 'label' is the target of a jump instruction.
+                let target = state.labels.id(label);
+                let canonical = state.labels.canonical(target);
+                state.labels.get_mut(canonical).flags |= FLAG_JUMP_TARGET;
+                // Add 'label' as a successor of the current basic block.
+                state.add_successor_to_current_basic_block(EDGE_JUMP, target);
+                if base_opcode != opcodes::GOTO {
+                    // The next instruction starts a new basic block (except for GOTO: by default
+                    // the code following a goto is unreachable - unless there is an explicit
+                    // label for it - and we should not compute stack frame types for its
+                    // instructions).
+                    next_basic_block = Some(Label::new());
+                }
+            }
+            Compute::InsertedFrames => {
+                state.execute(self.symbol_table, base_opcode, 0, None);
+            }
+            Compute::MaxStackAndLocalFromFrames => {
+                // No need to update maxRelativeStackSize (the stack size delta is always
+                // negative).
+                match control_flow::stack_size_delta(base_opcode) {
+                    Ok(delta) => {
+                        state.relative_stack_size = state.relative_stack_size.wrapping_add(delta);
+                    }
+                    Err(error) => self.symbol_table.fail(error),
+                }
+            }
+            Compute::MaxStackAndLocal | Compute::Nothing => {
+                let target = state.labels.id(label);
+                if base_opcode == opcodes::JSR {
+                    // Record the fact that 'label' designates a subroutine, if not already done.
+                    let target_block = state.labels.get_mut(target);
+                    if target_block.flags & FLAG_SUBROUTINE_START == 0 {
+                        target_block.flags |= FLAG_SUBROUTINE_START;
+                        state.has_subroutines = true;
+                    }
+                    state.labels.get_mut(current_basic_block).flags |= FLAG_SUBROUTINE_CALLER;
+                    // Note that, by construction in this method, a block which calls a
+                    // subroutine has at least two successors in the control flow graph: the first
+                    // one (added below) leads to the instruction after the JSR, while the second
+                    // one (added here) leads to the JSR target. Note that the first successor is
+                    // virtual (it does not correspond to a possible execution path): it is only
+                    // used to compute the successors of the basic blocks ending with a ret, in
+                    // add_subroutine_ret_successors.
+                    state.add_successor_to_current_basic_block(
+                        state.relative_stack_size.wrapping_add(1),
+                        target,
+                    );
+                    // The instruction after the JSR starts a new basic block.
+                    next_basic_block = Some(Label::new());
+                } else {
+                    // No need to update maxRelativeStackSize (the stack size delta is always
+                    // negative).
+                    match control_flow::stack_size_delta(base_opcode) {
+                        Ok(delta) => {
+                            state.relative_stack_size =
+                                state.relative_stack_size.wrapping_add(delta);
+                        }
+                        Err(error) => self.symbol_table.fail(error),
+                    }
+                    state.add_successor_to_current_basic_block(state.relative_stack_size, target);
+                }
+            }
+        }
+        // If the next instruction starts a new basic block, call visitLabel to add the label of
+        // this instruction as a successor of the current block, and to start a new basic block.
+        if let Some(next_basic_block) = next_basic_block {
+            if next_insn_is_jump_target {
+                state.labels.block_mut(next_basic_block).flags |= FLAG_JUMP_TARGET;
+            }
+            state.visit_label(next_basic_block);
+        }
+        if base_opcode == opcodes::GOTO {
+            state.end_current_basic_block_with_no_successor();
         }
     }
 
@@ -785,6 +980,9 @@ impl MethodVisitor for MethodWriter<'_> {
         }
         // If needed, update the maximum stack size and number of locals, and stack map frames.
         state.execute(self.symbol_table, opcodes::LDC, 0, constant_arg.as_ref());
+        if state.tracks_stack_size() {
+            state.update_relative_stack_size(if is_long_or_double { 2 } else { 1 });
+        }
     }
 
     fn visit_iinc_insn(&mut self, var_index: u16, increment: i16) {
@@ -822,9 +1020,8 @@ impl MethodVisitor for MethodWriter<'_> {
         for &label in labels {
             state.labels.put(label, &mut state.code, source, true);
         }
-        // If needed, update the maximum stack size and number of locals, and stack map frames
-        // (ASM's visitSwitchInsn, which does nothing for COMPUTE_INSERTED_FRAMES; the other
-        // computations arrive in P6).
+        // If needed, update the maximum stack size and number of locals, and stack map frames.
+        state.visit_switch_insn(self.symbol_table, dflt, labels);
     }
 
     fn visit_lookup_switch_insn(&mut self, dflt: Label, keys: &[i32], labels: &[Label]) {
@@ -847,9 +1044,8 @@ impl MethodVisitor for MethodWriter<'_> {
             state.code.put_int(key);
             state.labels.put(label, &mut state.code, source, true);
         }
-        // If needed, update the maximum stack size and number of locals, and stack map frames
-        // (ASM's visitSwitchInsn, which does nothing for COMPUTE_INSERTED_FRAMES; the other
-        // computations arrive in P6).
+        // If needed, update the maximum stack size and number of locals, and stack map frames.
+        state.visit_switch_insn(self.symbol_table, dflt, labels);
     }
 
     fn visit_multi_a_new_array_insn(&mut self, descriptor: &JavaStr, num_dimensions: u8) {
@@ -869,6 +1065,12 @@ impl MethodVisitor for MethodWriter<'_> {
             i32::from(num_dimensions),
             desc_symbol.as_ref(),
         );
+        if state.tracks_stack_size() {
+            // No need to update maxRelativeStackSize (the stack size delta is always negative).
+            state.relative_stack_size = state
+                .relative_stack_size
+                .wrapping_add(1 - i32::from(num_dimensions));
+        }
     }
 
     fn visit_insn_annotation<'b>(
@@ -1049,10 +1251,8 @@ impl MethodVisitor for MethodWriter<'_> {
     }
 
     fn visit_maxs(&mut self, max_stack: u16, max_locals: u16) {
-        // COMPUTE_ALL_FRAMES, COMPUTE_MAX_STACK_AND_LOCAL and
-        // COMPUTE_MAX_STACK_AND_LOCAL_FROM_FRAMES arrive in P6.
-        self.state.max_stack = i32::from(max_stack);
-        self.state.max_locals = i32::from(max_locals);
+        self.state
+            .visit_maxs(self.symbol_table, self.hierarchy, max_stack, max_locals);
     }
 
     fn visit_end(&mut self) {

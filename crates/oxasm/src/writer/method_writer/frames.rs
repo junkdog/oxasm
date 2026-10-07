@@ -145,7 +145,16 @@ impl MethodWriterState {
             self.previous_frame_offset = self.code_length();
             self.stack_map_table_number_of_entries += 1;
         }
-        // COMPUTE_MAX_STACK_AND_LOCAL_FROM_FRAMES updates the relative stack size here (P6).
+        if self.compute == Compute::MaxStackAndLocalFromFrames {
+            self.relative_stack_size = num_stack
+                + stack
+                    .iter()
+                    .filter(|&v| frame::is_long_or_double(v))
+                    .count() as i32;
+            if self.relative_stack_size > self.max_relative_stack_size {
+                self.max_relative_stack_size = self.relative_stack_size;
+            }
+        }
         self.max_stack = self.max_stack.max(num_stack);
         self.max_locals = self.max_locals.max(self.current_locals);
         Ok(())
@@ -164,38 +173,46 @@ impl MethodWriterState {
             .current_basic_block
             .expect("set by the constructor when computing frames");
         let labels = &mut self.labels;
-        let block = labels.block_mut(current_basic_block);
-        if block.frame.is_none() {
-            // This should happen only once, for the implicit first frame (which is explicitly
-            // visited in ClassReader if the EXPAND_ASM_INSNS option is used - and
-            // COMPUTE_INSERTED_FRAMES can't be set if EXPAND_ASM_INSNS is not used). Its number of
-            // locals is the length of `local`.
-            let mut frame = Frame::new(Some(current_basic_block));
-            frame.set_input_frame_from_descriptor(
-                symbol_table,
-                self.access_flags,
-                &self.descriptor,
-                local.len(),
-            )?;
-            block.frame = Some(Box::new(frame));
-        } else if kind == FrameKind::New {
-            let mut frame = block.frame.take().expect("checked above");
-            let result =
-                frame.set_input_frame_from_api_format(symbol_table, local, stack, |label| {
-                    labels.resolved_offset(label)
-                });
-            labels.block_mut(current_basic_block).frame = Some(frame);
-            result?;
-        }
-        // If type is not F_NEW then it is F_INSERT by hypothesis, and currentBlock.frame
-        // contains the stack map frame at the current instruction, computed from the last F_NEW
-        // frame and the bytecode instructions in between (via calls to CurrentFrame#execute).
-        let frame = self
-            .labels
-            .block(current_basic_block)
-            .and_then(|block| block.frame.as_deref())
-            .expect("set above");
-        let owner_offset = frame.owner.map_or(0, |owner| self.labels.offset(owner));
+        let frame = match labels.get(current_basic_block).frame {
+            None => {
+                // This should happen only once, for the implicit first frame (which is explicitly
+                // visited in ClassReader if the EXPAND_ASM_INSNS option is used - and
+                // COMPUTE_INSERTED_FRAMES can't be set if EXPAND_ASM_INSNS is not used). Its
+                // number of locals is the length of `local`.
+                let mut frame = Frame::new(Some(current_basic_block));
+                frame.set_input_frame_from_descriptor(
+                    symbol_table,
+                    self.access_flags,
+                    &self.descriptor,
+                    local.len(),
+                )?;
+                let frame = labels.add_frame(frame);
+                labels.get_mut(current_basic_block).frame = Some(frame);
+                frame
+            }
+            Some(frame) => {
+                if kind == FrameKind::New {
+                    let mut current_frame = labels.take_frame(frame);
+                    let result = current_frame.set_input_frame_from_api_format(
+                        symbol_table,
+                        local,
+                        stack,
+                        |label| labels.resolved_offset(label),
+                    );
+                    labels.put_frame(frame, current_frame);
+                    result?;
+                }
+                // If type is not F_NEW then it is F_INSERT by hypothesis, and currentBlock.frame
+                // contains the stack map frame at the current instruction, computed from the last
+                // F_NEW frame and the bytecode instructions in between (via calls to
+                // CurrentFrame#execute).
+                frame
+            }
+        };
+        let frame = self.labels.frame(frame);
+        let owner_offset = frame
+            .owner
+            .map_or(0, |owner| self.labels.get(owner).bytecode_offset);
         let (locals, stack) = frame.accept();
         self.accept_frame(symbol_table, owner_offset, &locals, &stack);
         Ok(())
