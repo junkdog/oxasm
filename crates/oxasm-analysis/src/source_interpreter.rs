@@ -9,13 +9,15 @@ use crate::basic_interpreter::{assertion_error, get_type, return_type};
 use crate::error::AnalyzerError;
 use crate::frame::cast_error;
 use crate::interpreter::{InsnRef, Interpreter};
-use crate::source_value::SourceValue;
+use crate::source_value::{Producer, SourceValue};
 
 /// An [`Interpreter`] for [`SourceValue`] values (ASM's `SourceInterpreter`).
 ///
 /// Its operations are also associated functions, for the interpreters that extend it: an
 /// interpreter of [`SourceValue`]s that overrides some operations calls these for the others
-/// (`SourceInterpreter::copy_operation(insn, value)` is `super.copyOperation(insn, value)`).
+/// (`SourceInterpreter::copy_operation(insn, value)` is `super.copyOperation(insn, value)`). They
+/// are generic over the [`Producer`] type, so that an extension can record producers that are no
+/// instructions; this interpreter itself records [`InsnId`](oxasm_tree::InsnId)s.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SourceInterpreter;
 
@@ -30,7 +32,9 @@ impl SourceInterpreter {
     /// # Errors
     ///
     /// For a method type (ASM's `AssertionError`).
-    pub fn new_value(ty: Option<&Type>) -> Result<Option<SourceValue>, AnalyzerError> {
+    pub fn new_value<P: Producer>(
+        ty: Option<&Type>,
+    ) -> Result<Option<SourceValue<P>>, AnalyzerError> {
         match ty {
             Some(ty) if ty.get_sort() == TypeSort::Void => Ok(None),
             Some(ty) => Ok(Some(SourceValue::new(size(ty)?))),
@@ -43,7 +47,7 @@ impl SourceInterpreter {
     /// # Errors
     ///
     /// For a malformed field descriptor.
-    pub fn new_operation(insn: InsnRef<'_>) -> Result<SourceValue, AnalyzerError> {
+    pub fn new_operation<P: Producer>(insn: InsnRef<'_>) -> Result<SourceValue<P>, AnalyzerError> {
         let size = match insn.opcode() {
             Some(LCONST_0 | LCONST_1 | DCONST_0 | DCONST_1) => 2,
             Some(LDC) => {
@@ -74,12 +78,15 @@ impl SourceInterpreter {
             Some(GETSTATIC) => field_size(insn)?,
             _ => 1,
         };
-        Ok(SourceValue::of(size, insn.id))
+        Ok(SourceValue::of(size, insn.id.into()))
     }
 
     /// ASM's `SourceInterpreter.copyOperation`: a value of the same size, produced by `insn`.
-    pub fn copy_operation(insn: InsnRef<'_>, value: &SourceValue) -> SourceValue {
-        SourceValue::of(value.size, insn.id)
+    pub fn copy_operation<P: Producer>(
+        insn: InsnRef<'_>,
+        value: &SourceValue<P>,
+    ) -> SourceValue<P> {
+        SourceValue::of(value.size, insn.id.into())
     }
 
     /// ASM's `SourceInterpreter.unaryOperation`.
@@ -87,24 +94,24 @@ impl SourceInterpreter {
     /// # Errors
     ///
     /// For a malformed field descriptor.
-    pub fn unary_operation(
+    pub fn unary_operation<P: Producer>(
         insn: InsnRef<'_>,
-        _value: &SourceValue,
-    ) -> Result<SourceValue, AnalyzerError> {
+        _value: &SourceValue<P>,
+    ) -> Result<SourceValue<P>, AnalyzerError> {
         let size = match insn.opcode() {
             Some(LNEG | DNEG | I2L | I2D | L2D | F2L | F2D | D2L) => 2,
             Some(GETFIELD) => field_size(insn)?,
             _ => 1,
         };
-        Ok(SourceValue::of(size, insn.id))
+        Ok(SourceValue::of(size, insn.id.into()))
     }
 
     /// ASM's `SourceInterpreter.binaryOperation`.
-    pub fn binary_operation(
+    pub fn binary_operation<P: Producer>(
         insn: InsnRef<'_>,
-        _value1: &SourceValue,
-        _value2: &SourceValue,
-    ) -> SourceValue {
+        _value1: &SourceValue<P>,
+        _value2: &SourceValue<P>,
+    ) -> SourceValue<P> {
         let size = match insn.opcode() {
             Some(
                 LALOAD | DALOAD | LADD | DADD | LSUB | DSUB | LMUL | DMUL | LDIV | DDIV | LREM
@@ -112,17 +119,17 @@ impl SourceInterpreter {
             ) => 2,
             _ => 1,
         };
-        SourceValue::of(size, insn.id)
+        SourceValue::of(size, insn.id.into())
     }
 
     /// ASM's `SourceInterpreter.ternaryOperation`: a value of size 1, produced by `insn`.
-    pub fn ternary_operation(
+    pub fn ternary_operation<P: Producer>(
         insn: InsnRef<'_>,
-        _value1: &SourceValue,
-        _value2: &SourceValue,
-        _value3: &SourceValue,
-    ) -> SourceValue {
-        SourceValue::of(1, insn.id)
+        _value1: &SourceValue<P>,
+        _value2: &SourceValue<P>,
+        _value3: &SourceValue<P>,
+    ) -> SourceValue<P> {
+        SourceValue::of(1, insn.id.into())
     }
 
     /// ASM's `SourceInterpreter.naryOperation`.
@@ -130,22 +137,25 @@ impl SourceInterpreter {
     /// # Errors
     ///
     /// For a malformed method descriptor.
-    pub fn nary_operation(
+    pub fn nary_operation<P: Producer>(
         insn: InsnRef<'_>,
-        _values: &[SourceValue],
-    ) -> Result<SourceValue, AnalyzerError> {
+        _values: &[SourceValue<P>],
+    ) -> Result<SourceValue<P>, AnalyzerError> {
         let size = match &insn.insn {
             Insn::MultiANewArray { .. } => 1,
             Insn::InvokeDynamic(invoke_dynamic) => size(&return_type(&invoke_dynamic.desc)?)?,
             Insn::Method { desc, .. } => size(&return_type(desc)?)?,
             _ => return Err(cast_error(insn, "MethodInsnNode")),
         };
-        Ok(SourceValue::of(size, insn.id))
+        Ok(SourceValue::of(size, insn.id.into()))
     }
 
-    /// ASM's `SourceInterpreter.merge`: the union of the instructions, with the smallest size
+    /// ASM's `SourceInterpreter.merge`: the union of the producers, with the smallest size
     /// (`None` if that is `value1`).
-    pub fn merge(value1: &SourceValue, value2: &SourceValue) -> Option<SourceValue> {
+    pub fn merge<P: Producer>(
+        value1: &SourceValue<P>,
+        value2: &SourceValue<P>,
+    ) -> Option<SourceValue<P>> {
         if value1.size <= value2.size && value1.insns.is_superset(&value2.insns) {
             return None;
         }

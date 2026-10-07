@@ -17,17 +17,19 @@ fn new_nop() -> InsnId {
 
 #[test]
 fn test_get_size() {
-    assert_eq!(2, SourceValue::new(2).get_size());
+    assert_eq!(2, SourceValue::<InsnId>::new(2).get_size());
 }
 
 #[test]
 fn test_equals() {
     let null_value: Option<&SourceValue> = None;
 
-    let equals_same = SourceValue::new(1) == SourceValue::new(1);
-    let equals_value_with_different_source = SourceValue::new(1) == SourceValue::of(1, new_nop());
-    let equals_value_with_different_value = SourceValue::new(1) == SourceValue::new(2);
-    let equals_null = Some(&SourceValue::new(1)) == null_value;
+    let equals_same = SourceValue::<InsnId>::new(1) == SourceValue::<InsnId>::new(1);
+    let equals_value_with_different_source =
+        SourceValue::<InsnId>::new(1) == SourceValue::of(1, new_nop());
+    let equals_value_with_different_value =
+        SourceValue::<InsnId>::new(1) == SourceValue::<InsnId>::new(2);
+    let equals_null = Some(&SourceValue::<InsnId>::new(1)) == null_value;
 
     assert!(equals_same);
     assert!(!equals_value_with_different_source);
@@ -45,9 +47,12 @@ fn hash(value: &SourceValue) -> u64 {
 fn test_hashcode() {
     // ASM: assertEquals(0, new SourceValue(1).hashCode()), the hash of an empty set (which does
     // not depend on the size).
-    assert_eq!(hash(&SourceValue::new(1)), hash(&SourceValue::new(2)));
+    assert_eq!(
+        hash(&SourceValue::<InsnId>::new(1)),
+        hash(&SourceValue::<InsnId>::new(2))
+    );
     assert_ne!(
-        hash(&SourceValue::new(1)),
+        hash(&SourceValue::<InsnId>::new(1)),
         hash(&SourceValue::of(1, new_nop()))
     );
 }

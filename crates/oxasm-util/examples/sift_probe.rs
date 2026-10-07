@@ -5,9 +5,8 @@
 //!   output with. Pure string functions, ported as [`textifier_lines`].
 //! - **`OriginSourceInterpreter`** (sift `core`): a `SourceInterpreter` whose copies and
 //!   `CHECKCAST`s pass a tracked producer through, and whose parameters get a producer of their
-//!   own (`ParameterOrigin`, a fake instruction node). Ported as [`OriginSourceInterpreter`], over
-//!   its own value type, [`OriginValue`]: a `SourceValue` records `InsnId`s only, and a parameter
-//!   has none.
+//!   own (`ParameterOrigin`, a fake instruction node). Ported as [`OriginSourceInterpreter`], whose
+//!   values are `SourceValue<Origin>`: a parameter's producer is no instruction.
 //!
 //! For each input class it prints a record in the oracle's batch format, whose payload is exactly
 //! what the oracle's `sift-probe` command prints with sift's own classes (see `oracle/Oracle.java`
@@ -31,7 +30,7 @@ use std::path::{Path, PathBuf};
 use oxasm::opcodes::CHECKCAST;
 use oxasm::{ClassReader, JavaStr, JavaString, ParsingOptions, Type};
 use oxasm_analysis::{
-    Analyzer, AnalyzerError, InsnRef, Interpreter, SmallSet, SourceInterpreter, SourceValue, Value,
+    Analyzer, AnalyzerError, InsnRef, Interpreter, SourceInterpreter, SourceValue,
 };
 use oxasm_tree::{ClassNode, InsnId, InsnList, MethodNode};
 use oxasm_util::printer::text_to_java_string;
@@ -49,56 +48,30 @@ use textifier_lines::{InstructionCategory, RenderToggles};
 /// sift mints a fresh `ParameterOrigin` node per parameter slot per analysis, compared by
 /// identity; one analysis has one per slot, so comparing slots is the same relation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Producer {
+enum Origin {
     Insn(InsnId),
     Parameter(usize),
 }
 
-/// A `SourceValue` whose producers may be parameters.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct OriginValue {
-    size: usize,
-    producers: SmallSet<Producer>,
-}
-
-impl OriginValue {
-    fn of(size: usize, producer: Producer) -> OriginValue {
-        OriginValue {
-            size,
-            producers: SmallSet::singleton(producer),
-        }
-    }
-
-    /// The value as a `SourceValue`, for the stock operations, which read its size only.
-    fn as_source(&self) -> SourceValue {
-        SourceValue::new(self.size)
+impl From<InsnId> for Origin {
+    fn from(insn: InsnId) -> Origin {
+        Origin::Insn(insn)
     }
 }
 
-impl From<SourceValue> for OriginValue {
-    fn from(value: SourceValue) -> OriginValue {
-        OriginValue {
-            size: value.size,
-            producers: value.insns.iter().map(Producer::Insn).collect(),
-        }
-    }
-}
-
-impl Value for OriginValue {
-    fn get_size(&self) -> usize {
-        self.size
-    }
-}
+/// The values of [`OriginSourceInterpreter`]: `SourceValue`s whose producers may be parameters.
+type OriginValue = SourceValue<Origin>;
 
 /// sift's `OriginSourceInterpreter`: "an instruction that doesn't change the value isn't its
-/// producer", and "a value the caller produced needs a producer too".
+/// producer", and "a value the caller produced needs a producer too". It overrides three
+/// operations of `SourceInterpreter`, and delegates the others.
 struct OriginSourceInterpreter;
 
 impl Interpreter for OriginSourceInterpreter {
     type V = OriginValue;
 
     fn new_value(&mut self, ty: Option<&Type>) -> Result<Option<OriginValue>, AnalyzerError> {
-        Ok(SourceInterpreter::new_value(ty)?.map(OriginValue::from))
+        SourceInterpreter::new_value(ty)
     }
 
     /// A parameter's entry value is produced by the caller, with the size of its type.
@@ -108,14 +81,14 @@ impl Interpreter for OriginSourceInterpreter {
         local: usize,
         ty: &Type,
     ) -> Result<Option<OriginValue>, AnalyzerError> {
-        Ok(Some(OriginValue::of(
+        Ok(Some(SourceValue::of(
             ty.get_size(),
-            Producer::Parameter(local),
+            Origin::Parameter(local),
         )))
     }
 
     fn new_operation(&mut self, insn: InsnRef<'_>) -> Result<Option<OriginValue>, AnalyzerError> {
-        Ok(Some(SourceInterpreter::new_operation(insn)?.into()))
+        SourceInterpreter::new_operation(insn).map(Some)
     }
 
     /// A copy keeps the producers of its value, unless it has none.
@@ -124,8 +97,8 @@ impl Interpreter for OriginSourceInterpreter {
         insn: InsnRef<'_>,
         value: &OriginValue,
     ) -> Result<OriginValue, AnalyzerError> {
-        Ok(if value.producers.is_empty() {
-            OriginValue::of(value.size, Producer::Insn(insn.id))
+        Ok(if value.insns.is_empty() {
+            SourceInterpreter::copy_operation(insn, value)
         } else {
             value.clone()
         })
@@ -137,12 +110,10 @@ impl Interpreter for OriginSourceInterpreter {
         insn: InsnRef<'_>,
         value: &OriginValue,
     ) -> Result<Option<OriginValue>, AnalyzerError> {
-        if insn.opcode() == Some(CHECKCAST) && !value.producers.is_empty() {
+        if insn.opcode() == Some(CHECKCAST) && !value.insns.is_empty() {
             return Ok(Some(value.clone()));
         }
-        Ok(Some(
-            SourceInterpreter::unary_operation(insn, &value.as_source())?.into(),
-        ))
+        SourceInterpreter::unary_operation(insn, value).map(Some)
     }
 
     fn binary_operation(
@@ -151,10 +122,9 @@ impl Interpreter for OriginSourceInterpreter {
         value1: &OriginValue,
         value2: &OriginValue,
     ) -> Result<Option<OriginValue>, AnalyzerError> {
-        Ok(Some(
-            SourceInterpreter::binary_operation(insn, &value1.as_source(), &value2.as_source())
-                .into(),
-        ))
+        Ok(Some(SourceInterpreter::binary_operation(
+            insn, value1, value2,
+        )))
     }
 
     fn ternary_operation(
@@ -164,24 +134,17 @@ impl Interpreter for OriginSourceInterpreter {
         value2: &OriginValue,
         value3: &OriginValue,
     ) -> Result<Option<OriginValue>, AnalyzerError> {
-        Ok(Some(
-            SourceInterpreter::ternary_operation(
-                insn,
-                &value1.as_source(),
-                &value2.as_source(),
-                &value3.as_source(),
-            )
-            .into(),
-        ))
+        Ok(Some(SourceInterpreter::ternary_operation(
+            insn, value1, value2, value3,
+        )))
     }
 
     fn nary_operation(
         &mut self,
         insn: InsnRef<'_>,
-        _values: &[OriginValue],
+        values: &[OriginValue],
     ) -> Result<Option<OriginValue>, AnalyzerError> {
-        // The stock operation reads the instruction only.
-        Ok(Some(SourceInterpreter::nary_operation(insn, &[])?.into()))
+        SourceInterpreter::nary_operation(insn, values).map(Some)
     }
 
     fn return_operation(
@@ -193,19 +156,12 @@ impl Interpreter for OriginSourceInterpreter {
         Ok(())
     }
 
-    /// `SourceInterpreter.merge` over producers.
     fn merge(
         &mut self,
         value1: &OriginValue,
         value2: &OriginValue,
     ) -> Result<Option<OriginValue>, AnalyzerError> {
-        if value1.size <= value2.size && value1.producers.is_superset(&value2.producers) {
-            return Ok(None);
-        }
-        Ok(Some(OriginValue {
-            size: value1.size.min(value2.size),
-            producers: value1.producers.union(&value2.producers),
-        }))
+        Ok(SourceInterpreter::merge(value1, value2))
     }
 }
 
@@ -703,10 +659,10 @@ fn analyze_method(
 fn origin(insns: &InsnList, value: &OriginValue, out: &mut Vec<u8>) {
     let mut indices = Vec::new();
     let mut slots = Vec::new();
-    for producer in value.producers.iter() {
+    for producer in value.insns.iter() {
         match producer {
-            Producer::Insn(id) => indices.push(insns.index_of(id).map_or(-1, |i| i as i64)),
-            Producer::Parameter(slot) => slots.push(slot),
+            Origin::Insn(id) => indices.push(insns.index_of(id).map_or(-1, |i| i as i64)),
+            Origin::Parameter(slot) => slots.push(slot),
         }
     }
     indices.sort_unstable();

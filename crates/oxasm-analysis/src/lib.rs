@@ -36,5 +36,5 @@ pub use interpreter::{InsnRef, Interpreter};
 pub use simple_verifier::SimpleVerifier;
 pub use small_set::SmallSet;
 pub use source_interpreter::SourceInterpreter;
-pub use source_value::SourceValue;
+pub use source_value::{Producer, SourceValue};
 pub use value::Value;
