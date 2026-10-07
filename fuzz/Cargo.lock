@@ -97,6 +97,8 @@ version = "0.0.0"
 dependencies = [
  "oxasm",
  "oxasm-tree",
+ "rustc-hash",
+ "thiserror",
 ]
 
 [[package]]
@@ -105,6 +107,7 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "oxasm",
+ "oxasm-analysis",
  "oxasm-tree",
  "oxasm-util",
 ]

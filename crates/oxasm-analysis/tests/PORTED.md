@@ -11,17 +11,17 @@ test class of ASM at tag `ASM_9_10_1` (`asm-analysis/src/test/java`). A phase is
 
 | Java test class | Phase | Java tests | Ported | Dropped | Status | Notes |
 |---|---|---:|---:|---:|---|---|
-| `AnalyzerTest` | P4 | 34 | 0 | 0 | pending |  |
-| `AnalyzerWithBasicInterpreterTest` | P4 | 7 | 0 | 0 | pending |  |
-| `AnalyzerWithBasicVerifierTest` | P4 | 16 | 0 | 0 | pending |  |
-| `AnalyzerWithSimpleVerifierTest` | P4 | 10 | 0 | 0 | pending |  |
-| `AnalyzerWithSourceInterpreterTest` | P4 | 3 | 0 | 0 | pending |  |
-| `BasicValueTest` | P4 | 4 | 0 | 0 | pending |  |
-| `SimpleVerifierTest` | P4 | 4 | 0 | 0 | pending |  |
-| `SmallSetTest` | P4 | 10 | 0 | 0 | pending |  |
-| `SourceValueTest` | P4 | 3 | 0 | 0 | pending |  |
-| **total** | | **91** | **0** | **0** | | |
+| `AnalyzerTest` | P4 / P5 | 34 | 34 | 0 | ported | `testAnalyze_runtimeExceptions` throws from the `init` hook (in ASM's same `try`) instead of `newFrame` (no `newFrame` hook); `testAnalyze_invalidOpcode` uses opcode 255 (`u8`); `testAnalyze_invalidOverlappingSubroutines` is ignored, as ASM `@Disabled`s it; the `buildClassWithMethod(...).newInstance()` lines of 15 tests wait for P5 (writer), as `// P5:` comments |
+| `AnalyzerWithBasicInterpreterTest` | P4 | 7 | 7 | 0 | ported | `testConstructor`'s `new BasicInterpreter() {}` half dropped (no subclassing, ADR-09); `testAnalyze_basicInterpreter` checks that the `init_jump_target` hook is called instead of `frame instanceof CustomFrame` (no `newFrame`); `testAnalyze_badInterpreter` runs on a thread with a timeout |
+| `AnalyzerWithBasicVerifierTest` | P4 | 16 | 16 | 0 | ported | `testConstructor`'s `new BasicVerifier() {}` half dropped (ADR-09) |
+| `AnalyzerWithSimpleVerifierTest` | P4 / P5 | 10 | 10 | 0 | ported | JDK classes from a `MapHierarchy` of the oracle's facts (ADR-07); `testAnalyze_classNotFound` expects the hierarchy's `Type D not present` (ASM: `Type java.lang.ClassNotFoundException: D not present`); the `buildClassWithMethod(...).newInstance()` lines of 4 tests wait for P5 (writer), as `// P5:` comments |
+| `AnalyzerWithSourceInterpreterTest` | P4 | 3 | 3 | 0 | ported | `testConstructor`'s `new SourceInterpreter() {}` half dropped (ADR-09) |
+| `BasicValueTest` | P4 | 4 | 4 | 0 | ported | `equals(new Object())` assertion dropped; `testHashCode` compares hashes of equal and different values (no numeric `hashCode`) |
+| `SimpleVerifierTest` | P4 | 4 | 4 | 0 | ported | `testConstructor`'s `new SimpleVerifier() {}` half dropped (ADR-09); `testMerge_objectTypes` uses a `MapHierarchy` of the oracle's facts; the `getClass`/`getSuperClass` overrides of the `testIsAssignableFrom_*` tests are an `ObjectHierarchy` |
+| `SmallSetTest` | P4 | 10 | 9 | 1 | ported | `testIterator_remove` dropped (immutable set); sets compared by content, as `union` does not return its operands; `NoSuchElementException` is `None` |
+| `SourceValueTest` | P4 | 3 | 3 | 0 | ported | `testHashcode` compares hashes (no numeric `hashCode`); `equals(null)` is a comparison with `None` |
+| **total** | | **91** | **90** | **1** | | the `newInstance()` checks of 19 tests wait for P5 |
 
 **Test support classes** (no tests of their own):
 
-- `MethodNodeBuilder` → `oxasm-testkit`, when P4 needs it
+- `MethodNodeBuilder` → `tests/common/mod.rs`; its `buildClassWithMethod` (a class made with a `ClassWriter`) waits for P5

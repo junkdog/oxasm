@@ -3,18 +3,20 @@
 //! that later sweeps only pay for classes they have not seen; then (unless `--oracle-only`) it
 //! computes oxasm's side of each mode and compares the two.
 //!
-//! The oxasm side exists for the Textifier modes (P2), direct and through a `ClassNode` (P3); the
-//! writer modes arrive with the writer (P5, P6). A class on which ASM fails agrees with oxasm iff oxasm fails too ("both reject").
+//! The oxasm side exists for the Textifier modes (P2), direct and through a `ClassNode` (P3), and
+//! the analysis modes (P4); the writer modes arrive with the writer (P5, P6). A class on which
+//! ASM fails agrees with oxasm iff oxasm fails too ("both reject").
 
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
-use oxasm::{ClassReader, ParsingOptions};
+use oxasm::{ClassHierarchy, ClassReader, MapHierarchy, ParsingOptions};
 use oxasm_tree::ClassNode;
 use oxasm_util::TraceClassVisitor;
 
+use crate::analysis::{self, Interp};
 use crate::args::Args;
 use crate::oracle::{Oracle, ServeRequest};
 use crate::{is_class_file, relative_id, root_path, sha256_hex, walk_files};
@@ -30,9 +32,18 @@ struct Mode {
     /// For a Textifier mode, whether the class is read into a `ClassNode` first (which then
     /// visits the `TraceClassVisitor`).
     tree: bool,
+    /// For an analysis mode, the interpreter: oxasm's side is the oracle's `analyze` output.
+    analyze: Option<Interp>,
 }
 
-const MODES: [Mode; 21] = [
+impl Mode {
+    /// Whether oxasm computes its side of this mode (yet).
+    fn has_oxasm_side(&self) -> bool {
+        self.textify.is_some() || self.analyze.is_some()
+    }
+}
+
+const MODES: [Mode; 25] = [
     Mode::textify("textify", "textify", ParsingOptions::empty()),
     Mode::textify(
         "textify-skip-code",
@@ -86,6 +97,21 @@ const MODES: [Mode; 21] = [
     Mode::new("tree-plain", "tree-roundtrip --mode 0"),
     Mode::new("tree-maxs", "tree-roundtrip --mode maxs"),
     Mode::hierarchy("tree-frames", "tree-roundtrip --mode frames"),
+    Mode::analyze("analyze-basic", "analyze --interp basic", Interp::Basic),
+    Mode::analyze(
+        "analyze-basicverifier",
+        "analyze --interp basicverifier",
+        Interp::BasicVerifier,
+    ),
+    Mode {
+        needs_hierarchy: true,
+        ..Mode::analyze(
+            "analyze-simpleverifier",
+            "analyze --interp simpleverifier",
+            Interp::SimpleVerifier,
+        )
+    },
+    Mode::analyze("analyze-source", "analyze --interp source", Interp::Source),
 ];
 
 impl Mode {
@@ -96,6 +122,7 @@ impl Mode {
             needs_hierarchy: false,
             textify: None,
             tree: false,
+            analyze: None,
         }
     }
 
@@ -106,6 +133,7 @@ impl Mode {
             needs_hierarchy: true,
             textify: None,
             tree: false,
+            analyze: None,
         }
     }
 
@@ -116,6 +144,14 @@ impl Mode {
             needs_hierarchy: false,
             textify: Some(options),
             tree: false,
+            analyze: None,
+        }
+    }
+
+    const fn analyze(name: &'static str, command: &'static str, interp: Interp) -> Mode {
+        Mode {
+            analyze: Some(interp),
+            ..Mode::new(name, command)
         }
     }
 
@@ -164,7 +200,7 @@ pub fn cli(mut args: Args) -> Result<()> {
         // Without --oracle-only, the modes that have an oxasm side.
         MODES
             .iter()
-            .filter(|m| oracle_only || m.textify.is_some())
+            .filter(|m| oracle_only || m.has_oxasm_side())
             .collect()
     } else {
         mode_names
@@ -197,17 +233,27 @@ pub fn cli(mut args: Args) -> Result<()> {
         None
     };
 
-    if !oracle_only && let Some(mode) = modes.iter().find(|m| m.textify.is_none()) {
+    if !oracle_only && let Some(mode) = modes.iter().find(|m| !m.has_oxasm_side()) {
         bail!(
             "mode {} has no oxasm side yet (it needs the writer, P5/P6); pass --oracle-only to \
              only fill the oracle cache",
             mode.name
         );
     }
+    // oxasm's side of the modes that need a hierarchy reads the same file.
+    let map_hierarchy = match &hierarchy {
+        Some(path) if !oracle_only => {
+            let tsv = fs::read(path).with_context(|| format!("cannot read {}", path.display()))?;
+            Some(MapHierarchy::from_tsv(&tsv).with_context(|| path.display().to_string())?)
+        }
+        _ => None,
+    };
     let mut mismatched_modes = Vec::new();
     for mode in modes {
         let cache = fill_mode(&oracle, &tier, mode, &classes, hierarchy.as_deref(), jobs)?;
-        if !oracle_only && compare_mode(&tier, mode, &classes, &cache, jobs)? > 0 {
+        if !oracle_only
+            && compare_mode(&tier, mode, &classes, &cache, map_hierarchy.as_ref(), jobs)? > 0
+        {
             mismatched_modes.push(mode.name);
         }
     }
@@ -228,11 +274,15 @@ enum Outcome {
 }
 
 /// oxasm's side of a mode for one class.
-fn oxasm_outcome(mode: &Mode, class_file: &[u8]) -> Outcome {
-    let options = mode
-        .textify
-        .expect("only Textifier modes have an oxasm side");
+fn oxasm_outcome(mode: &Mode, class_file: &[u8], hierarchy: Option<&MapHierarchy>) -> Outcome {
     let result = std::panic::catch_unwind(|| -> Result<Vec<u8>, String> {
+        if let Some(interp) = mode.analyze {
+            let hierarchy = hierarchy.map(|h| h as &dyn ClassHierarchy);
+            return analysis::analyze(class_file, interp, ParsingOptions::empty(), hierarchy);
+        }
+        let options = mode
+            .textify
+            .expect("only Textifier and analysis modes have an oxasm side");
         let mut output = Vec::new();
         let mut trace_class_visitor = TraceClassVisitor::new(&mut output);
         let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
@@ -274,6 +324,7 @@ fn compare_mode(
     mode: &Mode,
     classes: &[Class],
     cache: &Path,
+    hierarchy: Option<&MapHierarchy>,
     jobs: usize,
 ) -> Result<usize> {
     let out = root_path("target/parity")
@@ -293,7 +344,7 @@ fn compare_mode(
                     let mut mismatches = Vec::new();
                     for (i, class) in chunk.iter().enumerate() {
                         let oracle = oracle_outcome(cache, class)?;
-                        let oxasm = oxasm_outcome(mode, &class.bytes);
+                        let oxasm = oxasm_outcome(mode, &class.bytes, hierarchy);
                         if let Some(report) = mismatch(&oracle, &oxasm) {
                             fs::create_dir_all(out)?;
                             let base = out.join(&class.sha256);

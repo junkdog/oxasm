@@ -56,12 +56,36 @@ pub enum TypeSort {
 
 /// The error of the `try_` methods of [`Type`]: the descriptor is malformed where ASM would throw.
 ///
-/// Its message is ASM's: `Invalid descriptor: <the whole descriptor>`.
+/// Its message is that of ASM's exception: `Invalid descriptor: <the whole descriptor>` for an
+/// invalid type character (an `IllegalArgumentException`), or Java's `Index <i> out of bounds
+/// for length <n>` for a descriptor that ends too early (the `StringIndexOutOfBoundsException`
+/// of `charAt`, with `i` and `n` in UTF-16 units). See [`InvalidDescriptor::message`] for the
+/// exact text, which may have unpaired surrogates.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("Invalid descriptor: {descriptor}")]
+#[error("{}", self.message())]
 pub struct InvalidDescriptor {
     /// The whole descriptor (the buffer being parsed, as in ASM's message).
     pub descriptor: JavaString,
+    /// For a descriptor that ends too early, the UTF-16 index past its end that ASM reads.
+    pub out_of_bounds: Option<usize>,
+}
+
+impl InvalidDescriptor {
+    /// The message of ASM's exception.
+    #[must_use]
+    pub fn message(&self) -> JavaString {
+        match self.out_of_bounds {
+            Some(index) => JavaString::from(format!(
+                "Index {index} out of bounds for length {}",
+                self.descriptor.encode_utf16().count()
+            )),
+            None => {
+                let mut message = JavaString::from("Invalid descriptor: ");
+                message.push_java_str(&self.descriptor);
+                message
+            }
+        }
+    }
 }
 
 /// A Java field or method type.
@@ -215,6 +239,25 @@ impl Type {
         }
     }
 
+    /// [`Type::get_object_type`] of a `'static` internal name, usable in a `const` (no
+    /// allocation): `Type::static_object_type(jstr!("java/lang/Object"))`.
+    #[must_use]
+    pub const fn static_object_type(internal_name: &'static JavaStr) -> Type {
+        let bytes = internal_name.as_bytes();
+        let is_array = !bytes.is_empty() && bytes[0] == b'[';
+        Type {
+            sort: if is_array {
+                TypeSort::Array
+            } else {
+                TypeSort::Object
+            },
+            internal: !is_array,
+            buf: TypeBuf::Static(internal_name),
+            begin: 0,
+            end: bytes.len(),
+        }
+    }
+
     /// Returns the type corresponding to the given method descriptor. Equivalent to
     /// `Type::get_type(method_descriptor)` for valid descriptors, but does not look at the
     /// descriptor at all.
@@ -313,12 +356,16 @@ impl Type {
         method_descriptor: &JavaStr,
     ) -> Result<usize, InvalidDescriptor> {
         let d = method_descriptor.as_bytes();
-        let invalid = || invalid(method_descriptor);
+        let past_end = |offset| out_of_bounds(method_descriptor, offset);
         // Skip the first character, which is always a '('.
-        let mut current_offset = 1;
+        let mut current_offset = char_len(d, 0);
         // Skip the argument types, one at a each loop iteration.
-        while *d.get(current_offset).ok_or_else(invalid)? != b')' {
-            current_offset = skip_argument(d, current_offset).ok_or_else(invalid)?;
+        while *d
+            .get(current_offset)
+            .ok_or_else(|| past_end(current_offset))?
+            != b')'
+        {
+            current_offset = skip_argument(d, current_offset).map_err(past_end)?;
         }
         Ok(current_offset + 1)
     }
@@ -485,13 +532,17 @@ impl Type {
     ) -> Result<usize, InvalidDescriptor> {
         let method_descriptor = method_descriptor.as_ref();
         let d = method_descriptor.as_bytes();
-        let invalid = || invalid(method_descriptor);
+        let past_end = |offset| out_of_bounds(method_descriptor, offset);
         let mut argument_count = 0;
         // Skip the first character, which is always a '('.
-        let mut current_offset = 1;
+        let mut current_offset = char_len(d, 0);
         // Parse the argument types, one at a each loop iteration.
-        while *d.get(current_offset).ok_or_else(invalid)? != b')' {
-            current_offset = skip_argument(d, current_offset).ok_or_else(invalid)?;
+        while *d
+            .get(current_offset)
+            .ok_or_else(|| past_end(current_offset))?
+            != b')'
+        {
+            current_offset = skip_argument(d, current_offset).map_err(past_end)?;
             argument_count += 1;
         }
         Ok(argument_count)
@@ -538,11 +589,11 @@ impl Type {
     ) -> Result<u32, InvalidDescriptor> {
         let method_descriptor = method_descriptor.as_ref();
         let d = method_descriptor.as_bytes();
-        let invalid = || invalid(method_descriptor);
-        let at = |i: usize| d.get(i).copied().ok_or_else(invalid);
+        let past_end = |offset| out_of_bounds(method_descriptor, offset);
+        let at = |i: usize| d.get(i).copied().ok_or_else(|| past_end(i));
         let mut arguments_size: u32 = 1;
         // Skip the first character, which is always a '('.
-        let mut current_offset = 1;
+        let mut current_offset = char_len(d, 0);
         let mut current_char = at(current_offset)?;
         // Parse the argument types and compute their size, one at a each loop iteration.
         while current_char != b')' {
@@ -550,7 +601,7 @@ impl Type {
                 current_offset += 1;
                 arguments_size += 2;
             } else {
-                current_offset = skip_argument(d, current_offset).ok_or_else(invalid)?;
+                current_offset = skip_argument(d, current_offset).map_err(past_end)?;
                 arguments_size += 1;
             }
             current_char = at(current_offset)?;
@@ -666,18 +717,45 @@ fn shared(s: &JavaStr) -> TypeBuf {
 fn invalid(descriptor: &JavaStr) -> InvalidDescriptor {
     InvalidDescriptor {
         descriptor: descriptor.to_owned(),
+        out_of_bounds: None,
+    }
+}
+
+/// The error of reading the byte at `offset` of `descriptor`, which is past its end (Java's
+/// `charAt`, whose index counts UTF-16 units).
+fn out_of_bounds(descriptor: &JavaStr, offset: usize) -> InvalidDescriptor {
+    let length = descriptor.len();
+    let units = descriptor
+        .get(0..offset.min(length))
+        .map_or(0, |prefix| prefix.encode_utf16().count());
+    InvalidDescriptor {
+        descriptor: descriptor.to_owned(),
+        out_of_bounds: Some(units + offset.saturating_sub(length)),
+    }
+}
+
+/// The length in bytes of the character at `offset` of a semi-UTF-8 descriptor, 1 past its end:
+/// where ASM's descriptor parsing skips one `char`, a malformed descriptor may have a non-ASCII
+/// character. This is exact for the characters of the Basic Multilingual Plane; ASM sees a
+/// supplementary character as two `char`s, which this skips at once.
+fn char_len(d: &[u8], offset: usize) -> usize {
+    match d.get(offset) {
+        Some(0xf0..) => 4,
+        Some(0xe0..) => 3,
+        Some(0xc0..) => 2,
+        _ => 1,
     }
 }
 
 /// Skips one argument type of a method descriptor starting at `offset`, the way ASM does: any
-/// `[`s, then one character, then (after an `L`) everything up to the next `;`. Returns `None`
-/// where ASM would index past the end.
-fn skip_argument(d: &[u8], mut offset: usize) -> Option<usize> {
-    while *d.get(offset)? == b'[' {
+/// `[`s, then one character, then (after an `L`) everything up to the next `;`. Fails with the
+/// offset past the end that ASM would read.
+fn skip_argument(d: &[u8], mut offset: usize) -> Result<usize, usize> {
+    while *d.get(offset).ok_or(offset)? == b'[' {
         offset += 1;
     }
-    let c = *d.get(offset)?;
-    offset += 1;
+    let c = *d.get(offset).ok_or(offset)?;
+    offset += char_len(d, offset);
     if c == b'L' {
         // Skip the argument descriptor content. Like ASM's `Math.max(currentOffset,
         // indexOf(';') + 1)`, a missing ';' leaves the offset where it is.
@@ -685,19 +763,29 @@ fn skip_argument(d: &[u8], mut offset: usize) -> Option<usize> {
             offset += semi_column + 1;
         }
     }
-    Some(offset)
+    Ok(offset)
 }
 
 fn argument_types(buf: &TypeBuf, base: usize) -> Result<Vec<Type>, InvalidDescriptor> {
-    let d = &buf.bytes()[base..];
-    let invalid = || invalid(buf.as_java_str());
-    let mut argument_types = Vec::new();
+    let descriptor = &buf.as_java_str()[base..];
+    let d = descriptor.as_bytes();
+    let past_end = |offset| out_of_bounds(descriptor, offset);
+    // First step: compute the number of argument types in methodDescriptor (which, like ASM,
+    // reports a descriptor that ends too early before an invalid argument type).
+    let num_argument_types = Type::try_get_argument_count_of(descriptor)?;
+
+    // Second step: create a Type instance for each argument type.
+    let mut argument_types = Vec::with_capacity(num_argument_types);
     // Skip the first character, which is always a '('.
-    let mut current_offset = 1;
+    let mut current_offset = char_len(d, 0);
     // Parse and create the argument types, one at each loop iteration.
-    while *d.get(current_offset).ok_or_else(invalid)? != b')' {
+    while *d
+        .get(current_offset)
+        .ok_or_else(|| past_end(current_offset))?
+        != b')'
+    {
         let current_argument_type_offset = current_offset;
-        current_offset = skip_argument(d, current_offset).ok_or_else(invalid)?;
+        current_offset = skip_argument(d, current_offset).map_err(past_end)?;
         argument_types.push(get_type_internal(
             buf,
             base + current_argument_type_offset,
@@ -715,6 +803,9 @@ fn return_type(buf: &TypeBuf) -> Result<Type, InvalidDescriptor> {
 /// Returns the type corresponding to the descriptor in `buf[begin..end]`.
 fn get_type_internal(buf: &TypeBuf, begin: usize, end: usize) -> Result<Type, InvalidDescriptor> {
     let invalid = || invalid(buf.as_java_str());
+    if begin >= buf.bytes().len() {
+        return Err(out_of_bounds(buf.as_java_str(), begin));
+    }
     let sort = match buf.bytes().get(begin).filter(|_| begin < end) {
         Some(b'V') => return Ok(Type::VOID),
         Some(b'Z') => return Ok(Type::BOOLEAN),

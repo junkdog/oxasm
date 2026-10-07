@@ -78,8 +78,9 @@ jobs:
           cargo xtask parity --tier t0 --oracle-only
           cargo xtask parity --tier t1 --sample 2000 --oracle-only
       # Textifier parity: oxasm's reader + Textifier against ASM's, with every reader option, directly
-      # (P2) and through a ClassNode (P3).
-      - name: Textifier parity over T0 and a T1 sample
+      # (P2) and through a ClassNode (P3); analysis parity: the frames of the four stock
+      # interpreters (P4).
+      - name: Textifier and analysis parity over T0 and a T1 sample
         run: |
           cargo xtask parity --tier t0
           cargo xtask parity --tier t1 --sample 2000
@@ -92,7 +93,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [read_noop, read_textify, read_tree, tree_ops]
+        target: [read_noop, read_textify, read_tree, tree_ops, analyze]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

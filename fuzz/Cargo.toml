@@ -12,6 +12,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 oxasm = { path = "../crates/oxasm" }
 oxasm-tree = { path = "../crates/oxasm-tree" }
+oxasm-analysis = { path = "../crates/oxasm-analysis" }
 oxasm-util = { path = "../crates/oxasm-util" }
 
 # Not part of the oxasm workspace: cargo-fuzz builds it on its own, with nightly.
@@ -42,6 +43,13 @@ bench = false
 [[bin]]
 name = "tree_ops"
 path = "fuzz_targets/tree_ops.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "analyze"
+path = "fuzz_targets/analyze.rs"
 test = false
 doc = false
 bench = false

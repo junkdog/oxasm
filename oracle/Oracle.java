@@ -363,7 +363,8 @@ public final class Oracle {
               .map(String::trim)
               .filter(line -> !line.isEmpty())
               .collect(Collectors.joining(" "));
-      Frame<V> frame = frames[i];
+      // An abstract or native method has no frames, even if a malformed class gives it code.
+      Frame<V> frame = i < frames.length ? frames[i] : null;
       text.append(i).append(' ');
       if (frame == null) {
         text.append("null");

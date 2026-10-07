@@ -473,3 +473,21 @@ mod properties {
         }
     }
 }
+
+// oxasm-specific: ASM parses descriptors by `char`, so a malformed descriptor with a non-ASCII
+// character where a type character belongs counts that character once (found by the analysis
+// parity sweep over fuzzed classes).
+#[test]
+fn test_malformed_method_descriptor_non_ascii() {
+    // The first character, which is skipped as the '(', is U+0604.
+    assert_eq!(0, Type::get_argument_count_of("\u{604})Z"));
+    assert_eq!(Type::BOOLEAN, Type::get_return_type_of("\u{604})Z"));
+    assert_eq!(
+        1 << 2 | 1,
+        Type::get_arguments_and_return_sizes_of("\u{604})Z")
+    );
+    // An argument "type" é counts as one argument (whose type is invalid).
+    assert_eq!(1, Type::get_argument_count_of("(é)V"));
+    assert_eq!(2 << 2, Type::get_arguments_and_return_sizes_of("(é)V"));
+    assert!(Type::try_get_argument_types_of("(é)V").is_err());
+}

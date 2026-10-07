@@ -247,7 +247,12 @@ name = "oxasm-analysis"
 version = "0.0.0"
 dependencies = [
  "oxasm",
+ "oxasm-testkit",
  "oxasm-tree",
+ "oxasm-util",
+ "proptest",
+ "rustc-hash",
+ "thiserror",
 ]
 
 [[package]]
@@ -564,6 +569,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "oxasm",
+ "oxasm-analysis",
  "oxasm-tree",
  "oxasm-util",
  "sha2",

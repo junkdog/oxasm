@@ -3,6 +3,7 @@
 //! See `vault-docs/oxasm-verification.md` for the oracle, corpus tiers and goldens these tasks
 //! manage.
 
+mod analysis;
 mod args;
 mod corpus;
 mod golden;
@@ -38,9 +39,11 @@ tasks:
          [--hierarchy <file>] [--oracle-only]
         fill the oracle result cache under target/oracle/<tier>/ for each mode, then compare
         oxasm's output with it (mismatches are written under target/parity/<tier>/<mode>/);
-        default modes: the Textifier ones (textify, textify-skip-code, textify-skip-debug,
-        textify-skip-frames, textify-expand-frames), or all of them with --oracle-only (the
-        writer modes have no oxasm side until P5)
+        default modes: those with an oxasm side, i.e. the Textifier ones (textify,
+        textify-skip-code, textify-skip-debug, textify-skip-frames, textify-expand-frames),
+        the same through a ClassNode (tree-textify, ...) and the analysis ones (analyze-basic,
+        analyze-basicverifier, analyze-simpleverifier, analyze-source); or all of them with
+        --oracle-only (the writer modes have no oxasm side until P5)
 ";
 
 fn main() -> ExitCode {
