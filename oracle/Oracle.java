@@ -37,7 +37,12 @@
  *   analyze --interp I [--opts O] [--hierarchy F]
  *                                Analyzer.analyze for every method, with I one of basic,
  *                                basicverifier, simpleverifier (needs --hierarchy) or source
- *   verify                       defines every input class in a fresh class loader (one per
+ *   sift-probe --sift CP         M1's sift probe: sift's TextifierLines over every line of the
+ *                                class's Textifier output, then the analyze output of every method
+ *                                under sift's OriginSourceInterpreter. CP is the class path of
+ *                                sift's compiled core and cli-scan classes and kotlin-stdlib;
+ *                                crates/oxasm-util/examples/sift_probe.rs prints the same
+ *   verify                      defines every input class in a fresh class loader (one per
  *                                input argument, resolving siblings from the same argument) and
  *                                forces linking; run the JVM with -XX:+UnlockDiagnosticVMOptions
  *                                -XX:+BytecodeVerificationLocal (xtask does)
@@ -76,12 +81,16 @@ import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
+import java.io.File;
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -172,7 +181,8 @@ public final class Oracle {
   private static void usage(final String message) {
     System.err.println("oracle: " + message);
     System.err.println(
-        "usage: Oracle {textify|tree-textify|dump|roundtrip|tree-roundtrip|analyze|verify|hierarchy|gen|serve"
+        "usage: Oracle {textify|tree-textify|dump|roundtrip|tree-roundtrip|analyze|sift-probe|verify"
+            + "|hierarchy|gen|serve"
             + "|version} [options] <inputs...>");
     System.exit(2);
   }
@@ -234,6 +244,11 @@ public final class Oracle {
             default -> throw new UsageException("unknown --interp " + interp);
           }
           yield classFile -> analyze(classFile, interp, opts, hierarchy);
+        }
+        case "sift-probe" -> {
+          args.allow("--sift");
+          Sift sift = Sift.load(args.require("--sift"));
+          yield classFile -> siftProbe(classFile, sift);
         }
         default -> throw new UsageException("unknown command " + command);
       };
@@ -488,6 +503,212 @@ public final class Oracle {
     @Override
     protected Class<?> getClass(final Type type) {
       return hierarchy.isInterface(type.getInternalName()) ? Runnable.class : Object.class;
+    }
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // sift probe (M1)
+  // -----------------------------------------------------------------------------------------------
+
+  /**
+   * The sift-probe payload: "#lines", then one line per line of the class's Textifier output (as
+   * Kotlin's lineSequence splits it):
+   *
+   * <pre>
+   *   trivia \t emit \t numeric \t var \t invoke \t field | line
+   * </pre>
+   *
+   * with body the line without its leading whitespace (as BytecodeTreeRenderer cuts it):
+   * <ul>
+   *   <li>trivia: triviaCategoryOf(line), "-" for null;
+   *   <li>emit: shouldEmit(line, toggles) for the 16 combinations of includeLineNumbers (bit 0),
+   *       includeLocalVariables (bit 1), includeTryCatch (bit 2) and includeFrames (bit 3), as a
+   *       4-digit hex mask;
+   *   <li>numeric: isNumericConst(body up to its first space, body), 1 or 0;
+   *   <li>var: varMatch(body) as "mnemonic slot", "-" for null;
+   *   <li>invoke, field: invokeMatch(body) and fieldMatch(body) as "mnemonic|owner|name|desc|"
+   *       followed by the splice of the display name "&lt;x&gt;" into body, "-" for null.
+   * </ul>
+   *
+   * Then "#frames" and the analyze output of every method under OriginSourceInterpreter, where a
+   * value prints as "size{sorted insn indices,p<slot>...}", p<slot> being a ParameterOrigin.
+   */
+  static byte[] siftProbe(final byte[] classFile, final Sift sift) throws Exception {
+    StringBuilder text = new StringBuilder("#lines\n");
+    StringWriter textified = new StringWriter();
+    PrintWriter printWriter = new PrintWriter(textified);
+    new ClassReader(classFile).accept(new TraceClassVisitor(null, new Textifier(), printWriter), 0);
+    printWriter.flush();
+    for (String line : textified.toString().split("\r\n|\r|\n", -1)) {
+      int indent = 0;
+      while (indent < line.length() && kotlinIsWhitespace(line.charAt(indent))) {
+        ++indent;
+      }
+      String body = line.substring(indent);
+      int space = body.indexOf(' ');
+      String mnemonic = space < 0 ? body : body.substring(0, space);
+      Object trivia = sift.triviaCategoryOf.invoke(sift.textifierLines, line);
+      int emit = 0;
+      for (int toggles = 0; toggles < 16; ++toggles) {
+        if ((boolean) sift.shouldEmit.invoke(sift.textifierLines, line, sift.toggles[toggles])) {
+          emit |= 1 << toggles;
+        }
+      }
+      boolean numeric =
+          (boolean) sift.isNumericConst.invoke(sift.textifierLines, mnemonic, body);
+      Object var = sift.varMatch.invoke(sift.textifierLines, body);
+      text.append(trivia == null ? "-" : ((Enum<?>) trivia).name())
+          .append('\t')
+          .append(String.format("%04x", emit))
+          .append('\t')
+          .append(numeric ? '1' : '0')
+          .append('\t')
+          .append(
+              var == null
+                  ? "-"
+                  : sift.get(var, "getMnemonic") + " " + sift.get(var, "getSlot"))
+          .append('\t');
+      appendTokens(sift, sift.invokeMatch, sift.spliceInvokeName, body, text);
+      text.append('\t');
+      appendTokens(sift, sift.fieldMatch, sift.spliceFieldName, body, text);
+      text.append(" | ").append(line).append('\n');
+    }
+
+    text.append("#frames\n");
+    ClassNode classNode = new ClassNode();
+    new ClassReader(classFile).accept(classNode, 0);
+    for (MethodNode method : classNode.methods) {
+      text.append(method.name).append(method.desc).append('\n');
+      InsnList insns = method.instructions;
+      Function<SourceValue, String> format =
+          value -> {
+            List<Integer> indices = new ArrayList<>();
+            List<Integer> slots = new ArrayList<>();
+            for (AbstractInsnNode insn : value.insns) {
+              if (sift.parameterOrigin.isInstance(insn)) {
+                slots.add((Integer) sift.get(insn, "getSlot"));
+              } else {
+                indices.add(insns.indexOf(insn));
+              }
+            }
+            indices.sort(null);
+            slots.sort(null);
+            return value.size
+                + Stream.concat(
+                        indices.stream().map(String::valueOf),
+                        slots.stream().map(slot -> "p" + slot))
+                    .collect(Collectors.joining(",", "{", "}"));
+          };
+      analyzeMethod(classNode, method, sift.originSourceInterpreter, format, text);
+    }
+    return semiUtf8(text.toString());
+  }
+
+  private static void appendTokens(
+      final Sift sift,
+      final Method match,
+      final Method splice,
+      final String body,
+      final StringBuilder text)
+      throws Exception {
+    Object tokens = match.invoke(sift.textifierLines, body);
+    if (tokens == null) {
+      text.append('-');
+      return;
+    }
+    for (String getter : List.of("getMnemonic", "getOwner", "getName", "getDesc")) {
+      text.append(sift.get(tokens, getter)).append('|');
+    }
+    text.append(splice.invoke(sift.textifierLines, body, "<x>"));
+  }
+
+  /** Kotlin's Char.isWhitespace() on the JVM. */
+  static boolean kotlinIsWhitespace(final char c) {
+    return Character.isWhitespace(c) || Character.isSpaceChar(c);
+  }
+
+  /** sift's classes, loaded over the oracle's ASM, and the members the probe calls. */
+  static final class Sift {
+
+    private static final Map<String, Sift> LOADED = new HashMap<>();
+
+    final Interpreter<SourceValue> originSourceInterpreter;
+    final Class<?> parameterOrigin;
+    final Object textifierLines;
+    final Method invokeMatch;
+    final Method spliceInvokeName;
+    final Method fieldMatch;
+    final Method spliceFieldName;
+    final Method varMatch;
+    final Method triviaCategoryOf;
+    final Method isNumericConst;
+    final Method shouldEmit;
+    /** The RenderToggles of each shouldEmit combination (see siftProbe). */
+    final Object[] toggles = new Object[16];
+
+    static synchronized Sift load(final String classPath) {
+      return LOADED.computeIfAbsent(
+          classPath,
+          path -> {
+            try {
+              return new Sift(path);
+            } catch (ReflectiveOperationException | IOException e) {
+              throw new IllegalStateException("cannot load sift from " + path, e);
+            }
+          });
+    }
+
+    @SuppressWarnings("unchecked")
+    private Sift(final String classPath) throws ReflectiveOperationException, IOException {
+      List<URL> urls = new ArrayList<>();
+      for (String entry : classPath.split(File.pathSeparator)) {
+        Path path = Path.of(entry);
+        if (!Files.exists(path)) {
+          throw new IOException("no such class path entry: " + entry);
+        }
+        urls.add(path.toUri().toURL());
+      }
+      // Parent first: org.objectweb.asm resolves to the oracle's pinned jars.
+      ClassLoader loader =
+          new URLClassLoader(urls.toArray(URL[]::new), Oracle.class.getClassLoader());
+      originSourceInterpreter =
+          (Interpreter<SourceValue>)
+              loader
+                  .loadClass("sift.core.api.provenance.OriginSourceInterpreter")
+                  .getField("INSTANCE")
+                  .get(null);
+      parameterOrigin = loader.loadClass("sift.core.api.provenance.ParameterOrigin");
+      String render = "sift.cli.scan.bytecode.render.";
+      Class<?> lines = loader.loadClass(render + "TextifierLines");
+      Class<?> renderToggles = loader.loadClass(render + "RenderToggles");
+      textifierLines = lines.getField("INSTANCE").get(null);
+      invokeMatch = lines.getMethod("invokeMatch", String.class);
+      spliceInvokeName = lines.getMethod("spliceInvokeName", String.class, String.class);
+      fieldMatch = lines.getMethod("fieldMatch", String.class);
+      spliceFieldName = lines.getMethod("spliceFieldName", String.class, String.class);
+      varMatch = lines.getMethod("varMatch", String.class);
+      triviaCategoryOf = lines.getMethod("triviaCategoryOf", String.class);
+      isNumericConst = lines.getMethod("isNumericConst", String.class, String.class);
+      shouldEmit = lines.getMethod("shouldEmit", String.class, renderToggles);
+      Class<?> detail = loader.loadClass(render + "BytecodeDetail");
+      Object full = detail.getMethod("valueOf", String.class).invoke(null, "full");
+      var constructor =
+          renderToggles.getConstructor(
+              boolean.class, boolean.class, boolean.class, boolean.class, boolean.class, detail);
+      for (int i = 0; i < toggles.length; ++i) {
+        toggles[i] =
+            constructor.newInstance(
+                (i & 1) != 0, (i & 2) != 0, (i & 4) != 0, (i & 8) != 0, true, full);
+      }
+    }
+
+    /** Calls a getter of one of sift's objects. */
+    Object get(final Object object, final String getter) {
+      try {
+        return object.getClass().getMethod(getter).invoke(object);
+      } catch (ReflectiveOperationException e) {
+        throw new IllegalStateException(e);
+      }
     }
   }
 

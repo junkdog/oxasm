@@ -10,8 +10,9 @@ sizes and the stack map frames on request, through a pluggable `ClassHierarchy`)
 (`Analyzer` with ASM's four stock interpreters), and `oxasm-util` prints them with ASM's `Textifier`, byte for
 byte: the Textifier output, the frames of every method and the class files written back (with a new or a copied
 constant pool, with expanded frames, with `COMPUTE_MAXS` or `COMPUTE_FRAMES`, directly or through a `ClassNode`)
-equal ASM 9.10.1's, on every class of the JDK runtime image and of the T2 jars. Next: M1's acceptance check (a
-probe of sift's analyses), then P7 (util's checkers and `ASMifier`) and P8 (commons).
+equal ASM 9.10.1's, on every class of the JDK runtime image and of the T2 jars. M1's acceptance holds: ports of
+sift's `TextifierLines` and `OriginSourceInterpreter` (`crates/oxasm-util/examples/sift_probe.rs`) give sift's own
+output on every class sift compiles. Next: P7 (util's checkers and `ASMifier`) and P8 (commons).
 
 | Crate | Ports |
 |---|---|
