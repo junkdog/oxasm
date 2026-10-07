@@ -7,6 +7,7 @@
 pub mod classfile_dump;
 pub mod golden;
 pub mod java_fmt;
+pub mod jvm;
 pub mod oracle_records;
 pub mod precompiled;
 pub mod signatures;

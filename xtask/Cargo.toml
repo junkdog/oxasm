@@ -12,6 +12,7 @@ oxasm.workspace = true
 oxasm-tree.workspace = true
 oxasm-analysis.workspace = true
 oxasm-util.workspace = true
+oxasm-testkit.workspace = true
 sha2.workspace = true
 zip.workspace = true
 

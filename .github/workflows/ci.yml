@@ -79,11 +79,15 @@ jobs:
           cargo xtask parity --tier t1 --sample 2000 --oracle-only
       # Textifier parity: oxasm's reader + Textifier against ASM's, with every reader option, directly
       # (P2) and through a ClassNode (P3); analysis parity: the frames of the four stock
-      # interpreters (P4).
-      - name: Textifier and analysis parity over T0 and a T1 sample
+      # interpreters (P4); byte parity of the class writer in the modes that compute nothing (P5).
+      - name: Textifier, analysis and writer parity over T0 and a T1 sample
         run: |
           cargo xtask parity --tier t0
           cargo xtask parity --tier t1 --sample 2000
+      # ASM's ClassFile.newInstance() checks: the JVM verifies the classes the tests write (the
+      # P6 tests, ignored until COMPUTE_MAXS/COMPUTE_FRAMES are ported, are skipped).
+      - name: JVM verification of written classes
+        run: cargo test --workspace -- --ignored new_instance written_classes_are_valid --skip compute_maxs
 
   fuzz-smoke:
     name: fuzz smoke (60 s per target)
@@ -93,7 +97,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [read_noop, read_textify, read_tree, tree_ops, analyze]
+        target: [read_noop, read_textify, read_tree, tree_ops, analyze, roundtrip]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

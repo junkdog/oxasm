@@ -4,10 +4,9 @@
 //!   `api` and `check(api)` (ADR-09).
 //! - `testVisitAndAccept`, `testVisitAndAccept_cloneInstructions` and
 //!   `testVisitAndAccept_removeMembersVisitor` compare `ClassWriter` outputs with `ClassFile`
-//!   dumps: they are pending P5 (the writer). Until then, the same transformations are checked
-//!   through a Textifier: `tree_textify_test.rs` compares reader -> `ClassNode` -> Textifier
-//!   with ASM's, for every T0 class and reader option, and the two other tests below compare
-//!   with ASM's tree path golden, and with oxasm's direct path, respectively.
+//!   dumps, over every T0 class (the `Api` axis is dropped). The Textifier forms that preceded
+//!   the writer (P3) are kept as `*_textify` tests: they compare with ASM's tree path golden, and
+//!   with oxasm's direct path, respectively.
 
 mod common;
 
@@ -16,14 +15,15 @@ use std::collections::HashMap;
 use oxasm::constant::Constant;
 use oxasm::opcodes::ACC_RECORD;
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassReader, ClassVisitor, FieldVisitor, JavaStr, MethodVisitor,
-    ModuleVisitor, ParsingOptions, RecordComponentVisitor, TypePath, TypeReference,
+    AnnotationVisitor, Attribute, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags,
+    FieldVisitor, JavaStr, MethodVisitor, ModuleVisitor, ParsingOptions, RecordComponentVisitor,
+    TypePath, TypeReference,
 };
 use oxasm_testkit::PrecompiledClass;
 use oxasm_testkit::golden::{self, Golden, ReaderOptions};
 use oxasm_tree::{ClassNode, InsnId, MethodNode};
 
-use common::{attributes, textify, textify_node};
+use common::{assert_same_class_file, attributes, textify, textify_node};
 
 fn read_class_node(class: PrecompiledClass) -> ClassNode {
     let mut class_node = ClassNode::new();
@@ -44,10 +44,67 @@ fn test_constructor() {
     assert!(class_node.methods.is_empty());
 }
 
-/// Interim (the writer form is pending P5): replacing every instruction with its clone, with an
-/// identity label map, changes nothing.
+/// Tests that classes are unchanged with a ClassReader->ClassNode->ClassWriter transform.
+#[test]
+fn test_visit_and_accept() {
+    for &class in PrecompiledClass::ALL {
+        let class_file = class.bytes();
+        let class_node = read_class_node(class);
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+
+        class_node.accept(&mut class_writer);
+
+        assert_same_class_file(class_file, &class_writer.to_bytes().unwrap(), &class);
+    }
+}
+
+/// Tests that classes are unchanged with a ClassReader->ClassNode->ClassWriter transform, when
+/// all instructions are cloned.
 #[test]
 fn test_visit_and_accept_clone_instructions() {
+    for &class in PrecompiledClass::ALL {
+        let class_file = class.bytes();
+        let mut class_node = read_class_node(class);
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+
+        for method_node in &mut class_node.methods {
+            clone_instructions(method_node);
+        }
+        class_node.accept(&mut class_writer);
+
+        assert_same_class_file(class_file, &class_writer.to_bytes().unwrap(), &class);
+    }
+}
+
+/// Tests that ClassNode accepts visitors that remove class elements.
+#[test]
+fn test_visit_and_accept_remove_members_visitor() {
+    for &class in PrecompiledClass::ALL {
+        let class_node = read_class_node(class);
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+
+        class_node.accept(&mut RemoveMembersClassVisitor(&mut class_writer));
+        let mut expected_class_writer = ClassWriter::new(ClassWriterFlags::empty());
+        ClassReader::new(class.bytes())
+            .unwrap()
+            .accept(
+                &mut RemoveMembersClassVisitor(&mut expected_class_writer),
+                ParsingOptions::empty(),
+            )
+            .unwrap();
+
+        assert_same_class_file(
+            &expected_class_writer.to_bytes().unwrap(),
+            &class_writer.to_bytes().unwrap(),
+            &class,
+        );
+    }
+}
+
+/// The Textifier form of `test_visit_and_accept_clone_instructions` (P3): replacing every
+/// instruction with its clone, with an identity label map, changes nothing.
+#[test]
+fn test_visit_and_accept_clone_instructions_textify() {
     for &class in PrecompiledClass::ALL {
         let Golden::Ok(expected) = golden::textifier_tree(class.name(), ReaderOptions::Default)
         else {
@@ -67,10 +124,10 @@ fn test_visit_and_accept_clone_instructions() {
     }
 }
 
-/// Interim (the writer form is pending P5): a class node visited through a visitor that removes
-/// its members prints like the class read through it.
+/// The Textifier form of `test_visit_and_accept_remove_members_visitor` (P3): a class node
+/// visited through a visitor that removes its members prints like the class read through it.
 #[test]
-fn test_visit_and_accept_remove_members_visitor() {
+fn test_visit_and_accept_remove_members_visitor_textify() {
     for &class in PrecompiledClass::ALL {
         let class_node = read_class_node(class);
 

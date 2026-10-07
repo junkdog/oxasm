@@ -2,11 +2,13 @@
 //! methods of the visitor traits carry.
 //!
 //! A class reader decodes an attribute with the [`AttributeCodec`] registered for its name (ASM's
-//! attribute "prototypes"), or keeps it as an [`UnknownAttribute`] otherwise. The write half of
-//! ADR-10 (`write`, the write context) lands with the class writer (P5).
+//! attribute "prototypes"), or keeps it as an [`UnknownAttribute`] otherwise. A class writer
+//! writes an unknown attribute's content as is, and a custom attribute's with
+//! [`CustomAttribute::write`].
 
 use std::any::Any;
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use dyn_clone::DynClone;
 
@@ -14,6 +16,7 @@ use crate::error::ReadError;
 use crate::jstr::{JavaStr, JavaString};
 use crate::label::Label;
 use crate::reader::AttributeReadContext;
+use crate::writer::AttributeWriteContext;
 
 /// A non standard attribute.
 #[derive(Clone, Debug)]
@@ -94,6 +97,23 @@ pub trait CustomAttribute: Any + Debug + Send + Sync + DynClone {
     /// `unknown`. `label_name` returns the Textifier's name of a label, naming it first if it
     /// has none yet, as the `labelNames` map passed to Java's `textify` does.
     fn textify(&self, _label_name: &mut dyn FnMut(Label) -> String) -> Option<String> {
+        None
+    }
+
+    /// The content of this attribute, i.e. the bytes after its `attribute_length` (ASM's
+    /// `Attribute.write`). A class writer calls this once per attribute, and keeps the result.
+    ///
+    /// The context gives access to the constant pool of the class being written (ASM's
+    /// `ClassWriter.newConst`, `newUTF8`, ...), and, for a Code attribute, to the bytecode of
+    /// the method, its maximum stack size and number of locals, and the offsets of its labels.
+    fn write(&self, cx: &mut AttributeWriteContext<'_>) -> Vec<u8>;
+
+    /// The codec that can read this attribute back, if any. A class writer that must re-read
+    /// the class it wrote (to replace the ASM specific instructions of a method whose code grew
+    /// too large for its jumps) decodes the attributes of this name with it; without a codec,
+    /// they are read back as unknown attributes (ASM uses the attributes themselves as
+    /// "prototypes").
+    fn codec(&self) -> Option<Arc<dyn AttributeCodec>> {
         None
     }
 }

@@ -11,9 +11,9 @@ test class of ASM at tag `ASM_9_10_1` (`asm-commons/src/test/java`). A phase is 
 
 | Java test class | Phase | Java tests | Ported | Dropped | Status | Notes |
 |---|---|---:|---:|---:|---|---|
-| `ModuleHashesAttributeTest` | P5 | 1 | 0 | 0 | pending |  |
-| `ModuleResolutionAttributeTest` | P5 | 1 | 0 | 0 | pending |  |
-| `ModuleTargetAttributeTest` | P5 | 1 | 0 | 0 | pending |  |
+| `ModuleHashesAttributeTest` | P5 | 1 | 1 | 0 | ported | `tests/module_hashes_attribute_test.rs`; the class is `visit`ed first (ASM's test writes a class with a null name, which oxasm's reader rejects, ADR-06) |
+| `ModuleResolutionAttributeTest` | P5 | 1 | 1 | 0 | ported | `tests/module_resolution_attribute_test.rs`; the class is `visit`ed first (ASM's test writes a class with a null name, which oxasm's reader rejects, ADR-06) |
+| `ModuleTargetAttributeTest` | P5 | 1 | 1 | 0 | ported | `tests/module_target_attribute_test.rs`; the class is `visit`ed first (ASM's test writes a class with a null name, which oxasm's reader rejects, ADR-06) |
 | `AdviceAdapterTest` | P8 | 20 | 0 | 0 | pending |  |
 | `AnalyzerAdapterTest` | P8 | 4 | 0 | 0 | pending |  |
 | `ClassRemapperTest` | P8 | 14 | 0 | 0 | pending |  |
@@ -28,7 +28,7 @@ test class of ASM at tag `ASM_9_10_1` (`asm-commons/src/test/java`). A phase is 
 | `SimpleRemapperTest` | P8 | 4 | 0 | 0 | pending |  |
 | `StaticInitMergerTest` | P8 | 1 | 0 | 0 | pending |  |
 | `TryCatchBlockSorterTest` | P8 | 2 | 0 | 0 | pending |  |
-| **total** | | **191** | **0** | **0** | | |
+| **total** | | **191** | **3** | **0** | | |
 
 **Test support classes** (no tests of their own):
 

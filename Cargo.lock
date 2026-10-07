@@ -570,6 +570,7 @@ dependencies = [
  "anyhow",
  "oxasm",
  "oxasm-analysis",
+ "oxasm-testkit",
  "oxasm-tree",
  "oxasm-util",
  "sha2",

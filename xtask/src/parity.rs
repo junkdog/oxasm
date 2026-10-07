@@ -3,16 +3,20 @@
 //! that later sweeps only pay for classes they have not seen; then (unless `--oracle-only`) it
 //! computes oxasm's side of each mode and compares the two.
 //!
-//! The oxasm side exists for the Textifier modes (P2), direct and through a `ClassNode` (P3), and
-//! the analysis modes (P4); the writer modes arrive with the writer (P5, P6). A class on which
-//! ASM fails agrees with oxasm iff oxasm fails too ("both reject").
+//! The oxasm side exists for the Textifier modes (P2), direct and through a `ClassNode` (P3), the
+//! analysis modes (P4), and the writer modes that compute nothing (P5); `maxs` and `frames`
+//! arrive with P6. A class on which ASM fails agrees with oxasm iff oxasm fails too ("both
+//! reject").
 
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
-use oxasm::{ClassHierarchy, ClassReader, MapHierarchy, ParsingOptions};
+use oxasm::{
+    ClassHierarchy, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, MapHierarchy,
+    ParsingOptions,
+};
 use oxasm_tree::ClassNode;
 use oxasm_util::TraceClassVisitor;
 
@@ -34,12 +38,28 @@ struct Mode {
     tree: bool,
     /// For an analysis mode, the interpreter: oxasm's side is the oracle's `analyze` output.
     analyze: Option<Interp>,
+    /// For a writer mode, how the class is written: oxasm's side is the class file.
+    roundtrip: Option<Roundtrip>,
+}
+
+/// How a writer mode writes a class.
+#[derive(Clone, Copy)]
+struct Roundtrip {
+    /// The class writer flags.
+    flags: ClassWriterFlags,
+    /// The reader options (`frames` adds `SKIP_FRAMES`, as the oracle does).
+    options: ParsingOptions,
+    /// Whether the class writer copies the constant pool of the reader.
+    copy_pool: bool,
 }
 
 impl Mode {
     /// Whether oxasm computes its side of this mode (yet).
     fn has_oxasm_side(&self) -> bool {
-        self.textify.is_some() || self.analyze.is_some()
+        self.textify.is_some()
+            || self.analyze.is_some()
+            // Computing max stack, max locals and frames arrives in P6.
+            || self.roundtrip.is_some_and(|r| r.flags.is_empty())
     }
 }
 
@@ -86,17 +106,55 @@ const MODES: [Mode; 25] = [
         "tree-textify --opts EXPAND_FRAMES",
         ParsingOptions::EXPAND_FRAMES,
     ),
-    Mode::new("copy", "roundtrip --mode 0 --copy-pool"),
-    Mode::new("plain", "roundtrip --mode 0"),
-    Mode::new("maxs", "roundtrip --mode maxs"),
-    Mode::hierarchy("frames", "roundtrip --mode frames"),
-    Mode::new("expand", "roundtrip --mode 0 --opts EXPAND_FRAMES"),
-    Mode::new("skip-debug", "roundtrip --mode 0 --opts SKIP_DEBUG"),
-    Mode::new("skip-code", "roundtrip --mode 0 --opts SKIP_CODE"),
-    Mode::new("tree-copy", "tree-roundtrip --mode 0 --copy-pool"),
-    Mode::new("tree-plain", "tree-roundtrip --mode 0"),
-    Mode::new("tree-maxs", "tree-roundtrip --mode maxs"),
-    Mode::hierarchy("tree-frames", "tree-roundtrip --mode frames"),
+    Mode::roundtrip("copy", "roundtrip --mode 0 --copy-pool", Roundtrip::copy()),
+    Mode::roundtrip("plain", "roundtrip --mode 0", Roundtrip::plain()),
+    Mode::roundtrip(
+        "maxs",
+        "roundtrip --mode maxs",
+        Roundtrip::flags(ClassWriterFlags::COMPUTE_MAXS),
+    ),
+    Mode {
+        needs_hierarchy: true,
+        ..Mode::roundtrip(
+            "frames",
+            "roundtrip --mode frames",
+            Roundtrip::flags(ClassWriterFlags::COMPUTE_FRAMES),
+        )
+    },
+    Mode::roundtrip(
+        "expand",
+        "roundtrip --mode 0 --opts EXPAND_FRAMES",
+        Roundtrip::options(ParsingOptions::EXPAND_FRAMES),
+    ),
+    Mode::roundtrip(
+        "skip-debug",
+        "roundtrip --mode 0 --opts SKIP_DEBUG",
+        Roundtrip::options(ParsingOptions::SKIP_DEBUG),
+    ),
+    Mode::roundtrip(
+        "skip-code",
+        "roundtrip --mode 0 --opts SKIP_CODE",
+        Roundtrip::options(ParsingOptions::SKIP_CODE),
+    ),
+    Mode::tree_roundtrip(
+        "tree-copy",
+        "tree-roundtrip --mode 0 --copy-pool",
+        Roundtrip::copy(),
+    ),
+    Mode::tree_roundtrip("tree-plain", "tree-roundtrip --mode 0", Roundtrip::plain()),
+    Mode::tree_roundtrip(
+        "tree-maxs",
+        "tree-roundtrip --mode maxs",
+        Roundtrip::flags(ClassWriterFlags::COMPUTE_MAXS),
+    ),
+    Mode {
+        needs_hierarchy: true,
+        ..Mode::tree_roundtrip(
+            "tree-frames",
+            "tree-roundtrip --mode frames",
+            Roundtrip::flags(ClassWriterFlags::COMPUTE_FRAMES),
+        )
+    },
     Mode::analyze("analyze-basic", "analyze --interp basic", Interp::Basic),
     Mode::analyze(
         "analyze-basicverifier",
@@ -123,28 +181,32 @@ impl Mode {
             textify: None,
             tree: false,
             analyze: None,
-        }
-    }
-
-    const fn hierarchy(name: &'static str, command: &'static str) -> Mode {
-        Mode {
-            name,
-            command,
-            needs_hierarchy: true,
-            textify: None,
-            tree: false,
-            analyze: None,
+            roundtrip: None,
         }
     }
 
     const fn textify(name: &'static str, command: &'static str, options: ParsingOptions) -> Mode {
         Mode {
-            name,
-            command,
-            needs_hierarchy: false,
             textify: Some(options),
-            tree: false,
-            analyze: None,
+            ..Mode::new(name, command)
+        }
+    }
+
+    const fn roundtrip(name: &'static str, command: &'static str, roundtrip: Roundtrip) -> Mode {
+        Mode {
+            roundtrip: Some(roundtrip),
+            ..Mode::new(name, command)
+        }
+    }
+
+    const fn tree_roundtrip(
+        name: &'static str,
+        command: &'static str,
+        roundtrip: Roundtrip,
+    ) -> Mode {
+        Mode {
+            tree: true,
+            ..Mode::roundtrip(name, command, roundtrip)
         }
     }
 
@@ -163,6 +225,43 @@ impl Mode {
         Mode {
             tree: true,
             ..Mode::textify(name, command, options)
+        }
+    }
+}
+
+impl Roundtrip {
+    const fn plain() -> Roundtrip {
+        Roundtrip {
+            flags: ClassWriterFlags::empty(),
+            options: ParsingOptions::empty(),
+            copy_pool: false,
+        }
+    }
+
+    const fn copy() -> Roundtrip {
+        Roundtrip {
+            copy_pool: true,
+            ..Roundtrip::plain()
+        }
+    }
+
+    const fn flags(flags: ClassWriterFlags) -> Roundtrip {
+        Roundtrip {
+            flags,
+            // As the oracle: frames are recomputed, so they are not read.
+            options: if flags.contains(ClassWriterFlags::COMPUTE_FRAMES) {
+                ParsingOptions::SKIP_FRAMES
+            } else {
+                ParsingOptions::empty()
+            },
+            ..Roundtrip::plain()
+        }
+    }
+
+    const fn options(options: ParsingOptions) -> Roundtrip {
+        Roundtrip {
+            options,
+            ..Roundtrip::plain()
         }
     }
 }
@@ -280,6 +379,9 @@ fn oxasm_outcome(mode: &Mode, class_file: &[u8], hierarchy: Option<&MapHierarchy
             let hierarchy = hierarchy.map(|h| h as &dyn ClassHierarchy);
             return analysis::analyze(class_file, interp, ParsingOptions::empty(), hierarchy);
         }
+        if let Some(roundtrip) = mode.roundtrip {
+            return write_class(class_file, roundtrip, mode.tree, hierarchy);
+        }
         let options = mode
             .textify
             .expect("only Textifier and analysis modes have an oxasm side");
@@ -314,6 +416,38 @@ fn oxasm_outcome(mode: &Mode, class_file: &[u8], hierarchy: Option<&MapHierarchy
                 .unwrap_or("?")
         )),
     }
+}
+
+/// oxasm's side of a writer mode: the class read and written back (ASM's
+/// `Oracle.roundtrip`).
+fn write_class(
+    class_file: &[u8],
+    roundtrip: Roundtrip,
+    tree: bool,
+    hierarchy: Option<&MapHierarchy>,
+) -> Result<Vec<u8>, String> {
+    let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
+    let class_writer = if roundtrip.copy_pool {
+        ClassWriter::from_reader(&reader, roundtrip.flags).map_err(|e| e.to_string())?
+    } else {
+        ClassWriter::new(roundtrip.flags)
+    };
+    let mut class_writer = match hierarchy {
+        Some(hierarchy) => class_writer.with_hierarchy(hierarchy),
+        None => class_writer,
+    };
+    if tree {
+        let mut class_node = ClassNode::default();
+        reader
+            .accept(&mut class_node, roundtrip.options)
+            .map_err(|e| e.to_string())?;
+        class_node.accept(&mut class_writer as &mut dyn ClassVisitor);
+    } else {
+        reader
+            .accept(&mut class_writer, roundtrip.options)
+            .map_err(|e| e.to_string())?;
+    }
+    class_writer.to_bytes().map_err(|e| e.to_string())
 }
 
 /// Compares oxasm's side of a mode with the cached oracle results, prints a summary and the
@@ -409,6 +543,35 @@ fn mismatch(oracle: &Outcome, oxasm: &Outcome) -> Option<String> {
     match (oracle, oxasm) {
         (Outcome::Ok(a), Outcome::Ok(b)) if a == b => None,
         (Outcome::Err(_), Outcome::Err(error)) if !error.starts_with("PANIC") => None,
+        (Outcome::Ok(a), Outcome::Ok(b))
+            if a.starts_with(&[0xCA, 0xFE, 0xBA, 0xBE])
+                && b.starts_with(&[0xCA, 0xFE, 0xBA, 0xBE]) =>
+        {
+            // Byte parity: locate the difference in the ClassFile dumps (rung 3).
+            let offset = a
+                .iter()
+                .zip(b)
+                .position(|(x, y)| x != y)
+                .unwrap_or(a.len().min(b.len()));
+            let dump = |bytes: &[u8]| {
+                oxasm_testkit::classfile_dump::dump(bytes)
+                    .map(|d| String::from_utf8_lossy(&d).into_owned())
+                    .unwrap_or_else(|e| format!("<no dump: {e}>"))
+            };
+            let (a_dump, b_dump) = (dump(a), dump(b));
+            let line = a_dump.lines().zip(b_dump.lines()).position(|(x, y)| x != y);
+            Some(match line {
+                Some(line) => format!(
+                    "byte {offset} (sizes {}/{}), dump line {}: oracle {:?} / oxasm {:?}",
+                    a.len(),
+                    b.len(),
+                    line + 1,
+                    a_dump.lines().nth(line).unwrap_or("<end>"),
+                    b_dump.lines().nth(line).unwrap_or("<end>")
+                ),
+                None => format!("byte {offset} (sizes {}/{}), same dump", a.len(), b.len()),
+            })
+        }
         (Outcome::Ok(a), Outcome::Ok(b)) => {
             let (a, b) = (String::from_utf8_lossy(a), String::from_utf8_lossy(b));
             let line = a

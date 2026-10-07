@@ -21,6 +21,7 @@ pub mod ty;
 pub mod type_path;
 pub mod type_reference;
 pub mod visitor;
+pub mod writer;
 
 pub(crate) mod constants;
 #[cfg(test)]
@@ -29,6 +30,7 @@ mod constants_test;
 pub use attribute::{Attribute, AttributeCodec, CustomAttribute, UnknownAttribute};
 pub use constant::{AnnotationValue, Constant, FrameValue};
 pub use constant_dynamic::ConstantDynamic;
+pub use error::{ReadError, WriteError};
 pub use handle::Handle;
 pub use hierarchy::{ChainedHierarchy, ClassHierarchy, MapHierarchy, ObjectHierarchy};
 pub use jstr::{JavaCompactStr, JavaStr, JavaString};
@@ -42,3 +44,4 @@ pub use visitor::{
     AnnotationVisitor, ClassVisitor, FieldVisitor, MethodVisitor, ModuleVisitor,
     RecordComponentVisitor,
 };
+pub use writer::{ClassWriter, ClassWriterFlags};

@@ -44,6 +44,9 @@
  *   hierarchy                    prints "name \t super \t is_interface(0|1)" for every input
  *                                class, sorted by name (no records)
  *   serve                        persistent mode, see below
+ *   gen <scenario...>            writes the T3 synthetic classes (one record per scenario: the
+ *                                class file, or the exception of ClassWriter.toByteArray); oxasm's
+ *                                crates/oxasm/tests/t3_synthetic_test.rs generates the same
  *   version                      prints the ASM version the oracle is pinned to
  *
  * O is a comma-separated list of SKIP_CODE, SKIP_DEBUG, SKIP_FRAMES and EXPAND_FRAMES, or 0.
@@ -95,6 +98,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.test.ClassFile;
@@ -137,6 +142,7 @@ public final class Oracle {
         case "serve" -> serve(new DataInputStream(System.in), new DataOutputStream(out));
         case "hierarchy" -> hierarchy(options, out);
         case "verify" -> verify(options, out);
+        case "gen" -> gen(options, out);
         default -> {
           ClassCommand classCommand = ClassCommand.create(command, options);
           forEachInput(
@@ -165,7 +171,7 @@ public final class Oracle {
   private static void usage(final String message) {
     System.err.println("oracle: " + message);
     System.err.println(
-        "usage: Oracle {textify|tree-textify|dump|roundtrip|tree-roundtrip|analyze|verify|hierarchy|serve"
+        "usage: Oracle {textify|tree-textify|dump|roundtrip|tree-roundtrip|analyze|verify|hierarchy|gen|serve"
             + "|version} [options] <inputs...>");
     System.exit(2);
   }
@@ -674,6 +680,185 @@ public final class Oracle {
       byte[] bytes = input.bytes();
       return defineClass(name, bytes, 0, bytes.length);
     }
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // gen: the T3 synthetic classes (keep in sync with crates/oxasm/tests/t3_synthetic_test.rs)
+  // -----------------------------------------------------------------------------------------------
+
+  static void gen(final Args args, final OutputStream out) throws IOException {
+    args.allow();
+    for (String scenario : args.inputs) {
+      byte[] payload;
+      String status;
+      try {
+        payload = genScenario(scenario);
+        status = "ok";
+      } catch (UsageException e) {
+        throw e;
+      } catch (Throwable t) { // NOPMD: the oracle reports whatever ASM throws.
+        payload = utf8(describe(t));
+        status = "err";
+      }
+      writeRecord(out, status, scenario, payload);
+    }
+  }
+
+  /** The number of NOPs that makes a jump over them too far for a 2 bytes offset. */
+  static final int FAR = 40000;
+
+  static byte[] genScenario(final String scenario) {
+    switch (scenario) {
+      case "jump-forward-v5":
+        return jumpForward(Opcodes.V1_5, false);
+      case "jump-forward-v8":
+        return jumpForward(Opcodes.V1_8, true);
+      case "jump-backward-v5":
+        return jumpBackward();
+      case "jump-forward-locals-v8":
+        return jumpForwardLocals();
+      case "method-too-large":
+        {
+          ClassWriter classWriter = newClass(Opcodes.V1_8, "t3/MethodTooLarge");
+          MethodVisitor methodVisitor =
+              classWriter.visitMethod(Opcodes.ACC_STATIC, "m", "()V", null, null);
+          methodVisitor.visitCode();
+          for (int i = 0; i < 70000; ++i) {
+            methodVisitor.visitInsn(Opcodes.NOP);
+          }
+          methodVisitor.visitInsn(Opcodes.RETURN);
+          methodVisitor.visitMaxs(0, 0);
+          methodVisitor.visitEnd();
+          return classWriter.toByteArray();
+        }
+      case "class-too-large":
+        {
+          ClassWriter classWriter = newClass(Opcodes.V1_8, "t3/ClassTooLarge");
+          for (int i = 0; i < 65535; ++i) {
+            classWriter.newConst(i);
+          }
+          return classWriter.toByteArray();
+        }
+      case "pool-65535":
+        {
+          ClassWriter classWriter = newClass(Opcodes.V1_8, "t3/Pool65535");
+          int i = 0;
+          while (classWriter.newConst(i) < 65534) {
+            ++i;
+          }
+          return classWriter.toByteArray();
+        }
+      default:
+        throw new UsageException("unknown scenario " + scenario);
+    }
+  }
+
+  static ClassWriter newClass(final int version, final String name) {
+    ClassWriter classWriter = new ClassWriter(0);
+    classWriter.visit(version, Opcodes.ACC_PUBLIC, name, null, "java/lang/Object", null);
+    return classWriter;
+  }
+
+  /** static m(I)V: IFEQ and GOTO forward over FAR NOPs (with frames if requested). */
+  static byte[] jumpForward(final int version, final boolean frames) {
+    ClassWriter classWriter = newClass(version, version == Opcodes.V1_5 ? "t3/JumpForward5" : "t3/JumpForward8");
+    MethodVisitor methodVisitor = classWriter.visitMethod(Opcodes.ACC_STATIC, "m", "(I)V", null, null);
+    methodVisitor.visitCode();
+    Label target = new Label();
+    Label end = new Label();
+    methodVisitor.visitVarInsn(Opcodes.ILOAD, 0);
+    methodVisitor.visitJumpInsn(Opcodes.IFEQ, target);
+    methodVisitor.visitJumpInsn(Opcodes.GOTO, end);
+    methodVisitor.visitLabel(target);
+    if (frames) {
+      methodVisitor.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+    }
+    for (int i = 0; i < FAR; ++i) {
+      methodVisitor.visitInsn(Opcodes.NOP);
+    }
+    methodVisitor.visitLabel(end);
+    if (frames) {
+      methodVisitor.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+    }
+    methodVisitor.visitInsn(Opcodes.RETURN);
+    methodVisitor.visitMaxs(1, 1);
+    methodVisitor.visitEnd();
+    return classWriter.toByteArray();
+  }
+
+  /** static m(I)V: IFNE and GOTO backward over FAR NOPs (GOTO_W, and IFEQ + GOTO_W). */
+  static byte[] jumpBackward() {
+    ClassWriter classWriter = newClass(Opcodes.V1_5, "t3/JumpBackward5");
+    MethodVisitor methodVisitor = classWriter.visitMethod(Opcodes.ACC_STATIC, "m", "(I)V", null, null);
+    methodVisitor.visitCode();
+    Label start = new Label();
+    Label end = new Label();
+    methodVisitor.visitLabel(start);
+    methodVisitor.visitVarInsn(Opcodes.ILOAD, 0);
+    methodVisitor.visitJumpInsn(Opcodes.IFLT, end);
+    for (int i = 0; i < FAR; ++i) {
+      methodVisitor.visitInsn(Opcodes.NOP);
+    }
+    methodVisitor.visitIincInsn(0, -1);
+    methodVisitor.visitVarInsn(Opcodes.ILOAD, 0);
+    methodVisitor.visitJumpInsn(Opcodes.IFNE, start);
+    methodVisitor.visitJumpInsn(Opcodes.GOTO, start);
+    methodVisitor.visitLabel(end);
+    methodVisitor.visitInsn(Opcodes.RETURN);
+    methodVisitor.visitMaxs(1, 1);
+    methodVisitor.visitEnd();
+    return classWriter.toByteArray();
+  }
+
+  /**
+   * m(ILjava/lang/String;)J, V1_8: a forward IFNULL over FAR bytes of instructions that change the
+   * locals and the stack, then expanded frames, so that the inserted frames of the re-read are
+   * computed by simulating these instructions.
+   */
+  static byte[] jumpForwardLocals() {
+    ClassWriter classWriter = newClass(Opcodes.V1_8, "t3/JumpForwardLocals8");
+    MethodVisitor methodVisitor =
+        classWriter.visitMethod(0, "m", "(ILjava/lang/String;)J", null, null);
+    methodVisitor.visitCode();
+    Label target = new Label();
+    methodVisitor.visitInsn(Opcodes.LCONST_1);
+    methodVisitor.visitVarInsn(Opcodes.LSTORE, 3);
+    methodVisitor.visitTypeInsn(Opcodes.NEW, "java/lang/StringBuilder");
+    methodVisitor.visitInsn(Opcodes.DUP);
+    methodVisitor.visitMethodInsn(
+        Opcodes.INVOKESPECIAL, "java/lang/StringBuilder", "<init>", "()V", false);
+    methodVisitor.visitVarInsn(Opcodes.ASTORE, 5);
+    methodVisitor.visitVarInsn(Opcodes.ALOAD, 2);
+    methodVisitor.visitJumpInsn(Opcodes.IFNULL, target);
+    for (int i = 0; i < FAR / 8; ++i) {
+      methodVisitor.visitVarInsn(Opcodes.ALOAD, 5);
+      methodVisitor.visitVarInsn(Opcodes.ALOAD, 2);
+      methodVisitor.visitMethodInsn(
+          Opcodes.INVOKEVIRTUAL,
+          "java/lang/StringBuilder",
+          "append",
+          "(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+          false);
+      methodVisitor.visitInsn(Opcodes.POP);
+    }
+    methodVisitor.visitVarInsn(Opcodes.LLOAD, 3);
+    methodVisitor.visitInsn(Opcodes.L2I);
+    methodVisitor.visitVarInsn(Opcodes.ISTORE, 1);
+    methodVisitor.visitLabel(target);
+    methodVisitor.visitFrame(
+        Opcodes.F_NEW,
+        5,
+        new Object[] {
+          "t3/JumpForwardLocals8", Opcodes.INTEGER, "java/lang/String", Opcodes.LONG,
+          "java/lang/StringBuilder"
+        },
+        0,
+        null);
+    methodVisitor.visitVarInsn(Opcodes.LLOAD, 3);
+    methodVisitor.visitInsn(Opcodes.LRETURN);
+    methodVisitor.visitMaxs(3, 6);
+    methodVisitor.visitEnd();
+    return classWriter.toByteArray();
   }
 
   // -----------------------------------------------------------------------------------------------

@@ -2,12 +2,13 @@
 //! AnalyzerTest.java`, tag `ASM_9_10_1`): unit tests for [`Analyzer`].
 //!
 //! The `assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode)
-//! .newInstance())` checks (the JVM accepts the analyzed method) need a `ClassWriter`: they are
-//! the `// P5: ...` lines.
+//! .newInstance())` checks (the JVM accepts the analyzed method) are split in two: the tests write
+//! the class (`build_class_with_method`), and an ignored twin, `<test>_new_instance`, has the JVM
+//! verify it (`cargo test -- --ignored`, which needs the oracle).
 
 mod common;
 
-use common::MethodNodeBuilder;
+use common::{MethodNodeBuilder, assert_new_instance, build_class_with_method};
 use oxasm::opcodes::*;
 use oxasm::{JavaStr, Label, Type, TypeSort, jstr};
 use oxasm_analysis::{Analyzer, AnalyzerError, AnalyzerHooks, Frame, InsnRef, Interpreter, Value};
@@ -353,10 +354,9 @@ fn test_analyze_invalid_overlapping_subroutines() {
 ///   }
 /// }
 /// ```
-#[test]
-fn test_analyze_basic_try_finally() {
+fn test_analyze_basic_try_finally_method_node() -> MethodNode {
     let [label0, label1, label2, label3, label4] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(4, 4)
+    MethodNodeBuilder::with_maxs(4, 4)
         .iconst_0()
         .istore(1)
         // Body of try block.
@@ -385,10 +385,23 @@ fn test_analyze_basic_try_finally() {
         .vreturn()
         .trycatch(label0, label1, label1)
         .trycatch(label3, label4, label1)
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_basic_try_finally() {
+    let method_node = test_analyze_basic_try_finally_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_basic_try_finally_new_instance() {
+    assert_new_instance(&test_analyze_basic_try_finally_method_node());
 }
 
 /// Tests a method which has an if/else-if w/in the finally clause. More specifically:
@@ -407,10 +420,9 @@ fn test_analyze_basic_try_finally() {
 ///   }
 /// }
 /// ```
-#[test]
-fn test_analyze_if_else_in_finally() {
+fn test_analyze_if_else_in_finally_method_node() -> MethodNode {
     let [label0, label1, label2, label3, label4, label5, label6] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(5, 4)
+    MethodNodeBuilder::with_maxs(5, 4)
         .iconst_0()
         .istore(1)
         // Body of try block.
@@ -445,10 +457,23 @@ fn test_analyze_if_else_in_finally() {
         .vreturn()
         .trycatch(label0, label1, label1)
         .trycatch(label5, label6, label1)
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_if_else_in_finally() {
+    let method_node = test_analyze_if_else_in_finally_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_if_else_in_finally_new_instance() {
+    assert_new_instance(&test_analyze_if_else_in_finally_method_node());
 }
 
 /// Tests a simple nested finally. More specifically:
@@ -467,10 +492,9 @@ fn test_analyze_if_else_in_finally() {
 ///   }
 /// }
 /// ```
-#[test]
-fn test_analyze_simple_nested_finally() {
+fn test_analyze_simple_nested_finally_method_node() -> MethodNode {
     let [label0, label1, label2, label3, label4, label5] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(5, 6)
+    MethodNodeBuilder::with_maxs(5, 6)
         .iconst_0()
         .istore(1)
         // Body of try block.
@@ -510,17 +534,29 @@ fn test_analyze_simple_nested_finally() {
         .vreturn()
         .trycatch(label0, label1, label1)
         .trycatch(label2, label3, label3)
-        .build();
-
-    assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+        .build()
 }
 
 #[test]
-fn test_analyze_nested_subroutines() {
+fn test_analyze_simple_nested_finally() {
+    let method_node = test_analyze_simple_nested_finally_method_node();
+
+    assert_maxs_from_frames(&method_node);
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_simple_nested_finally_new_instance() {
+    assert_new_instance(&test_analyze_simple_nested_finally_method_node());
+}
+
+fn test_analyze_nested_subroutines_method_node() -> MethodNode {
     let subroutine1_label = Label::new();
     let subroutine2_label = Label::new();
-    let method_node = MethodNodeBuilder::with_maxs(1, 3)
+    MethodNodeBuilder::with_maxs(1, 3)
         .jsr(subroutine1_label)
         .vreturn()
         .label(subroutine1_label)
@@ -531,10 +567,23 @@ fn test_analyze_nested_subroutines() {
         .label(subroutine2_label)
         .astore(2)
         .ret(2)
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_nested_subroutines() {
+    let method_node = test_analyze_nested_subroutines_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_nested_subroutines_new_instance() {
+    assert_new_instance(&test_analyze_nested_subroutines_method_node());
 }
 
 /// This tests a subroutine which has no ret statement, but ends in a "return" instead.
@@ -556,10 +605,9 @@ fn test_analyze_nested_subroutines() {
 ///   }
 /// }
 /// ```
-#[test]
-fn test_analyze_subroutine_with_no_ret() {
+fn test_analyze_subroutine_with_no_ret_method_node() -> MethodNode {
     let [label0, label1, label2, label3, label4] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(1, 4)
+    MethodNodeBuilder::with_maxs(1, 4)
         .iconst_0()
         .istore(1)
         // While loop header/try block.
@@ -586,10 +634,23 @@ fn test_analyze_subroutine_with_no_ret() {
         .label(label4)
         .vreturn()
         .trycatch(label0, label1, label1)
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_subroutine_with_no_ret() {
+    let method_node = test_analyze_subroutine_with_no_ret_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_subroutine_with_no_ret_new_instance() {
+    assert_new_instance(&test_analyze_subroutine_with_no_ret_method_node());
 }
 
 /// This tests a subroutine which has no ret statement, but ends in a "return" instead.
@@ -602,10 +663,9 @@ fn test_analyze_subroutine_with_no_ret() {
 ///   astore 0
 ///   return
 /// ```
-#[test]
-fn test_analyze_subroutine_with_no_ret2() {
+fn test_analyze_subroutine_with_no_ret2_method_node() -> MethodNode {
     let [label0, label1] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(2, 2)
+    MethodNodeBuilder::with_maxs(2, 2)
         .aconst_null()
         .jsr(label0)
         .nop()
@@ -615,19 +675,31 @@ fn test_analyze_subroutine_with_no_ret2() {
         .vreturn()
         .label(label1)
         .local_variable("i", "I", None, label0, label1, 1)
-        .build();
-
-    assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+        .build()
 }
 
 #[test]
-fn test_analyze_subroutine_locals_access() {
+fn test_analyze_subroutine_with_no_ret2() {
+    let method_node = test_analyze_subroutine_with_no_ret2_method_node();
+
+    assert_maxs_from_frames(&method_node);
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_subroutine_with_no_ret2_new_instance() {
+    assert_new_instance(&test_analyze_subroutine_with_no_ret2_method_node());
+}
+
+fn test_analyze_subroutine_locals_access_method_node() -> MethodNode {
     let start_label = Label::new();
     let exception_handler1_label = Label::new();
     let exception_handler2_label = Label::new();
     let subroutine_label = Label::new();
-    let method_node = MethodNodeBuilder::with_maxs(1, 5)
+    MethodNodeBuilder::with_maxs(1, 5)
         .label(start_label)
         .jsr(subroutine_label)
         .vreturn()
@@ -656,10 +728,23 @@ fn test_analyze_subroutine_locals_access() {
             exception_handler2_label,
             Some("java/lang/RuntimeException"),
         )
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_subroutine_locals_access() {
+    let method_node = test_analyze_subroutine_locals_access_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_subroutine_locals_access_new_instance() {
+    assert_new_instance(&test_analyze_subroutine_locals_access_method_node());
 }
 
 /// This tests a subroutine which has no ret statement, but instead exits implicitly by branching
@@ -682,10 +767,9 @@ fn test_analyze_subroutine_locals_access() {
 ///   }
 /// }
 /// ```
-#[test]
-fn test_analyze_implicit_exit() {
+fn test_analyze_implicit_exit_method_node() -> MethodNode {
     let [label0, label1, label2, label3, label4, label5] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(1, 4)
+    MethodNodeBuilder::with_maxs(1, 4)
         .iconst_0()
         .istore(1)
         // While loop header.
@@ -716,10 +800,23 @@ fn test_analyze_implicit_exit() {
         .label(label5)
         .vreturn()
         .trycatch(label1, label2, label2)
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_implicit_exit() {
+    let method_node = test_analyze_implicit_exit_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_implicit_exit_new_instance() {
+    assert_new_instance(&test_analyze_implicit_exit_method_node());
 }
 
 /// Tests a nested try/finally with implicit exit from one subroutine to the other subroutine.
@@ -746,8 +843,7 @@ fn test_analyze_implicit_exit() {
 ///
 /// This example is from the paper, "Subroutine Inlining and Bytecode Abstraction to Simplify
 /// Static and Dynamic Analysis" by Cyrille Artho and Armin Biere.
-#[test]
-fn test_analyze_implicit_exit_to_another_subroutine() {
+fn test_analyze_implicit_exit_to_another_subroutine_method_node() -> MethodNode {
     let [
         label0,
         label1,
@@ -758,7 +854,7 @@ fn test_analyze_implicit_exit_to_another_subroutine() {
         label6,
         label7,
     ] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(5, 6)
+    MethodNodeBuilder::with_maxs(5, 6)
         .iconst_0()
         .istore(1)
         // First try.
@@ -806,17 +902,29 @@ fn test_analyze_implicit_exit_to_another_subroutine() {
         .ret(LOCAL4)
         .trycatch(label0, label1, label1)
         .trycatch(label3, label4, label4)
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_implicit_exit_to_another_subroutine() {
+    let method_node = test_analyze_implicit_exit_to_another_subroutine_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_implicit_exit_to_another_subroutine_new_instance() {
+    assert_new_instance(&test_analyze_implicit_exit_to_another_subroutine_method_node());
 }
 
 // Sic: the Java name is testanalyze_implicitExitToAnotherSubroutine2 (lowercase 'a').
-#[test]
-fn testanalyze_implicit_exit_to_another_subroutine2() {
+fn testanalyze_implicit_exit_to_another_subroutine2_method_node() -> MethodNode {
     let [label0, label1, label2] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(1, 4)
+    MethodNodeBuilder::with_maxs(1, 4)
         .iconst_0()
         .istore(1)
         .jsr(label0)
@@ -832,20 +940,32 @@ fn testanalyze_implicit_exit_to_another_subroutine2() {
         .ret(3)
         .label(label2)
         .ret(2)
-        .build();
+        .build()
+}
+
+#[test]
+fn testanalyze_implicit_exit_to_another_subroutine2() {
+    let method_node = testanalyze_implicit_exit_to_another_subroutine2_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn testanalyze_implicit_exit_to_another_subroutine2_new_instance() {
+    assert_new_instance(&testanalyze_implicit_exit_to_another_subroutine2_method_node());
 }
 
 /// This tests a simple subroutine where the control flow jumps back and forth between the
 /// subroutine and the caller.
 ///
 /// This would not normally be produced by a java compiler.
-#[test]
-fn test_analyze_interleaved_code() {
+fn test_analyze_interleaved_code_method_node() -> MethodNode {
     let [label0, label1, label2, label3] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(4, 3)
+    MethodNodeBuilder::with_maxs(4, 3)
         .iconst_0()
         .istore(1)
         .jsr(label0)
@@ -870,10 +990,23 @@ fn test_analyze_interleaved_code() {
         .push()
         .push()
         .vreturn()
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_interleaved_code() {
+    let method_node = test_analyze_interleaved_code_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_interleaved_code_new_instance() {
+    assert_new_instance(&test_analyze_interleaved_code_method_node());
 }
 
 /// Tests a nested try/finally with implicit exit from one subroutine to the other subroutine, and
@@ -902,8 +1035,7 @@ fn test_analyze_interleaved_code() {
 ///   }
 /// }
 /// ```
-#[test]
-fn test_analyze_implicit_exit_in_try_catch() {
+fn test_analyze_implicit_exit_in_try_catch_method_node() -> MethodNode {
     let [
         label0,
         label1,
@@ -915,7 +1047,7 @@ fn test_analyze_implicit_exit_in_try_catch() {
         label7,
         label8,
     ] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(4, 6)
+    MethodNodeBuilder::with_maxs(4, 6)
         .iconst_0()
         .istore(1)
         // First try.
@@ -966,31 +1098,55 @@ fn test_analyze_implicit_exit_in_try_catch() {
         .trycatch(label0, label1, label1)
         .trycatch(label3, label4, label4)
         .trycatch(label0, label8, label8)
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_implicit_exit_in_try_catch() {
+    let method_node = test_analyze_implicit_exit_in_try_catch_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_implicit_exit_in_try_catch_new_instance() {
+    assert_new_instance(&test_analyze_implicit_exit_in_try_catch_method_node());
 }
 
 /// Tests that Analyzer works correctly on classes with many labels.
-#[test]
-fn test_analyze_many_labels() {
+fn test_analyze_many_labels_method_node() -> MethodNode {
     let target = Label::new();
     let mut method_node_builder = MethodNodeBuilder::with_maxs(1, 1).jsr(target).label(target);
     for _ in 0..8192 {
         let label = Label::new();
         method_node_builder = method_node_builder.go(label).label(label);
     }
-    let method_node = method_node_builder.vreturn().build();
+    method_node_builder.vreturn().build()
+}
+
+#[test]
+fn test_analyze_many_labels() {
+    let method_node = test_analyze_many_labels_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_many_labels_new_instance() {
+    assert_new_instance(&test_analyze_many_labels_method_node());
 }
 
 /// Tests an example coming from distilled down version of
 /// com/sun/corba/ee/impl/protocol/CorbaClientDelegateImpl from GlassFish 2. See issue #317823.
-#[test]
-fn test_analyze_glass_fish2_corba_client_delegate_impl_example() {
+fn test_analyze_glass_fish2_corba_client_delegate_impl_example_method_node() -> MethodNode {
     let [
         label0,
         label1,
@@ -1006,7 +1162,7 @@ fn test_analyze_glass_fish2_corba_client_delegate_impl_example() {
         label11,
         label12,
     ] = labels();
-    let method_node = MethodNodeBuilder::with_maxs(3, 3)
+    MethodNodeBuilder::with_maxs(3, 3)
         .label(label0)
         .jsr(label4)
         .label(label1)
@@ -1054,10 +1210,23 @@ fn test_analyze_glass_fish2_corba_client_delegate_impl_example() {
         .trycatch(label0, label6, label7)
         .trycatch(label0, label9, label10)
         .trycatch(label10, label11, label10)
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_glass_fish2_corba_client_delegate_impl_example() {
+    let method_node = test_analyze_glass_fish2_corba_client_delegate_impl_example_method_node();
 
     assert_maxs_from_frames(&method_node);
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_glass_fish2_corba_client_delegate_impl_example_new_instance() {
+    assert_new_instance(&test_analyze_glass_fish2_corba_client_delegate_impl_example_method_node());
 }
 
 fn new_analyzer() -> Analyzer<MockInterpreter> {

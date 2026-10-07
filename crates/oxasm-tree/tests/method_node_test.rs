@@ -2,18 +2,21 @@
 //!
 //! - `testConstructor_illegalState` is dropped: there is no subclassing, nor `api` (ADR-09).
 //! - `testVisitAndAccept_withUninitializedMethodNode` compares `ClassWriter` outputs with
-//!   `ClassFile` dumps: it is pending P5 (the writer). Until then, the same class node is checked
-//!   through a Textifier, against ASM's tree path.
+//!   `ClassFile` dumps; its Textifier form (P3, against ASM's tree path) is kept as
+//!   `test_visit_and_accept_with_uninitialized_method_node_textify`.
 
 mod common;
 
 use oxasm::opcodes::NOP;
-use oxasm::{ClassReader, ClassVisitor, JavaStr, Label, MethodVisitor, ParsingOptions};
+use oxasm::{
+    ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, JavaStr, Label, MethodVisitor,
+    ParsingOptions,
+};
 use oxasm_testkit::PrecompiledClass;
 use oxasm_testkit::golden::{self, Golden, ReaderOptions};
 use oxasm_tree::{ClassNode, MethodNode};
 
-use common::{attributes, textify_node};
+use common::{assert_same_class_file, attributes, textify_node};
 
 #[test]
 fn test_constructor() {
@@ -24,35 +27,55 @@ fn test_constructor() {
     assert_eq!(method_node.desc, "()V");
 }
 
-/// Interim (the writer form is pending P5): a class node whose method nodes are created with
-/// `MethodNode::default()` and then filled in prints like ASM's tree path.
+/// A class node whose `visit_method` creates "uninitialized" method nodes.
+struct UninitializedMethods(ClassNode);
+impl ClassVisitor for UninitializedMethods {
+    fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
+        Some(&mut self.0)
+    }
+    #[allow(clippy::field_reassign_with_default)] // the point of ASM's test
+    fn visit_method<'a>(
+        &'a mut self,
+        access: u32,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        signature: Option<&JavaStr>,
+        exceptions: &[&JavaStr],
+    ) -> Option<Box<dyn MethodVisitor + 'a>> {
+        let mut method = MethodNode::default();
+        method.access = access;
+        method.name = name.into();
+        method.desc = descriptor.into();
+        method.signature = signature.map(Into::into);
+        method.exceptions = exceptions.iter().map(|&e| e.into()).collect();
+        self.0.methods.push(method);
+        Some(Box::new(self.0.methods.last_mut().unwrap()))
+    }
+}
+
+/// Tests that an uninitialized MethodNode can receive any visit method call.
 #[test]
 fn test_visit_and_accept_with_uninitialized_method_node() {
-    /// A class node whose `visit_method` creates "uninitialized" method nodes.
-    struct UninitializedMethods(ClassNode);
-    impl ClassVisitor for UninitializedMethods {
-        fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
-            Some(&mut self.0)
-        }
-        #[allow(clippy::field_reassign_with_default)] // the point of ASM's test
-        fn visit_method<'a>(
-            &'a mut self,
-            access: u32,
-            name: &JavaStr,
-            descriptor: &JavaStr,
-            signature: Option<&JavaStr>,
-            exceptions: &[&JavaStr],
-        ) -> Option<Box<dyn MethodVisitor + 'a>> {
-            let mut method = MethodNode::default();
-            method.access = access;
-            method.name = name.into();
-            method.desc = descriptor.into();
-            method.signature = signature.map(Into::into);
-            method.exceptions = exceptions.iter().map(|&e| e.into()).collect();
-            self.0.methods.push(method);
-            Some(Box::new(self.0.methods.last_mut().unwrap()))
-        }
+    for &class in PrecompiledClass::ALL {
+        let class_file = class.bytes();
+        let mut class_node = UninitializedMethods(ClassNode::new());
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+
+        ClassReader::new(class_file)
+            .unwrap()
+            .accept_with_codecs(&mut class_node, &attributes(), ParsingOptions::empty())
+            .unwrap();
+        class_node.0.accept(&mut class_writer);
+
+        assert_same_class_file(class_file, &class_writer.to_bytes().unwrap(), &class);
     }
+}
+
+/// The Textifier form of `test_visit_and_accept_with_uninitialized_method_node` (P3): a class
+/// node whose method nodes are created with `MethodNode::default()` and then filled in prints like
+/// ASM's tree path.
+#[test]
+fn test_visit_and_accept_with_uninitialized_method_node_textify() {
     for &class in PrecompiledClass::ALL {
         let Golden::Ok(expected) = golden::textifier_tree(class.name(), ReaderOptions::Default)
         else {

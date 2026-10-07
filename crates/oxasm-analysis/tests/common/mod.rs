@@ -3,14 +3,59 @@
 #![allow(dead_code)] // each test file uses part of it
 
 use oxasm::opcodes::*;
-use oxasm::{JavaStr, Label, MethodVisitor, jstr};
+use oxasm::{ClassVisitor, ClassWriter, ClassWriterFlags, JavaStr, Label, MethodVisitor, jstr};
 use oxasm_tree::MethodNode;
+
+/// A class `C` with a default constructor and the given method, written with a `ClassWriter`
+/// (ASM's `MethodNodeBuilder.buildClassWithMethod`, less the `ClassFile` wrapper).
+///
+/// # Panics
+///
+/// If the writer fails.
+pub fn build_class_with_method(method_node: &MethodNode) -> Vec<u8> {
+    let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+    class_writer.visit(
+        V1_5,
+        ACC_PUBLIC,
+        jstr!("C"),
+        None,
+        Some(jstr!("java/lang/Object")),
+        &[],
+    );
+    {
+        let mut method_visitor = class_writer
+            .visit_method(ACC_PUBLIC, jstr!("<init>"), jstr!("()V"), None, &[])
+            .expect("a method writer");
+        method_visitor.visit_code();
+        method_visitor.visit_var_insn(ALOAD, 0);
+        method_visitor.visit_method_insn(
+            INVOKESPECIAL,
+            jstr!("java/lang/Object"),
+            jstr!("<init>"),
+            jstr!("()V"),
+            false,
+        );
+        method_visitor.visit_insn(RETURN);
+        method_visitor.visit_maxs(1, 1);
+        method_visitor.visit_end();
+    }
+    method_node.accept(&mut class_writer);
+    class_writer.to_bytes().expect("a class file")
+}
+
+/// ASM's `assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance())`: the JVM
+/// defines and verifies the class (through the oracle).
+#[track_caller]
+pub fn assert_new_instance(method_node: &MethodNode) {
+    let class_file = build_class_with_method(method_node);
+    if let Err(error) = oxasm_testkit::jvm::verify_class(&class_file) {
+        panic!("the JVM rejects the class: {error}");
+    }
+}
 
 /// A builder of `MethodNode`s for tests (ASM's `MethodNodeBuilder`): a public method `m` of
 /// class `C`, built through its visitor methods.
 ///
-/// ASM's `buildClassWithMethod` (a class file made with a `ClassWriter`) waits for the writer
-/// (P5).
 pub struct MethodNodeBuilder {
     method_node: MethodNode,
 }

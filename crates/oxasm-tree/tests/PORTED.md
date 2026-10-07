@@ -7,14 +7,14 @@ test class of ASM at tag `ASM_9_10_1` (`asm-tree/src/test/java`). A phase is don
 - **Java tests:** `@Test`/`@ParameterizedTest` methods in the Java class.
 - **Ported / Dropped:** Java tests covered by Rust tests / deliberately not ported (each drop names its reason
   in a comment in the Rust file, e.g. ADR-09 for `api`-version tests).
-- **Status:** *pending*, *partial* or *ported*. The 4 tests missing from the counts compare `ClassWriter`
-  outputs (with `ClassFile` dumps) and are pending P5, as the plan schedules writer-dependent tree tests; each
-  has an interim Textifier-based version until then.
+- **Status:** *pending*, *partial* or *ported*. The 4 tests that compare `ClassWriter` outputs (with
+  `ClassFile` dumps) were ported with the writer (P5); the Textifier forms that stood in for them in P3 are
+  kept as `*_textify` tests.
 
 | Java test class | Phase | Java tests | Ported | Dropped | Status | Notes |
 |---|---|---:|---:|---:|---|---|
 | `AnnotationNodeTest` | P3 | 4 | 3 | 1 | ported | `testConstructor_illegalState` dropped (no subclassing, ADR-09); plus a test of every kind of value |
-| `ClassNodeTest` | P3 / P5 | 6 | 1 | 2 | partial | `testConstructor_illegalState` and `testCheck` dropped (ADR-09); `testVisitAndAccept`, `testVisitAndAccept_cloneInstructions` and `testVisitAndAccept_removeMembersVisitor` pending P5 (writer), with interim Textifier versions (the first is `tree_textify_test.rs`); plus a `Send + Sync` test |
+| `ClassNodeTest` | P3 / P5 | 6 | 4 | 2 | ported | `testConstructor_illegalState` and `testCheck` dropped (ADR-09); `testVisitAndAccept`, `testVisitAndAccept_cloneInstructions` and `testVisitAndAccept_removeMembersVisitor` over every T0 class (no `Api` axis), comparing `ClassFile` dumps, with their P3 Textifier forms kept (`*_textify`, and `tree_textify_test.rs`); plus a `Send + Sync` test |
 | `FieldInsnNodeTest` | P3 | 2 | 2 | 0 | ported |  |
 | `FieldNodeTest` | P3 | 2 | 1 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09) |
 | `FrameNodeTest` | P3 | 2 | 1 | 1 | ported | `testConstructor_illegalArgument` dropped (`FrameKind` cannot hold an unknown type); plus a test of what each kind keeps |
@@ -29,7 +29,7 @@ test class of ASM at tag `ASM_9_10_1` (`asm-tree/src/test/java`). A phase is don
 | `LineNumberNodeTest` | P3 | 1 | 1 | 0 | ported |  |
 | `LookupSwitchInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
 | `MethodInsnNodeTest` | P3 | 3 | 3 | 0 | ported |  |
-| `MethodNodeTest` | P3 / P5 | 4 | 2 | 1 | partial | `testConstructor_illegalState` dropped (ADR-09); `testVisitAndAccept_withUninitializedMethodNode` pending P5 (writer), with an interim Textifier version; plus try catch annotation index and label flag tests |
+| `MethodNodeTest` | P3 / P5 | 4 | 3 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09); `testVisitAndAccept_withUninitializedMethodNode` compares `ClassFile` dumps, its P3 Textifier form kept (`*_textify`); plus try catch annotation index and label flag tests |
 | `ModuleNodeTest` | P3 | 3 | 2 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09); plus a test of every directive |
 | `MultiANewArrayInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
 | `RecordComponentNodeTest` | P3 | 2 | 1 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09) |
@@ -38,7 +38,7 @@ test class of ASM at tag `ASM_9_10_1` (`asm-tree/src/test/java`). A phase is don
 | `TypeInsnNodeTest` | P3 | 2 | 2 | 0 | ported |  |
 | `UtilTest` | P3 | 3 | 1 | 2 | ported | `Util` is not ported; `testAsArrayList_nullArray` and `testAsArrayList_withLength` dropped (no null arrays; a chop frame carries its count); `testAsArrayList_withLengthAndArray` is `FrameNode::new` keeping one stack item |
 | `VarInsnNodeTest` | P3 | 2 | 2 | 0 | ported |  |
-| **total** | | **113** | **92** | **17** | | 4 pending P5 |
+| **total** | | **113** | **96** | **17** | | |
 
 **oxasm-specific:** `tree_textify_test.rs`, the P3 gate on T0: reader → `ClassNode` → Textifier equals ASM's
 tree path (`textifier_tree` goldens) for every T0 class and reader option.

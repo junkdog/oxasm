@@ -12,13 +12,15 @@
 //!   oracle's `TypeNotPresentException(name)`, where ASM's class loading gives
 //!   `Type java.lang.ClassNotFoundException: D not present`.
 //! - `buildClassWithMethod(methodNode).newInstance()`, which checks that the JVM verifier
-//!   accepts the method, needs the writer: these lines are `// P5:` comments.
+//!   accepts the method, is split in two: the tests write the class (`build_class_with_method`),
+//!   and an ignored twin, `<test>_new_instance`, has the JVM verify it (`cargo test --
+//!   --ignored`, which needs the oracle).
 //! - The `Api` axis of `testAnalyze_simpleVerifier` is dropped (ADR-09): it loops over
 //!   `PrecompiledClass::ALL`.
 
 mod common;
 
-use common::MethodNodeBuilder;
+use common::{MethodNodeBuilder, assert_new_instance, build_class_with_method};
 use oxasm::opcodes::*;
 use oxasm::{ClassReader, Label, MapHierarchy, ParsingOptions, Type, jstr};
 use oxasm_analysis::{Analyzer, AnalyzerError, SimpleVerifier};
@@ -74,11 +76,10 @@ fn analyze(method_node: &MethodNode) -> Result<(), AnalyzerError> {
         .map(|_| ())
 }
 
-#[test]
-fn test_analyze_different_dimensions() {
+fn test_analyze_different_dimensions_method_node() -> MethodNode {
     let otherwise = Label::new();
     let finish = Label::new();
-    let method_node = MethodNodeBuilder::with_descriptor("()[Ljava/io/Serializable;", 3, 1)
+    MethodNodeBuilder::with_descriptor("()[Ljava/io/Serializable;", 3, 1)
         .insn(ICONST_0)
         .ifne(otherwise)
         .iconst_0()
@@ -92,21 +93,33 @@ fn test_analyze_different_dimensions() {
         .multi_a_new_array_insn("[[[Ljava/lang/System;", 3)
         .label(finish)
         .areturn()
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_different_dimensions() {
+    let method_node = test_analyze_different_dimensions_method_node();
 
     let analyze = analyze(&method_node);
 
     analyze.unwrap();
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
 }
 
 #[test]
-fn test_analyze_array_of_current_class() {
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_different_dimensions_new_instance() {
+    assert_new_instance(&test_analyze_different_dimensions_method_node());
+}
+
+fn test_analyze_array_of_current_class_method_node() -> MethodNode {
     let label0 = Label::new();
     let label1 = Label::new();
     let label2 = Label::new();
     let label3 = Label::new();
-    let method_node = MethodNodeBuilder::new()
+    MethodNodeBuilder::new()
         .iconst_0()
         .type_insn(ANEWARRAY, CLASS_NAME)
         .astore(1)
@@ -131,12 +144,25 @@ fn test_analyze_array_of_current_class() {
         .go(label2)
         .label(label3)
         .vreturn()
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_array_of_current_class() {
+    let method_node = test_analyze_array_of_current_class_method_node();
 
     let analyze = analyze(&method_node);
 
     analyze.unwrap();
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_array_of_current_class_new_instance() {
+    assert_new_instance(&test_analyze_array_of_current_class_method_node());
 }
 
 #[test]
@@ -222,10 +248,9 @@ fn test_analyze_class_not_found() {
     assert!(message.contains("Type D not present"), "{message}");
 }
 
-#[test]
-fn test_analyze_merge_stack_frames() {
+fn test_analyze_merge_stack_frames_method_node() -> MethodNode {
     let loop_label = Label::new();
-    let method_node = MethodNodeBuilder::with_maxs(1, 4)
+    MethodNodeBuilder::with_maxs(1, 4)
         .aload(0)
         .astore(1)
         .aconst_null()
@@ -243,12 +268,25 @@ fn test_analyze_merge_stack_frames() {
         .type_insn(CHECKCAST, "java/lang/Integer")
         .astore(3)
         .go(loop_label)
-        .build();
+        .build()
+}
+
+#[test]
+fn test_analyze_merge_stack_frames() {
+    let method_node = test_analyze_merge_stack_frames_method_node();
 
     let analyze = analyze(&method_node);
 
     analyze.unwrap();
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_analyze_merge_stack_frames_new_instance() {
+    assert_new_instance(&test_analyze_merge_stack_frames_method_node());
 }
 
 #[test]
@@ -365,11 +403,10 @@ fn test_analyze_simple_verifier() {
 /// merged type is recomputed by SimpleVerifier as Object (because of limitations of the merging
 /// algorithm, due to multiple interface inheritance), but the subtyping check is relaxed if the
 /// super type is an interface type.
-#[test]
-fn test_is_assignable_from_interface() {
+fn test_is_assignable_from_interface_method_node() -> MethodNode {
     let else_label = Label::new();
     let end_if_label = Label::new();
-    let method_node = MethodNodeBuilder::with_descriptor(
+    MethodNodeBuilder::with_descriptor(
         "(Ljava/util/ArrayList;Ljava/sql/SQLException;)Ljava/lang/Iterable;",
         1,
         3,
@@ -382,12 +419,25 @@ fn test_is_assignable_from_interface() {
     .aload(2)
     .label(end_if_label)
     .areturn()
-    .build();
+    .build()
+}
+
+#[test]
+fn test_is_assignable_from_interface() {
+    let method_node = test_is_assignable_from_interface_method_node();
 
     let analyze = analyze(&method_node);
 
     analyze.unwrap();
-    // P5: assertDoesNotThrow(() -> MethodNodeBuilder.buildClassWithMethod(methodNode).newInstance());
+    // ASM: assertDoesNotThrow(() -> buildClassWithMethod(methodNode).newInstance()): the class
+    // is written here, and verified by the JVM in the ignored test below.
+    build_class_with_method(&method_node);
+}
+
+#[test]
+#[ignore = "needs the JVM oracle"]
+fn test_is_assignable_from_interface_new_instance() {
+    assert_new_instance(&test_is_assignable_from_interface_method_node());
 }
 
 fn new_analyzer() -> Analyzer<SimpleVerifier<MapHierarchy>> {

@@ -224,6 +224,9 @@ impl CustomAttribute for Comment {
     fn name(&self) -> &JavaStr {
         jstr!("Comment")
     }
+    fn write(&self, _cx: &mut oxasm::writer::AttributeWriteContext<'_>) -> Vec<u8> {
+        Vec::new()
+    }
     fn textify(&self, _label_name: &mut dyn FnMut(Label) -> String) -> Option<String> {
         Some(" : comment\n".to_owned())
     }
@@ -242,6 +245,9 @@ impl CustomAttribute for CodeComment {
     }
     fn labels(&self) -> Vec<Label> {
         vec![self.0]
+    }
+    fn write(&self, _cx: &mut oxasm::writer::AttributeWriteContext<'_>) -> Vec<u8> {
+        Vec::new()
     }
     fn textify(&self, label_name: &mut dyn FnMut(Label) -> String) -> Option<String> {
         Some(format!(" -> {}\n", label_name(self.0)))

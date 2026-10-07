@@ -1,8 +1,8 @@
 //! The error types of this crate (ADR-06), in one place.
 //!
-//! The writing error (`WriteError`) arrives with the class writer (P5).
-
 use thiserror::Error;
+
+use crate::jstr::JavaString;
 
 pub use crate::hierarchy::{HierarchyError, MalformedHierarchy};
 pub use crate::jstr::Utf8Error;
@@ -92,4 +92,68 @@ pub enum ReadErrorKind {
     /// A custom attribute codec rejected its attribute.
     #[error("invalid attribute: {0}")]
     InvalidAttribute(String),
+}
+
+/// An error that prevents a [`ClassWriter`](crate::ClassWriter) from producing a class file: what
+/// ASM's `ClassWriter`, its method writers and its symbol table throw.
+///
+/// The visitor methods of a class writer cannot fail (ADR-06): an error ASM throws in the middle of
+/// a visit is recorded where ASM throws it, the visit goes on, and
+/// [`ClassWriter::to_bytes`](crate::ClassWriter::to_bytes) returns the first recorded error.
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum WriteError {
+    /// The constant pool of the class has more than 65535 entries (ASM's
+    /// `ClassTooLargeException`).
+    #[error("Class too large: {class_name}")]
+    ClassTooLarge {
+        /// The internal name of the class.
+        class_name: JavaString,
+        /// The number of constant pool items of the class (plus 1).
+        constant_pool_count: usize,
+    },
+    /// The Code attribute of a method has more than 65535 bytes of bytecode (ASM's
+    /// `MethodTooLargeException`).
+    #[error("Method too large: {class_name}.{method_name} {descriptor}")]
+    MethodTooLarge {
+        /// The internal name of the owner class.
+        class_name: JavaString,
+        /// The name of the method.
+        method_name: JavaString,
+        /// The descriptor of the method.
+        descriptor: JavaString,
+        /// The size of the method's Code attribute, in bytes.
+        code_size: usize,
+    },
+    /// A string has more than 65535 UTF-16 units, or its modified UTF-8 encoding has more than
+    /// 65535 bytes.
+    #[error("UTF8 string too large")]
+    Utf8TooLarge,
+    /// An invalid argument was passed to a visitor method (ASM's `IllegalArgumentException`).
+    #[error("{0}")]
+    InvalidArgument(String),
+    /// A visitor method was called in an invalid state (ASM's `IllegalStateException`).
+    #[error("{0}")]
+    IllegalState(String),
+    /// An index is out of bounds: ASM's `ArrayIndexOutOfBoundsException` (e.g. a parameter
+    /// annotation for a parameter the method descriptor does not have) and
+    /// `StringIndexOutOfBoundsException` (e.g. an empty descriptor).
+    #[error("{0}")]
+    IndexOutOfBounds(String),
+    /// A malformed method descriptor.
+    #[error(transparent)]
+    InvalidDescriptor(#[from] InvalidDescriptor),
+    /// The class hierarchy could not answer a question that the computation of stack map frames
+    /// needed.
+    #[error(transparent)]
+    Hierarchy(#[from] HierarchyError),
+    /// A feature of ASM's class writer that oxasm does not have yet: computing the maximum stack
+    /// size, the number of locals or the stack map frames (P6).
+    #[doc(hidden)]
+    #[error("not yet ported: {0}")]
+    NotYetPorted(&'static str),
+    /// The class file written before replacing the ASM specific instructions could not be read
+    /// back (this would be an oxasm bug).
+    #[error("rereading the class: {0}")]
+    Reread(ReadError),
 }

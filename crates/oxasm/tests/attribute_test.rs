@@ -1,13 +1,20 @@
-//! Port of ASM's `AttributeTest` (the read half; `testStaticWrite` and `testCachedContent` need
-//! the class writer, P5), plus oxasm's tests of the read half of the codec API (ADR-10).
+//! Port of ASM's `AttributeTest`, plus oxasm's tests of the read half of the codec API (ADR-10).
+//!
+//! ASM's `testStaticWrite` and `testCachedContent` call the package-private `Attribute.write`,
+//! `computeAttributesSize` and `putAttributes` directly; here a class writer calls them, and the
+//! tests check the class file it writes.
 
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 use oxasm::error::{ReadError, ReadErrorKind};
+use oxasm::opcodes::{ACC_PUBLIC, V1_1};
 use oxasm::reader::AttributeReadContext;
+use oxasm::writer::AttributeWriteContext;
 use oxasm::{
-    Attribute, AttributeCodec, ClassReader, ClassVisitor, CustomAttribute, JavaStr, JavaString,
-    Label, MethodVisitor, ParsingOptions, UnknownAttribute, jstr,
+    Attribute, AttributeCodec, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags,
+    CustomAttribute, JavaStr, JavaString, Label, MethodVisitor, ParsingOptions, UnknownAttribute,
+    jstr,
 };
 use oxasm_testkit::PrecompiledClass;
 
@@ -28,7 +35,106 @@ fn test_get_labels() {
     assert_eq!(unknown("Comment").labels(), Vec::<Label>::new());
 }
 
-// testStaticWrite and testCachedContent: P5 (they write attributes with a ClassWriter).
+/// ASM's `ByteAttribute`: an attribute whose content is one byte, incremented after each write
+/// (so a second, uncached, write would give another content).
+#[derive(Debug)]
+struct ByteAttribute {
+    value: AtomicU8,
+}
+
+impl ByteAttribute {
+    fn attribute(value: u8) -> Attribute {
+        Attribute::Custom(Box::new(ByteAttribute {
+            value: AtomicU8::new(value),
+        }))
+    }
+}
+
+impl Clone for ByteAttribute {
+    fn clone(&self) -> Self {
+        ByteAttribute {
+            value: AtomicU8::new(self.value.load(Ordering::Relaxed)),
+        }
+    }
+}
+
+impl CustomAttribute for ByteAttribute {
+    fn name(&self) -> &JavaStr {
+        jstr!("Byte")
+    }
+
+    fn write(&self, _cx: &mut AttributeWriteContext<'_>) -> Vec<u8> {
+        vec![self.value.fetch_add(1, Ordering::Relaxed)]
+    }
+}
+
+/// A class writer that has visited a class `C` with the given class attributes.
+fn class_writer_with_attributes(attributes: &[Attribute]) -> ClassWriter<'static> {
+    let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+    class_writer.visit(
+        V1_1,
+        ACC_PUBLIC,
+        jstr!("C"),
+        None,
+        Some(jstr!("java/lang/Object")),
+        &[],
+    );
+    for attribute in attributes {
+        class_writer.visit_attribute(attribute);
+    }
+    class_writer
+}
+
+#[test]
+fn test_static_write() {
+    let mut class_writer = class_writer_with_attributes(&[ByteAttribute::attribute(42)]);
+
+    // The attribute is written once (to compute its size and to put it), and its content is
+    // cached: writing the class twice gives the same content. The class attributes come last.
+    let content0 = class_writer.to_bytes().unwrap();
+    let content1 = class_writer.to_bytes().unwrap();
+
+    assert_eq!(content0.last(), Some(&42));
+    assert_eq!(content1.last(), Some(&42));
+}
+
+#[test]
+fn test_cached_content() {
+    // ASM's list (42, 123): a writer keeps its attributes in the reverse visit order.
+    let mut class_writer = class_writer_with_attributes(&[
+        ByteAttribute::attribute(123),
+        ByteAttribute::attribute(42),
+    ]);
+
+    let class_file = class_writer.to_bytes().unwrap();
+
+    // The two attributes, each 6 header bytes and 1 byte of content, end the class file.
+    let size = 14;
+    let result = &class_file[class_file.len() - size..];
+    assert_eq!(result[6], 42);
+    assert_eq!(result[13], 123);
+    // And the class file is well formed (the ClassFile dumper rejects unknown attributes).
+    let mut visitor = AttributeCollector::default();
+    ClassReader::new(&class_file)
+        .unwrap()
+        .accept(&mut visitor, ParsingOptions::empty())
+        .unwrap();
+    assert_eq!(visitor.contents, [vec![123], vec![42]]);
+}
+
+/// Collects the content of the class attributes it visits.
+#[derive(Default)]
+struct AttributeCollector {
+    contents: Vec<Vec<u8>>,
+}
+
+impl ClassVisitor for AttributeCollector {
+    fn visit_attribute(&mut self, attribute: &Attribute) {
+        if let Attribute::Unknown(attribute) = attribute {
+            self.contents.push(attribute.content.clone());
+        }
+    }
+}
 
 /// The `SourceFile` attribute, decoded by a codec instead of the reader (a reader handles the
 /// standard attributes itself, so this one is renamed in a copy of a class file).
@@ -40,6 +146,10 @@ struct Source {
 impl CustomAttribute for Source {
     fn name(&self) -> &JavaStr {
         jstr!("Source")
+    }
+
+    fn write(&self, cx: &mut AttributeWriteContext<'_>) -> Vec<u8> {
+        cx.new_utf8(&self.file).to_be_bytes().to_vec()
     }
 }
 
@@ -78,6 +188,13 @@ impl CustomAttribute for Mark {
 
     fn labels(&self) -> Vec<Label> {
         vec![self.0]
+    }
+
+    fn write(&self, cx: &mut AttributeWriteContext<'_>) -> Vec<u8> {
+        cx.label_offset(self.0)
+            .expect("a resolved label")
+            .to_be_bytes()
+            .to_vec()
     }
 }
 
