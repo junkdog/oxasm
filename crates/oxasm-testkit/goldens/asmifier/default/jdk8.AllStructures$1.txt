@@ -1,0 +1,116 @@
+package asm.jdk8;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.Attribute;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.ConstantDynamic;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.RecordComponentVisitor;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.TypePath;
+public class AllStructures$1Dump implements Opcodes {
+
+public static byte[] dump () throws Exception {
+
+ClassWriter classWriter = new ClassWriter(0);
+FieldVisitor fieldVisitor;
+RecordComponentVisitor recordComponentVisitor;
+MethodVisitor methodVisitor;
+AnnotationVisitor annotationVisitor0;
+
+classWriter.visit(V1_8, ACC_SUPER, "jdk8/AllStructures$1", null, "java/lang/Object", new String[] { "java/lang/Runnable" });
+
+classWriter.visitSource("AllStructures.java", null);
+
+classWriter.visitOuterClass("jdk8/AllStructures", "anonymousInnerClass", "()Ljava/lang/Runnable;");
+
+classWriter.visitInnerClass("jdk8/AllStructures$1", null, null, 0);
+
+classWriter.visitInnerClass("jdk8/AllStructures$InnerClass", "jdk8/AllStructures", "InnerClass", ACC_PRIVATE);
+
+{
+fieldVisitor = classWriter.visitField(ACC_FINAL | ACC_SYNTHETIC, "this$0", "Ljdk8/AllStructures;", null, null);
+fieldVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(0, "<init>", "(Ljdk8/AllStructures;)V", null, null);
+methodVisitor.visitParameter("this$0", ACC_FINAL | ACC_MANDATED);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(99, label0);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitVarInsn(ALOAD, 1);
+methodVisitor.visitFieldInsn(PUTFIELD, "jdk8/AllStructures$1", "this$0", "Ljdk8/AllStructures;");
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+methodVisitor.visitInsn(RETURN);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLocalVariable("this", "Ljdk8/AllStructures$1;", "Ljdk8/AllStructures$1;", label0, label1, 0);
+methodVisitor.visitLocalVariable("this$0", "Ljdk8/AllStructures;", null, label0, label1, 1);
+methodVisitor.visitMaxs(2, 2);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC, "run", "()V", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(103, label0);
+methodVisitor.visitTypeInsn(NEW, "jdk8/AllStructures$InnerClass");
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk8/AllStructures$1", "this$0", "Ljdk8/AllStructures;");
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk8/AllStructures$1", "this$0", "Ljdk8/AllStructures;");
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk8/AllStructures", "access$000", "(Ljdk8/AllStructures;)D", false);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk8/AllStructures$1", "this$0", "Ljdk8/AllStructures;");
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk8/AllStructures", "access$100", "(Ljdk8/AllStructures;)D", false);
+methodVisitor.visitInsn(DADD);
+methodVisitor.visitInsn(ACONST_NULL);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk8/AllStructures$InnerClass", "<init>", "(Ljdk8/AllStructures;DLjdk8/AllStructures$1;)V", false);
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk8/AllStructures$InnerClass", "access$300", "(Ljdk8/AllStructures$InnerClass;)D", false);
+methodVisitor.visitVarInsn(DSTORE, 1);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLineNumber(104, label1);
+methodVisitor.visitTypeInsn(NEW, "jdk8/AllStructures$InnerClass");
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk8/AllStructures$1", "this$0", "Ljdk8/AllStructures;");
+methodVisitor.visitVarInsn(DLOAD, 1);
+methodVisitor.visitInsn(ACONST_NULL);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk8/AllStructures$InnerClass", "<init>", "(Ljdk8/AllStructures;DLjdk8/AllStructures$1;)V", false);
+methodVisitor.visitInsn(POP);
+Label label2 = new Label();
+methodVisitor.visitLabel(label2);
+methodVisitor.visitLineNumber(105, label2);
+methodVisitor.visitInsn(RETURN);
+Label label3 = new Label();
+methodVisitor.visitLabel(label3);
+methodVisitor.visitLocalVariable("this", "Ljdk8/AllStructures$1;", "Ljdk8/AllStructures$1;", label0, label3, 0);
+methodVisitor.visitLocalVariable("f", "D", null, label1, label3, 1);
+{
+annotationVisitor0 = methodVisitor.visitLocalVariableAnnotation(1073741824, null, new Label[] { label1 }, new Label[] { label3 }, new int[] { 1 }, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(0));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitLocalVariableAnnotation(1073741824, null, new Label[] { label1 }, new Label[] { label3 }, new int[] { 1 }, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(1));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitMaxs(7, 3);
+methodVisitor.visitEnd();
+}
+classWriter.visitEnd();
+
+return classWriter.toByteArray();
+}
+}

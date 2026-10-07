@@ -46,7 +46,7 @@ impl GoldenSet {
     }
 }
 
-const SETS: [GoldenSet; 11] = [
+const SETS: [GoldenSet; 12] = [
     GoldenSet::new("textifier/default", &["textify"]),
     GoldenSet::new("textifier/skip_code", &["textify", "--opts", "SKIP_CODE"]),
     GoldenSet::new("textifier/skip_debug", &["textify", "--opts", "SKIP_DEBUG"]),
@@ -59,6 +59,7 @@ const SETS: [GoldenSet; 11] = [
         &["textify", "--opts", "EXPAND_FRAMES"],
     ),
     GoldenSet::new("dump", &["dump"]),
+    GoldenSet::new("asmifier/default", &["asmify"]),
     // ASM's tree path (reader -> ClassNode -> Textifier) prints some classes differently from its
     // direct path (Code attributes and try catch block annotations move), hence deltas.
     GoldenSet::delta(

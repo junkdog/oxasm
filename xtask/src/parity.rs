@@ -4,7 +4,8 @@
 //! computes oxasm's side of each mode and compares the two.
 //!
 //! The oxasm side exists for the Textifier modes (P2), direct and through a `ClassNode` (P3), the
-//! analysis modes (P4), the writer modes that compute nothing (P5), and `maxs` and `frames` (P6).
+//! analysis modes (P4), the writer modes that compute nothing (P5), `maxs` and `frames` (P6), and
+//! the ASMifier and check adapter modes (P7).
 //! A class on which ASM fails agrees with oxasm iff oxasm fails too ("both reject").
 
 use std::fs;
@@ -13,11 +14,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use oxasm::{
-    ClassHierarchy, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, MapHierarchy,
-    ParsingOptions,
+    ClassHierarchy, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, JavaStr,
+    MapHierarchy, ParsingOptions,
 };
 use oxasm_tree::ClassNode;
-use oxasm_util::TraceClassVisitor;
+use oxasm_util::check::CheckClassAdapter;
+use oxasm_util::trace::NoDelegate;
+use oxasm_util::{Asmifier, Printer, Textifier, TraceClassVisitor};
 
 use crate::analysis::{self, Interp};
 use crate::args::Args;
@@ -35,10 +38,29 @@ struct Mode {
     /// For a Textifier mode, whether the class is read into a `ClassNode` first (which then
     /// visits the `TraceClassVisitor`).
     tree: bool,
+    /// For a Textifier mode, whether the printer is an ASMifier instead (P7).
+    asmify: bool,
     /// For an analysis mode, the interpreter: oxasm's side is the oracle's `analyze` output.
     analyze: Option<Interp>,
     /// For a writer mode, how the class is written: oxasm's side is the class file.
     roundtrip: Option<Roundtrip>,
+    /// For a check mode, how the class is checked: oxasm's side is "OK", or the panic message
+    /// of a check adapter (ASM's exception), or the output of `verify`.
+    check: Option<Check>,
+}
+
+/// How a check mode checks a class (the oracle's `check --mode`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Check {
+    /// A `CheckClassAdapter` with data flow checks, without a downstream visitor.
+    Plain,
+    /// A `CheckClassAdapter` without data flow checks.
+    NoDataFlow,
+    /// A `CheckClassAdapter` with data flow checks, and a `ClassWriter` without flags
+    /// downstream (so that the max stack sizes and the frames are checked too).
+    Writer,
+    /// `check::verify`, with the frames of each method.
+    Verify,
 }
 
 /// How a writer mode writes a class.
@@ -55,11 +77,14 @@ struct Roundtrip {
 impl Mode {
     /// Whether oxasm computes its side of this mode (yet).
     fn has_oxasm_side(&self) -> bool {
-        self.textify.is_some() || self.analyze.is_some() || self.roundtrip.is_some()
+        self.textify.is_some()
+            || self.analyze.is_some()
+            || self.roundtrip.is_some()
+            || self.check.is_some()
     }
 }
 
-const MODES: [Mode; 25] = [
+const MODES: [Mode; 35] = [
     Mode::textify("textify", "textify", ParsingOptions::empty()),
     Mode::textify(
         "textify-skip-code",
@@ -102,6 +127,31 @@ const MODES: [Mode; 25] = [
         "tree-textify --opts EXPAND_FRAMES",
         ParsingOptions::EXPAND_FRAMES,
     ),
+    Mode::asmify("asmify", "asmify", ParsingOptions::empty()),
+    Mode::asmify(
+        "asmify-skip-code",
+        "asmify --opts SKIP_CODE",
+        ParsingOptions::SKIP_CODE,
+    ),
+    Mode::asmify(
+        "asmify-skip-debug",
+        "asmify --opts SKIP_DEBUG",
+        ParsingOptions::SKIP_DEBUG,
+    ),
+    Mode::asmify(
+        "asmify-skip-frames",
+        "asmify --opts SKIP_FRAMES",
+        ParsingOptions::SKIP_FRAMES,
+    ),
+    Mode::asmify(
+        "asmify-expand-frames",
+        "asmify --opts EXPAND_FRAMES",
+        ParsingOptions::EXPAND_FRAMES,
+    ),
+    Mode {
+        tree: true,
+        ..Mode::asmify("tree-asmify", "tree-asmify", ParsingOptions::empty())
+    },
     Mode::roundtrip("copy", "roundtrip --mode 0 --copy-pool", Roundtrip::copy()),
     Mode::roundtrip("plain", "roundtrip --mode 0", Roundtrip::plain()),
     Mode::roundtrip(
@@ -166,6 +216,17 @@ const MODES: [Mode; 25] = [
         )
     },
     Mode::analyze("analyze-source", "analyze --interp source", Interp::Source),
+    Mode::check("check-plain", "check --mode plain", Check::Plain),
+    Mode::check(
+        "check-nodataflow",
+        "check --mode nodataflow",
+        Check::NoDataFlow,
+    ),
+    Mode::check("check-writer", "check --mode writer", Check::Writer),
+    Mode {
+        needs_hierarchy: true,
+        ..Mode::check("check-verify", "check --mode verify", Check::Verify)
+    },
 ];
 
 impl Mode {
@@ -176,8 +237,17 @@ impl Mode {
             needs_hierarchy: false,
             textify: None,
             tree: false,
+            asmify: false,
             analyze: None,
             roundtrip: None,
+            check: None,
+        }
+    }
+
+    const fn check(name: &'static str, command: &'static str, check: Check) -> Mode {
+        Mode {
+            check: Some(check),
+            ..Mode::new(name, command)
         }
     }
 
@@ -185,6 +255,13 @@ impl Mode {
         Mode {
             textify: Some(options),
             ..Mode::new(name, command)
+        }
+    }
+
+    const fn asmify(name: &'static str, command: &'static str, options: ParsingOptions) -> Mode {
+        Mode {
+            asmify: true,
+            ..Mode::textify(name, command, options)
         }
     }
 
@@ -309,6 +386,22 @@ pub fn cli(mut args: Args) -> Result<()> {
             .collect::<Result<_>>()?
     };
 
+    if modes.iter().any(|m| m.check.is_some()) {
+        // The check adapters panic on the classes they reject, which is an expected outcome:
+        // only report the other panics.
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let message = info
+                .payload()
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| info.payload().downcast_ref::<&str>().copied());
+            if !message.is_some_and(|m| m.starts_with("java.lang.")) {
+                default_hook(info);
+            }
+        }));
+    }
+
     let oracle = Oracle::locate()?;
     let mut classes = tier_classes(&tier)?;
     if let Some(n) = sample {
@@ -378,27 +471,17 @@ fn oxasm_outcome(mode: &Mode, class_file: &[u8], hierarchy: Option<&MapHierarchy
         if let Some(roundtrip) = mode.roundtrip {
             return write_class(class_file, roundtrip, mode.tree, hierarchy);
         }
+        if let Some(check) = mode.check {
+            return check_class(class_file, check, hierarchy);
+        }
         let options = mode
             .textify
             .expect("only Textifier and analysis modes have an oxasm side");
-        let mut output = Vec::new();
-        let mut trace_class_visitor = TraceClassVisitor::new(&mut output);
-        let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
-        if mode.tree {
-            let mut class_node = ClassNode::default();
-            reader
-                .accept(&mut class_node, options)
-                .map_err(|e| e.to_string())?;
-            class_node.accept(&mut trace_class_visitor);
+        if mode.asmify {
+            print_class(class_file, Asmifier::new(), options, mode.tree)
         } else {
-            reader
-                .accept(&mut trace_class_visitor, options)
-                .map_err(|e| e.to_string())?;
+            print_class(class_file, Textifier::new(), options, mode.tree)
         }
-        trace_class_visitor
-            .take_io_error()
-            .map_err(|e| e.to_string())?;
-        Ok(output)
     });
     match result {
         Ok(Ok(output)) => Outcome::Ok(output),
@@ -412,6 +495,34 @@ fn oxasm_outcome(mode: &Mode, class_file: &[u8], hierarchy: Option<&MapHierarchy
                 .unwrap_or("?")
         )),
     }
+}
+
+/// oxasm's side of a Textifier or ASMifier mode: the text printed by a `TraceClassVisitor` with
+/// the given printer (ASM's `Oracle.print`).
+fn print_class(
+    class_file: &[u8],
+    printer: impl Printer,
+    options: ParsingOptions,
+    tree: bool,
+) -> Result<Vec<u8>, String> {
+    let mut output = Vec::new();
+    let mut trace_class_visitor = TraceClassVisitor::with_printer(printer, &mut output);
+    let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
+    if tree {
+        let mut class_node = ClassNode::default();
+        reader
+            .accept(&mut class_node, options)
+            .map_err(|e| e.to_string())?;
+        class_node.accept(&mut trace_class_visitor);
+    } else {
+        reader
+            .accept(&mut trace_class_visitor, options)
+            .map_err(|e| e.to_string())?;
+    }
+    trace_class_visitor
+        .take_io_error()
+        .map_err(|e| e.to_string())?;
+    Ok(output)
 }
 
 /// oxasm's side of a writer mode: the class read and written back (ASM's
@@ -446,6 +557,58 @@ fn write_class(
     class_writer.to_bytes().map_err(|e| e.to_string())
 }
 
+/// oxasm's side of a check mode (ASM's `Oracle.check`): "OK", or the message of the panic of a
+/// check adapter (the `toString()` of ASM's exception), or the output of `verify`.
+fn check_class(
+    class_file: &[u8],
+    check: Check,
+    hierarchy: Option<&MapHierarchy>,
+) -> Result<Vec<u8>, String> {
+    let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match check {
+        Check::Verify => {
+            let hierarchy = hierarchy.ok_or("check-verify needs a hierarchy")?;
+            let mut output = Vec::new();
+            oxasm_util::check::verify(&reader, hierarchy, true, &mut output)
+                .map_err(|e| e.to_string())?;
+            Ok(output)
+        }
+        Check::Plain | Check::NoDataFlow => {
+            let mut adapter =
+                CheckClassAdapter::with_check_data_flow(NoDelegate, check == Check::Plain);
+            reader
+                .accept(&mut adapter, ParsingOptions::empty())
+                .map_err(|e| e.to_string())?;
+            Ok(b"OK\n".to_vec())
+        }
+        Check::Writer => {
+            let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+            reader
+                .accept(
+                    &mut CheckClassAdapter::new(&mut class_writer),
+                    ParsingOptions::empty(),
+                )
+                .map_err(|e| e.to_string())?;
+            Ok(b"OK\n".to_vec())
+        }
+    }));
+    match result {
+        Ok(result) => result,
+        Err(panic) => {
+            let message = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("?");
+            if message.starts_with("java.lang.") {
+                Ok(format!("{message}\n").into_bytes())
+            } else {
+                std::panic::resume_unwind(panic)
+            }
+        }
+    }
+}
+
 /// Compares oxasm's side of a mode with the cached oracle results, prints a summary and the
 /// first mismatches, and writes each mismatch's outputs under `target/parity/<tier>/<mode>/`.
 /// Returns the number of mismatched classes.
@@ -473,8 +636,20 @@ fn compare_mode(
                 scope.spawn(move || -> Result<Vec<(usize, String)>> {
                     let mut mismatches = Vec::new();
                     for (i, class) in chunk.iter().enumerate() {
-                        let oracle = oracle_outcome(cache, class)?;
-                        let oxasm = oxasm_outcome(mode, &class.bytes, hierarchy);
+                        let mut oracle = oracle_outcome(cache, class)?;
+                        let mut oxasm = oxasm_outcome(mode, &class.bytes, hierarchy);
+                        if mode.check.is_some() {
+                            // oxasm's panic messages are Rust strings, where each unpaired
+                            // surrogate of a name became one U+FFFD (JavaStr's Display): compare
+                            // both sides so.
+                            for outcome in [&mut oracle, &mut oxasm] {
+                                if let Outcome::Ok(text) = outcome
+                                    && let Ok(java_text) = JavaStr::from_semi_utf8(text)
+                                {
+                                    *text = java_text.to_string().into_bytes();
+                                }
+                            }
+                        }
                         if let Some(report) = mismatch(&oracle, &oxasm) {
                             fs::create_dir_all(out)?;
                             let base = out.join(&class.sha256);

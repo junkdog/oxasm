@@ -1,0 +1,284 @@
+package asm.jdk5;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.Attribute;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.ConstantDynamic;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.RecordComponentVisitor;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.TypePath;
+public class AllStructures$InvisibleAnnotationDump implements Opcodes {
+
+public static byte[] dump () throws Exception {
+
+ClassWriter classWriter = new ClassWriter(0);
+FieldVisitor fieldVisitor;
+RecordComponentVisitor recordComponentVisitor;
+MethodVisitor methodVisitor;
+AnnotationVisitor annotationVisitor0;
+
+classWriter.visit(V1_5, ACC_ANNOTATION | ACC_ABSTRACT | ACC_INTERFACE, "jdk5/AllStructures$InvisibleAnnotation", null, "java/lang/Object", new String[] { "java/lang/annotation/Annotation" });
+
+classWriter.visitSource("AllStructures.java", null);
+
+{
+annotationVisitor0 = classWriter.visitAnnotation("Ljava/lang/annotation/Retention;", true);
+annotationVisitor0.visitEnum("value", "Ljava/lang/annotation/RetentionPolicy;", "CLASS");
+annotationVisitor0.visitEnd();
+}
+classWriter.visitInnerClass("jdk5/AllStructures$EnumClass", "jdk5/AllStructures", "EnumClass", ACC_FINAL | ACC_STATIC | ACC_ENUM);
+
+classWriter.visitInnerClass("jdk5/AllStructures$InvisibleAnnotation", "jdk5/AllStructures", "InvisibleAnnotation", ACC_STATIC | ACC_ANNOTATION | ACC_ABSTRACT | ACC_INTERFACE);
+
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "byteValue", "()B", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Byte.valueOf((byte)1));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "charValue", "()C", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Character.valueOf((char)49));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "booleanValue", "()Z", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Boolean.TRUE);
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "intValue", "()I", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Integer.valueOf(1));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "shortValue", "()S", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Short.valueOf((short)1));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "longValue", "()J", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Long.valueOf(1L));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "floatValue", "()F", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Float.valueOf("1.0"));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "doubleValue", "()D", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Double.valueOf("1.0"));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "stringValue", "()Ljava/lang/String;", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, "1");
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "classValue", "()Ljava/lang/Class;", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Type.getType("Ljava/lang/Object;"));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "enumValue", "()Ljdk5/AllStructures$EnumClass;", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visitEnum(null, "Ljdk5/AllStructures$EnumClass;", "VALUE1");
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "annotationValue", "()Ljava/lang/Deprecated;", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+{
+AnnotationVisitor annotationVisitor1 = annotationVisitor0.visitAnnotation(null, "Ljava/lang/Deprecated;");
+annotationVisitor1.visitEnd();
+}
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "byteArrayValue", "()[B", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, new byte[] {1});
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "charArrayValue", "()[C", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, new char[] {(char)49});
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "booleanArrayValue", "()[Z", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, new boolean[] {true});
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "intArrayValue", "()[I", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, new int[] {1});
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "shortArrayValue", "()[S", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, new short[] {(short)1});
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "longArrayValue", "()[J", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, new long[] {1L});
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "floatArrayValue", "()[F", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, new float[] {1.0f});
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "doubleArrayValue", "()[D", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, new double[] {1.0d});
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "stringArrayValue", "()[Ljava/lang/String;", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+{
+AnnotationVisitor annotationVisitor1 = annotationVisitor0.visitArray(null);
+annotationVisitor1.visit(null, "1");
+annotationVisitor1.visitEnd();
+}
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "classArrayValue", "()[Ljava/lang/Class;", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+{
+AnnotationVisitor annotationVisitor1 = annotationVisitor0.visitArray(null);
+annotationVisitor1.visit(null, Type.getType("Ljava/lang/Object;"));
+annotationVisitor1.visitEnd();
+}
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "enumArrayValue", "()[Ljdk5/AllStructures$EnumClass;", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+{
+AnnotationVisitor annotationVisitor1 = annotationVisitor0.visitArray(null);
+annotationVisitor1.visitEnum(null, "Ljdk5/AllStructures$EnumClass;", "VALUE1");
+annotationVisitor1.visitEnd();
+}
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "annotationArrayValue", "()[Ljava/lang/Deprecated;", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+{
+AnnotationVisitor annotationVisitor1 = annotationVisitor0.visitArray(null);
+{
+AnnotationVisitor annotationVisitor2 = annotationVisitor1.visitAnnotation(null, "Ljava/lang/Deprecated;");
+annotationVisitor2.visitEnd();
+}
+annotationVisitor1.visitEnd();
+}
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, "otherArrayValue", "()[I", null, null);
+methodVisitor.visitEnd();
+}
+classWriter.visitEnd();
+
+return classWriter.toByteArray();
+}
+}

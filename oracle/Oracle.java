@@ -28,6 +28,8 @@
  *   textify [--opts O]           ClassReader.accept(TraceClassVisitor(Textifier), O)
  *   tree-textify [--opts O]      as textify, but through a ClassNode: ClassReader.accept(ClassNode,
  *                                O), then ClassNode.accept(TraceClassVisitor(Textifier))
+ *   asmify [--opts O]            ClassReader.accept(TraceClassVisitor(ASMifier), O)
+ *   tree-asmify [--opts O]       as asmify, but through a ClassNode
  *   dump                         new ClassFile(bytes).toString()
  *   roundtrip --mode M [--copy-pool] [--opts O] [--hierarchy F]
  *                                ClassReader -> ClassWriter(flags); M is 0, maxs or frames;
@@ -63,7 +65,7 @@
  *             u32 m, m bytes of class file
  *   response: u8 status (0 ok, 1 err), u32 k, k bytes of payload
  *
- * All integers are big-endian. Only the per-class commands (textify, tree-textify, dump,
+ * All integers are big-endian. Only the per-class commands (textify, tree-textify, asmify, dump,
  * roundtrip, tree-roundtrip, analyze) are served.
  *
  * The hierarchy model (--hierarchy F, a file in the format printed by `hierarchy`) replaces class
@@ -107,6 +109,7 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
@@ -128,6 +131,9 @@ import org.objectweb.asm.tree.analysis.SimpleVerifier;
 import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
 import org.objectweb.asm.tree.analysis.Value;
+import org.objectweb.asm.util.ASMifier;
+import org.objectweb.asm.util.CheckClassAdapter;
+import org.objectweb.asm.util.Printer;
 import org.objectweb.asm.util.Textifier;
 import org.objectweb.asm.util.TraceClassVisitor;
 import org.objectweb.asm.util.TraceMethodVisitor;
@@ -181,7 +187,7 @@ public final class Oracle {
   private static void usage(final String message) {
     System.err.println("oracle: " + message);
     System.err.println(
-        "usage: Oracle {textify|tree-textify|dump|roundtrip|tree-roundtrip|analyze|sift-probe|verify"
+        "usage: Oracle {textify|tree-textify|asmify|tree-asmify|check|dump|roundtrip|tree-roundtrip|analyze|sift-probe|verify"
             + "|hierarchy|gen|serve"
             + "|version} [options] <inputs...>");
     System.exit(2);
@@ -204,6 +210,27 @@ public final class Oracle {
           boolean tree = command.equals("tree-textify");
           int opts = parseReaderOptions(args.get("--opts"));
           yield classFile -> textify(classFile, tree, opts);
+        }
+        case "asmify", "tree-asmify" -> {
+          args.allow("--opts");
+          boolean tree = command.equals("tree-asmify");
+          int opts = parseReaderOptions(args.get("--opts"));
+          yield classFile -> asmify(classFile, tree, opts);
+        }
+        case "check" -> {
+          args.allow("--mode", "--hierarchy");
+          String mode = args.require("--mode");
+          Hierarchy hierarchy = Hierarchy.load(args.get("--hierarchy"));
+          switch (mode) {
+            case "plain", "nodataflow", "writer" -> {}
+            case "verify" -> {
+              if (hierarchy == null) {
+                throw new UsageException("--mode verify needs --hierarchy");
+              }
+            }
+            default -> throw new UsageException("unknown --mode " + mode);
+          }
+          yield classFile -> check(classFile, mode, hierarchy);
         }
         case "dump" -> {
           args.allow();
@@ -256,9 +283,18 @@ public final class Oracle {
   }
 
   static byte[] textify(final byte[] classFile, final boolean tree, final int readerOptions) {
+    return print(classFile, tree, readerOptions, new Textifier());
+  }
+
+  static byte[] asmify(final byte[] classFile, final boolean tree, final int readerOptions) {
+    return print(classFile, tree, readerOptions, new ASMifier());
+  }
+
+  private static byte[] print(
+      final byte[] classFile, final boolean tree, final int readerOptions, final Printer printer) {
     StringWriter text = new StringWriter();
     PrintWriter printWriter = new PrintWriter(text);
-    TraceClassVisitor traceClassVisitor = new TraceClassVisitor(null, new Textifier(), printWriter);
+    TraceClassVisitor traceClassVisitor = new TraceClassVisitor(null, printer, printWriter);
     if (tree) {
       ClassNode classNode = new ClassNode();
       new ClassReader(classFile).accept(classNode, readerOptions);
@@ -268,6 +304,90 @@ public final class Oracle {
     }
     printWriter.flush();
     return semiUtf8(text.toString());
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // check
+  // -----------------------------------------------------------------------------------------------
+
+  /** CheckClassAdapter.printAnalyzerResult, which is package private. */
+  private static final Method PRINT_ANALYZER_RESULT;
+
+  static {
+    try {
+      PRINT_ANALYZER_RESULT =
+          CheckClassAdapter.class.getDeclaredMethod(
+              "printAnalyzerResult", MethodNode.class, Analyzer.class, PrintWriter.class);
+      PRINT_ANALYZER_RESULT.setAccessible(true);
+    } catch (ReflectiveOperationException e) {
+      throw new ExceptionInInitializerError(e);
+    }
+  }
+
+  /**
+   * Checks a class with a CheckClassAdapter, and prints "OK", or the toString() of the exception
+   * that a check adapter throws (an exception thrown by ASM elsewhere, such as the reader, fails the
+   * command). Modes: "plain" (data flow checks, no downstream visitor), "nodataflow", "writer" (data
+   * flow checks, with a ClassWriter(0) downstream, so that the max stack sizes and the frames are
+   * checked too), and "verify": CheckClassAdapter.verify(reader, printResults = true), with a
+   * SimpleVerifier over the hierarchy, and the first line of each stack trace.
+   */
+  static byte[] check(final byte[] classFile, final String mode, final Hierarchy hierarchy)
+      throws Exception {
+    ClassReader classReader = new ClassReader(classFile);
+    if (mode.equals("verify")) {
+      return checkVerify(classReader, hierarchy);
+    }
+    ClassVisitor classVisitor = mode.equals("writer") ? new ClassWriter(0) : null;
+    try {
+      classReader.accept(new CheckClassAdapter(classVisitor, !mode.equals("nodataflow")), 0);
+    } catch (RuntimeException e) {
+      if (!thrownByCheckAdapter(e)) {
+        throw e;
+      }
+      return semiUtf8(e + "\n");
+    }
+    return semiUtf8("OK\n");
+  }
+
+  private static byte[] checkVerify(final ClassReader classReader, final Hierarchy hierarchy)
+      throws Exception {
+    ClassNode classNode = new ClassNode();
+    try {
+      classReader.accept(
+          new CheckClassAdapter(Opcodes.ASM9, classNode, false) {}, ClassReader.SKIP_DEBUG);
+    } catch (RuntimeException e) {
+      if (!thrownByCheckAdapter(e)) {
+        throw e;
+      }
+      return semiUtf8(e + "\n");
+    }
+    StringWriter text = new StringWriter();
+    PrintWriter printWriter = new PrintWriter(text);
+    for (MethodNode method : classNode.methods) {
+      Analyzer<BasicValue> analyzer =
+          new Analyzer<>(new HierarchySimpleVerifier(classNode, hierarchy));
+      try {
+        analyzer.analyze(classNode.name, method);
+      } catch (AnalyzerException e) {
+        // The first line of e.printStackTrace(printWriter).
+        printWriter.println(e);
+      }
+      PRINT_ANALYZER_RESULT.invoke(null, method, analyzer, printWriter);
+    }
+    printWriter.flush();
+    return semiUtf8(text.toString());
+  }
+
+  /** Whether the first ASM method of the stack trace is one of a check adapter. */
+  private static boolean thrownByCheckAdapter(final Throwable e) {
+    for (StackTraceElement element : e.getStackTrace()) {
+      String className = element.getClassName();
+      if (className.startsWith("org.objectweb.asm.")) {
+        return className.startsWith("org.objectweb.asm.util.Check");
+      }
+    }
+    return false;
   }
 
   static byte[] roundtrip(

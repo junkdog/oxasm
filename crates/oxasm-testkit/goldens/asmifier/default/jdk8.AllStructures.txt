@@ -1,0 +1,634 @@
+package asm.jdk8;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.Attribute;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.ConstantDynamic;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.RecordComponentVisitor;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.TypePath;
+public class AllStructuresDump implements Opcodes {
+
+public static byte[] dump () throws Exception {
+
+ClassWriter classWriter = new ClassWriter(0);
+FieldVisitor fieldVisitor;
+RecordComponentVisitor recordComponentVisitor;
+MethodVisitor methodVisitor;
+AnnotationVisitor annotationVisitor0;
+
+classWriter.visit(V1_8, ACC_PUBLIC | ACC_SUPER | ACC_ABSTRACT, "jdk8/AllStructures", "<U0:Ljava/lang/Object;U1::Ljava/util/List<TU0;>;U2::Ljava/util/Collection<TU0;>;>Ljava/util/HashMap<TU0;TU1;>;Ljava/util/concurrent/Callable<TU0;>;Ljava/util/concurrent/Future<TU1;>;", "java/util/HashMap", new String[] { "java/util/concurrent/Callable", "java/util/concurrent/Future" });
+
+classWriter.visitSource("AllStructures.java", null);
+
+{
+annotationVisitor0 = classWriter.visitAnnotation("Lannotations/VTA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(0));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitAnnotation("Lannotations/ITA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(1));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285212416, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(14));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285212416, TypePath.fromString("0;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(16));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285212416, TypePath.fromString("1;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(18));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(268435456, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(20));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(268435456, TypePath.fromString("0;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(22));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(268435712, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(24));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(268435712, TypePath.fromString("0;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(26));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(0, null, "Lannotations/VTPA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(2));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(65536, null, "Lannotations/VTPA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(4));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285278464, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(6));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(131072, null, "Lannotations/VTPA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(8));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285344000, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(10));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285344000, TypePath.fromString("0;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(12));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285212416, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(15));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285212416, TypePath.fromString("0;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(17));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285212416, TypePath.fromString("1;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(19));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(268435456, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(21));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(268435456, TypePath.fromString("0;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(23));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(268435712, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(25));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(268435712, TypePath.fromString("0;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(27));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(0, null, "Lannotations/ITPA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(3));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(65536, null, "Lannotations/ITPA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(5));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285278464, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(7));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(131072, null, "Lannotations/ITPA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(9));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285344000, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(11));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285344000, TypePath.fromString("0;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(13));
+annotationVisitor0.visitEnd();
+}
+classWriter.visitInnerClass("jdk8/AllStructures$\ud835\udd3b", "jdk8/AllStructures", "\ud835\udd3b", ACC_PRIVATE);
+
+classWriter.visitInnerClass("jdk8/AllStructures$InnerClass", "jdk8/AllStructures", "InnerClass", ACC_PRIVATE);
+
+classWriter.visitInnerClass("jdk8/AllStructures$1", null, null, 0);
+
+{
+fieldVisitor = classWriter.visitField(ACC_PUBLIC, "f", "Ljava/util/HashMap;", "Ljava/util/HashMap<TU0;TU1;>;", null);
+{
+annotationVisitor0 = fieldVisitor.visitAnnotation("Lannotations/VFA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(28));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = fieldVisitor.visitAnnotation("Lannotations/IFA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(29));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = fieldVisitor.visitTypeAnnotation(318767104, TypePath.fromString("0;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(30));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = fieldVisitor.visitTypeAnnotation(318767104, TypePath.fromString("1;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(32));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = fieldVisitor.visitTypeAnnotation(318767104, TypePath.fromString("0;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(31));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = fieldVisitor.visitTypeAnnotation(318767104, TypePath.fromString("1;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(33));
+annotationVisitor0.visitEnd();
+}
+fieldVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(ACC_PRIVATE, "g", "D", null, null);
+fieldVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC, "<init>", "()V", null, null);
+{
+annotationVisitor0 = methodVisitor.visitAnnotation("Lannotations/VCA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(34));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitAnnotation("Lannotations/ICA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(35));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(80, label0);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "java/util/HashMap", "<init>", "()V", false);
+methodVisitor.visitInsn(RETURN);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLocalVariable("this", "Ljdk8/AllStructures;", "Ljdk8/AllStructures<TU0;TU1;TU2;>;", label0, label1, 0);
+methodVisitor.visitMaxs(1, 1);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC, "m", "(Ljava/lang/Object;Ljava/util/List;Ljava/util/Map;)Ljava/util/Map;", "<V0:TU0;V1:TU1;>(TV0;TV1;Ljava/util/Map<+TV0;+TV1;>;)Ljava/util/Map<+TV0;+TV1;>;", new String[] { "java/lang/IllegalStateException", "java/lang/IllegalArgumentException" });
+methodVisitor.visitParameter("p0", 0);
+methodVisitor.visitParameter("p1", 0);
+methodVisitor.visitParameter("p2", 0);
+{
+annotationVisitor0 = methodVisitor.visitAnnotation("Lannotations/VMA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(36));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitAnnotation("Lannotations/IMA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(37));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(335544320, TypePath.fromString("0;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(48));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(335544320, TypePath.fromString("1;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(50));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(16777216, null, "Lannotations/VTPA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(38));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(301989888, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(40));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(16842752, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(42));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(302055424, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(44));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(385875968, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(62));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(385876224, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(64));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(335544320, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(46));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(369229824, TypePath.fromString("0;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(58));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(369229824, TypePath.fromString("1;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(60));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(335544320, TypePath.fromString("0;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(49));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(335544320, TypePath.fromString("1;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(51));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(16777216, null, "Lannotations/ITPA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(39));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(301989888, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(41));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(16842752, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(43));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(302055424, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(45));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(385875968, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(63));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(385876224, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(65));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(335544320, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(47));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(369229824, TypePath.fromString("0;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(59));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(369229824, TypePath.fromString("1;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(61));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitAnnotableParameterCount(3, true);
+{
+annotationVisitor0 = methodVisitor.visitParameterAnnotation(0, "Lannotations/VPA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(52));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitParameterAnnotation(1, "Lannotations/VPA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(54));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitParameterAnnotation(2, "Lannotations/VPA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(56));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitAnnotableParameterCount(3, false);
+{
+annotationVisitor0 = methodVisitor.visitParameterAnnotation(0, "Lannotations/IPA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(53));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitParameterAnnotation(1, "Lannotations/IPA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(55));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitParameterAnnotation(2, "Lannotations/IPA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(57));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitCode();
+Label label0 = new Label();
+Label label1 = new Label();
+Label label2 = new Label();
+methodVisitor.visitTryCatchBlock(label0, label1, label2, "java/lang/IllegalStateException");
+methodVisitor.visitTryCatchBlock(label0, label1, label2, "java/lang/IllegalArgumentException");
+{
+annotationVisitor0 = methodVisitor.visitTryCatchAnnotation(1107296512, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(80));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTryCatchAnnotation(1107296256, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(78));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTryCatchAnnotation(1107296512, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(81));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTryCatchAnnotation(1107296256, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(79));
+annotationVisitor0.visitEnd();
+}
+Label label3 = new Label();
+methodVisitor.visitLabel(label3);
+methodVisitor.visitLineNumber(100, label3);
+methodVisitor.visitVarInsn(ALOAD, 2);
+methodVisitor.visitVarInsn(ASTORE, 4);
+Label label4 = new Label();
+methodVisitor.visitLabel(label4);
+methodVisitor.visitLineNumber(103, label4);
+methodVisitor.visitVarInsn(ALOAD, 3);
+methodVisitor.visitVarInsn(ASTORE, 5);
+Label label5 = new Label();
+methodVisitor.visitLabel(label5);
+methodVisitor.visitLineNumber(106, label5);
+methodVisitor.visitVarInsn(ALOAD, 4);
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1191182336, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(76));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1191182336, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(77));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitTypeInsn(CHECKCAST, "java/util/ArrayList");
+methodVisitor.visitVarInsn(ASTORE, 6);
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(108, label0);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitVarInsn(ALOAD, 1);
+methodVisitor.visitVarInsn(ALOAD, 2);
+methodVisitor.visitVarInsn(ALOAD, 3);
+methodVisitor.visitMethodInsn(INVOKEVIRTUAL, "jdk8/AllStructures", "m", "(Ljava/lang/Object;Ljava/util/List;Ljava/util/Map;)Ljava/util/Map;", false);
+methodVisitor.visitInsn(POP);
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLineNumber(113, label1);
+Label label6 = new Label();
+methodVisitor.visitJumpInsn(GOTO, label6);
+methodVisitor.visitLabel(label2);
+methodVisitor.visitLineNumber(109, label2);
+methodVisitor.visitFrame(Opcodes.F_FULL, 7, new Object[] {"jdk8/AllStructures", "java/lang/Object", "java/util/List", "java/util/Map", "java/util/List", "java/util/Map", "java/util/ArrayList"}, 1, new Object[] {"java/lang/RuntimeException"});
+methodVisitor.visitVarInsn(ASTORE, 7);
+methodVisitor.visitLabel(label6);
+methodVisitor.visitLineNumber(114, label6);
+methodVisitor.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+methodVisitor.visitVarInsn(ALOAD, 5);
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1124073472, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(82));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1124073472, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(83));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitTypeInsn(INSTANCEOF, "java/util/HashMap");
+Label label7 = new Label();
+methodVisitor.visitJumpInsn(IFEQ, label7);
+Label label8 = new Label();
+methodVisitor.visitLabel(label8);
+methodVisitor.visitLineNumber(115, label8);
+methodVisitor.visitVarInsn(ALOAD, 5);
+methodVisitor.visitInsn(ARETURN);
+methodVisitor.visitLabel(label7);
+methodVisitor.visitLineNumber(117, label7);
+methodVisitor.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk8/AllStructures", "m", "()V", false);
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1224736768, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(84));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1224736769, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(85));
+annotationVisitor0.visitEnd();
+}
+Label label9 = new Label();
+methodVisitor.visitLabel(label9);
+methodVisitor.visitLineNumber(118, label9);
+methodVisitor.visitTypeInsn(NEW, "java/util/HashMap");
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1140850688, null, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(86));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1140850688, TypePath.fromString("0;"), "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(88));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1140850688, null, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(87));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1140850688, TypePath.fromString("1;"), "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(89));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "java/util/HashMap", "<init>", "()V", false);
+methodVisitor.visitInsn(ARETURN);
+Label label10 = new Label();
+methodVisitor.visitLabel(label10);
+methodVisitor.visitLocalVariable("this", "Ljdk8/AllStructures;", "Ljdk8/AllStructures<TU0;TU1;TU2;>;", label3, label10, 0);
+methodVisitor.visitLocalVariable("p0", "Ljava/lang/Object;", "TV0;", label3, label10, 1);
+methodVisitor.visitLocalVariable("p1", "Ljava/util/List;", "TV1;", label3, label10, 2);
+methodVisitor.visitLocalVariable("p2", "Ljava/util/Map;", "Ljava/util/Map<+TV0;+TV1;>;", label3, label10, 3);
+methodVisitor.visitLocalVariable("l1", "Ljava/util/List;", "TV1;", label4, label10, 4);
+methodVisitor.visitLocalVariable("l2", "Ljava/util/Map;", "Ljava/util/Map<+TV0;+TV1;>;", label5, label10, 5);
+methodVisitor.visitLocalVariable("l3", "Ljava/util/ArrayList;", null, label0, label10, 6);
+{
+annotationVisitor0 = methodVisitor.visitLocalVariableAnnotation(1073741824, TypePath.fromString("0;"), new Label[] { label5 }, new Label[] { label10 }, new int[] { 5 }, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(70));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitLocalVariableAnnotation(1073741824, TypePath.fromString("1;"), new Label[] { label5 }, new Label[] { label10 }, new int[] { 5 }, "Lannotations/VTUA;", true);
+annotationVisitor0.visit("v", Integer.valueOf(72));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitLocalVariableAnnotation(1073741824, TypePath.fromString("0;"), new Label[] { label5 }, new Label[] { label10 }, new int[] { 5 }, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(71));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitLocalVariableAnnotation(1073741824, TypePath.fromString("1;"), new Label[] { label5 }, new Label[] { label10 }, new int[] { 5 }, "Lannotations/ITUA;", false);
+annotationVisitor0.visit("v", Integer.valueOf(73));
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitMaxs(4, 8);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PRIVATE | ACC_STATIC, "m", "()V", "<U:Ljava/lang/Object;V:Ljava/lang/Object;>()V", null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(121, label0);
+methodVisitor.visitInsn(RETURN);
+methodVisitor.visitMaxs(0, 0);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PRIVATE, "n", "()D", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(126, label0);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk8/AllStructures", "g", "D");
+methodVisitor.visitInsn(DRETURN);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLocalVariable("this", "Ljdk8/AllStructures;", "Ljdk8/AllStructures<TU0;TU1;TU2;>;", label0, label1, 0);
+methodVisitor.visitMaxs(2, 1);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PRIVATE, "anonymousInnerClass", "()Ljava/lang/Runnable;", null, new String[] { "java/lang/Exception" });
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(130, label0);
+methodVisitor.visitTypeInsn(NEW, "jdk8/AllStructures$1");
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk8/AllStructures$1", "<init>", "(Ljdk8/AllStructures;)V", false);
+methodVisitor.visitInsn(ARETURN);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLocalVariable("this", "Ljdk8/AllStructures;", "Ljdk8/AllStructures<TU0;TU1;TU2;>;", label0, label1, 0);
+methodVisitor.visitMaxs(3, 1);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_STATIC | ACC_SYNTHETIC, "access$000", "(Ljdk8/AllStructures;)D", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(64, label0);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk8/AllStructures", "g", "D");
+methodVisitor.visitInsn(DRETURN);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLocalVariable("x0", "Ljdk8/AllStructures;", null, label0, label1, 0);
+methodVisitor.visitMaxs(2, 1);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_STATIC | ACC_SYNTHETIC, "access$100", "(Ljdk8/AllStructures;)D", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(64, label0);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk8/AllStructures", "n", "()D", false);
+methodVisitor.visitInsn(DRETURN);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLocalVariable("x0", "Ljdk8/AllStructures;", null, label0, label1, 0);
+methodVisitor.visitMaxs(2, 1);
+methodVisitor.visitEnd();
+}
+classWriter.visitEnd();
+
+return classWriter.toByteArray();
+}
+}

@@ -23,13 +23,24 @@ const THROWABLE: &JavaStr = oxasm::jstr!("java/lang/Throwable");
 #[allow(unused_variables)]
 pub trait AnalyzerHooks<V> {
     /// Called just before the control flow analysis loop, after the first frame is computed
-    /// (ASM's `init`). Does nothing by default.
+    /// and stored at instruction 0 (ASM's `init`). Does nothing by default.
+    ///
+    /// `frames` and `handlers` are the analyzer's state, as ASM's `getFrames()` and
+    /// `getHandlers(int)` give it to a subclass: the frame of each instruction (which this hook
+    /// may set; the analysis then merges into them), and the exception handlers of each
+    /// instruction, as indices in the method's `try_catch_blocks`.
     ///
     /// # Errors
     ///
     /// To make the analysis fail. A [runtime](AnalyzerError::runtime) error is reported at the
     /// first instruction, with an `Error at instruction 0: ` prefix; others as they are.
-    fn init(&mut self, owner: &JavaStr, method: &MethodNode) -> Result<(), AnalyzerError> {
+    fn init(
+        &mut self,
+        owner: &JavaStr,
+        method: &MethodNode,
+        frames: &mut [Option<Frame<V>>],
+        handlers: &[Vec<usize>],
+    ) -> Result<(), AnalyzerError> {
         Ok(())
     }
 
@@ -73,8 +84,14 @@ pub trait AnalyzerHooks<V> {
 impl<V> AnalyzerHooks<V> for () {}
 
 impl<V, H: AnalyzerHooks<V> + ?Sized> AnalyzerHooks<V> for &mut H {
-    fn init(&mut self, owner: &JavaStr, method: &MethodNode) -> Result<(), AnalyzerError> {
-        (**self).init(owner, method)
+    fn init(
+        &mut self,
+        owner: &JavaStr,
+        method: &MethodNode,
+        frames: &mut [Option<Frame<V>>],
+        handlers: &[Vec<usize>],
+    ) -> Result<(), AnalyzerError> {
+        (**self).init(owner, method, frames, handlers)
     }
     fn init_jump_target(&mut self, frame: &mut Frame<V>, opcode: u8, target: Option<Label>) {
         (**self).init_jump_target(frame, opcode, target);
@@ -334,7 +351,8 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
     ) -> Result<Frame<I::V>, AnalyzerError> {
         let frame = self.compute_initial_frame(owner, max_stack)?;
         self.merge(0, &frame, None)?;
-        self.hooks.init(owner, self.method)?;
+        self.hooks
+            .init(owner, self.method, self.frames, self.handlers)?;
         Ok(frame)
     }
 

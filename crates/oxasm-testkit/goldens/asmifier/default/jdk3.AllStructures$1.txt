@@ -1,0 +1,97 @@
+package asm.jdk3;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.Attribute;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.ConstantDynamic;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.RecordComponentVisitor;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.TypePath;
+public class AllStructures$1Dump implements Opcodes {
+
+public static byte[] dump () throws Exception {
+
+ClassWriter classWriter = new ClassWriter(0);
+FieldVisitor fieldVisitor;
+RecordComponentVisitor recordComponentVisitor;
+MethodVisitor methodVisitor;
+AnnotationVisitor annotationVisitor0;
+
+classWriter.visit(V1_1, ACC_SUPER, "jdk3/AllStructures$1", null, "java/lang/Object", new String[] { "java/lang/Runnable" });
+
+classWriter.visitSource("AllStructures.java", null);
+
+classWriter.visitInnerClass("jdk3/AllStructures$1", null, null, 0);
+
+classWriter.visitInnerClass("jdk3/AllStructures$InnerClass", "jdk3/AllStructures", "InnerClass", ACC_PRIVATE);
+
+{
+fieldVisitor = classWriter.visitField(ACC_PRIVATE | ACC_FINAL | ACC_SYNTHETIC, "this$0", "Ljdk3/AllStructures;", null, null);
+fieldVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(0, "<init>", "(Ljdk3/AllStructures;)V", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(41, label0);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitVarInsn(ALOAD, 1);
+methodVisitor.visitFieldInsn(PUTFIELD, "jdk3/AllStructures$1", "this$0", "Ljdk3/AllStructures;");
+methodVisitor.visitInsn(RETURN);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLocalVariable("this", "Ljdk3/AllStructures$1;", null, label0, label1, 0);
+methodVisitor.visitLocalVariable("this$0", "Ljdk3/AllStructures;", null, label0, label1, 1);
+methodVisitor.visitMaxs(2, 2);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC, "run", "()V", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(42, label0);
+methodVisitor.visitTypeInsn(NEW, "jdk3/AllStructures$InnerClass");
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk3/AllStructures$1", "this$0", "Ljdk3/AllStructures;");
+methodVisitor.visitTypeInsn(NEW, "jdk3/AllStructures$InnerClass");
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk3/AllStructures$1", "this$0", "Ljdk3/AllStructures;");
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk3/AllStructures$1", "this$0", "Ljdk3/AllStructures;");
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk3/AllStructures", "access$000", "(Ljdk3/AllStructures;)D", false);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk3/AllStructures$1", "this$0", "Ljdk3/AllStructures;");
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk3/AllStructures", "access$100", "(Ljdk3/AllStructures;)D", false);
+methodVisitor.visitInsn(DADD);
+methodVisitor.visitInsn(ACONST_NULL);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk3/AllStructures$InnerClass", "<init>", "(Ljdk3/AllStructures;DLjdk3/AllStructures$1;)V", false);
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk3/AllStructures$InnerClass", "access$300", "(Ljdk3/AllStructures$InnerClass;)D", false);
+methodVisitor.visitInsn(ACONST_NULL);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk3/AllStructures$InnerClass", "<init>", "(Ljdk3/AllStructures;DLjdk3/AllStructures$1;)V", false);
+methodVisitor.visitInsn(POP);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLineNumber(43, label1);
+methodVisitor.visitInsn(RETURN);
+Label label2 = new Label();
+methodVisitor.visitLabel(label2);
+methodVisitor.visitLocalVariable("this", "Ljdk3/AllStructures$1;", null, label0, label2, 0);
+methodVisitor.visitMaxs(10, 1);
+methodVisitor.visitEnd();
+}
+classWriter.visitEnd();
+
+return classWriter.toByteArray();
+}
+}

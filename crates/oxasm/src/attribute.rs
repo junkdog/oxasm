@@ -100,6 +100,19 @@ pub trait CustomAttribute: Any + Debug + Send + Sync + DynClone {
         None
     }
 
+    /// The Java code that creates this attribute in a variable named `variable_name`, which the
+    /// ASMifier prints before visiting it (ASM's `ASMifierSupport.asmify`); `None` (the default)
+    /// prints only an `// ATTRIBUTE` comment. `label_name` returns the ASMifier's name of a
+    /// label, naming it first if it has none yet (without declaring it), as the `labelNames`
+    /// map passed to Java's `asmify` does.
+    fn asmify(
+        &self,
+        _variable_name: &str,
+        _label_name: &mut dyn FnMut(Label) -> String,
+    ) -> Option<String> {
+        None
+    }
+
     /// The content of this attribute, i.e. the bytes after its `attribute_length` (ASM's
     /// `Attribute.write`). A class writer calls this once per attribute, and keeps the result.
     ///

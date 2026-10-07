@@ -732,6 +732,10 @@ impl<'h> ClassWriter<'h> {
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // Java's int arithmetic
 impl ClassVisitor for ClassWriter<'_> {
+    fn class_writer_flags(&self) -> Option<ClassWriterFlags> {
+        Some(self.flags)
+    }
+
     fn visit(
         &mut self,
         version: u32,

@@ -47,7 +47,13 @@ fn analyze_error<I: Interpreter, H: AnalyzerHooks<I::V>>(
 fn test_analyze_runtime_exceptions() {
     struct NewFrameError;
     impl AnalyzerHooks<MockValue> for NewFrameError {
-        fn init(&mut self, _owner: &JavaStr, _method: &MethodNode) -> Result<(), AnalyzerError> {
+        fn init(
+            &mut self,
+            _owner: &JavaStr,
+            _method: &MethodNode,
+            _frames: &mut [Option<Frame<MockValue>>],
+            _handlers: &[Vec<usize>],
+        ) -> Result<(), AnalyzerError> {
             Err(AnalyzerError::runtime("newFrame error"))
         }
     }

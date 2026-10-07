@@ -1,0 +1,182 @@
+package asm.jdk5;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.Attribute;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.ConstantDynamic;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.RecordComponentVisitor;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.TypePath;
+public class AllStructures$EnumClassDump implements Opcodes {
+
+public static byte[] dump () throws Exception {
+
+ClassWriter classWriter = new ClassWriter(0);
+FieldVisitor fieldVisitor;
+RecordComponentVisitor recordComponentVisitor;
+MethodVisitor methodVisitor;
+AnnotationVisitor annotationVisitor0;
+
+classWriter.visit(V1_5, ACC_FINAL | ACC_SUPER | ACC_ENUM, "jdk5/AllStructures$EnumClass", "Ljava/lang/Enum<Ljdk5/AllStructures$EnumClass;>;", "java/lang/Enum", null);
+
+classWriter.visitSource("AllStructures.java", null);
+
+classWriter.visitInnerClass("jdk5/AllStructures$EnumClass", "jdk5/AllStructures", "EnumClass", ACC_FINAL | ACC_STATIC | ACC_ENUM);
+
+{
+fieldVisitor = classWriter.visitField(ACC_PUBLIC | ACC_FINAL | ACC_STATIC | ACC_ENUM, "VALUE0", "Ljdk5/AllStructures$EnumClass;", null, null);
+fieldVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(ACC_PUBLIC | ACC_FINAL | ACC_STATIC | ACC_ENUM, "VALUE1", "Ljdk5/AllStructures$EnumClass;", null, null);
+fieldVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(ACC_PUBLIC | ACC_FINAL | ACC_STATIC | ACC_ENUM, "VALUE2", "Ljdk5/AllStructures$EnumClass;", null, null);
+fieldVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(ACC_PRIVATE, "value", "I", null, null);
+fieldVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(ACC_PRIVATE | ACC_FINAL | ACC_STATIC | ACC_SYNTHETIC, "$VALUES", "[Ljdk5/AllStructures$EnumClass;", null, null);
+fieldVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_FINAL | ACC_STATIC, "values", "()[Ljdk5/AllStructures$EnumClass;", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(200, label0);
+methodVisitor.visitFieldInsn(GETSTATIC, "jdk5/AllStructures$EnumClass", "$VALUES", "[Ljdk5/AllStructures$EnumClass;");
+methodVisitor.visitMethodInsn(INVOKEVIRTUAL, "[Ljdk5/AllStructures$EnumClass;", "clone", "()Ljava/lang/Object;", false);
+methodVisitor.visitTypeInsn(CHECKCAST, "[Ljdk5/AllStructures$EnumClass;");
+methodVisitor.visitInsn(ARETURN);
+methodVisitor.visitMaxs(1, 0);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_STATIC, "valueOf", "(Ljava/lang/String;)Ljdk5/AllStructures$EnumClass;", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(200, label0);
+methodVisitor.visitLdcInsn(Type.getType("Ljdk5/AllStructures$EnumClass;"));
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitMethodInsn(INVOKESTATIC, "java/lang/Enum", "valueOf", "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;", false);
+methodVisitor.visitTypeInsn(CHECKCAST, "jdk5/AllStructures$EnumClass");
+methodVisitor.visitInsn(ARETURN);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLocalVariable("name", "Ljava/lang/String;", null, label0, label1, 0);
+methodVisitor.visitMaxs(2, 1);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PRIVATE, "<init>", "(Ljava/lang/String;II)V", "(I)V", null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(207, label0);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitVarInsn(ALOAD, 1);
+methodVisitor.visitVarInsn(ILOAD, 2);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "java/lang/Enum", "<init>", "(Ljava/lang/String;I)V", false);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLineNumber(208, label1);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitVarInsn(ILOAD, 3);
+methodVisitor.visitFieldInsn(PUTFIELD, "jdk5/AllStructures$EnumClass", "value", "I");
+Label label2 = new Label();
+methodVisitor.visitLabel(label2);
+methodVisitor.visitLineNumber(209, label2);
+methodVisitor.visitInsn(RETURN);
+Label label3 = new Label();
+methodVisitor.visitLabel(label3);
+methodVisitor.visitLocalVariable("this", "Ljdk5/AllStructures$EnumClass;", null, label0, label3, 0);
+methodVisitor.visitLocalVariable("value", "I", null, label0, label3, 3);
+methodVisitor.visitMaxs(3, 4);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC, "getValue", "()I", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(212, label0);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitFieldInsn(GETFIELD, "jdk5/AllStructures$EnumClass", "value", "I");
+methodVisitor.visitInsn(IRETURN);
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLocalVariable("this", "Ljdk5/AllStructures$EnumClass;", null, label0, label1, 0);
+methodVisitor.visitMaxs(1, 1);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_STATIC, "<clinit>", "()V", null, null);
+methodVisitor.visitCode();
+Label label0 = new Label();
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(201, label0);
+methodVisitor.visitTypeInsn(NEW, "jdk5/AllStructures$EnumClass");
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitLdcInsn("VALUE0");
+methodVisitor.visitInsn(ICONST_0);
+methodVisitor.visitInsn(ICONST_0);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk5/AllStructures$EnumClass", "<init>", "(Ljava/lang/String;II)V", false);
+methodVisitor.visitFieldInsn(PUTSTATIC, "jdk5/AllStructures$EnumClass", "VALUE0", "Ljdk5/AllStructures$EnumClass;");
+Label label1 = new Label();
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLineNumber(202, label1);
+methodVisitor.visitTypeInsn(NEW, "jdk5/AllStructures$EnumClass");
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitLdcInsn("VALUE1");
+methodVisitor.visitInsn(ICONST_1);
+methodVisitor.visitInsn(ICONST_1);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk5/AllStructures$EnumClass", "<init>", "(Ljava/lang/String;II)V", false);
+methodVisitor.visitFieldInsn(PUTSTATIC, "jdk5/AllStructures$EnumClass", "VALUE1", "Ljdk5/AllStructures$EnumClass;");
+Label label2 = new Label();
+methodVisitor.visitLabel(label2);
+methodVisitor.visitLineNumber(203, label2);
+methodVisitor.visitTypeInsn(NEW, "jdk5/AllStructures$EnumClass");
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitLdcInsn("VALUE2");
+methodVisitor.visitInsn(ICONST_2);
+methodVisitor.visitInsn(ICONST_2);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk5/AllStructures$EnumClass", "<init>", "(Ljava/lang/String;II)V", false);
+methodVisitor.visitFieldInsn(PUTSTATIC, "jdk5/AllStructures$EnumClass", "VALUE2", "Ljdk5/AllStructures$EnumClass;");
+Label label3 = new Label();
+methodVisitor.visitLabel(label3);
+methodVisitor.visitLineNumber(200, label3);
+methodVisitor.visitInsn(ICONST_3);
+methodVisitor.visitTypeInsn(ANEWARRAY, "jdk5/AllStructures$EnumClass");
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitInsn(ICONST_0);
+methodVisitor.visitFieldInsn(GETSTATIC, "jdk5/AllStructures$EnumClass", "VALUE0", "Ljdk5/AllStructures$EnumClass;");
+methodVisitor.visitInsn(AASTORE);
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitInsn(ICONST_1);
+methodVisitor.visitFieldInsn(GETSTATIC, "jdk5/AllStructures$EnumClass", "VALUE1", "Ljdk5/AllStructures$EnumClass;");
+methodVisitor.visitInsn(AASTORE);
+methodVisitor.visitInsn(DUP);
+methodVisitor.visitInsn(ICONST_2);
+methodVisitor.visitFieldInsn(GETSTATIC, "jdk5/AllStructures$EnumClass", "VALUE2", "Ljdk5/AllStructures$EnumClass;");
+methodVisitor.visitInsn(AASTORE);
+methodVisitor.visitFieldInsn(PUTSTATIC, "jdk5/AllStructures$EnumClass", "$VALUES", "[Ljdk5/AllStructures$EnumClass;");
+methodVisitor.visitInsn(RETURN);
+methodVisitor.visitMaxs(5, 0);
+methodVisitor.visitEnd();
+}
+classWriter.visitEnd();
+
+return classWriter.toByteArray();
+}
+}

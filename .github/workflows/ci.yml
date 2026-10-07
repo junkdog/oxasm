@@ -36,7 +36,8 @@ jobs:
       - run: cargo check --workspace --all-targets
 
   miri:
-    # ADR-18: every module containing `unsafe` runs its tests under Miri. Today that is jstr.
+    # ADR-18: every module containing `unsafe` runs its tests under Miri. Today that is jstr and
+    # oxasm-util's CheckSignatureAdapter.
     name: miri (unsafe modules)
     runs-on: ubuntu-latest
     env:
@@ -52,6 +53,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo miri setup
       - run: cargo miri test -p oxasm --lib jstr
+      - run: cargo miri test -p oxasm-util --test check_signature_adapter_test
 
   oracle:
     name: oracle
@@ -97,7 +99,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [read_noop, read_textify, read_tree, tree_ops, analyze, roundtrip, compute]
+        target: [read_noop, read_textify, read_asmify, read_tree, tree_ops, analyze, roundtrip, compute, check]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly

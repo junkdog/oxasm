@@ -1,0 +1,135 @@
+package asm.jdk3;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.Attribute;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.ConstantDynamic;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.RecordComponentVisitor;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.TypePath;
+public class ArtificialStructuresDump implements Opcodes {
+
+public static byte[] dump () throws Exception {
+
+ClassWriter classWriter = new ClassWriter(0);
+FieldVisitor fieldVisitor;
+RecordComponentVisitor recordComponentVisitor;
+MethodVisitor methodVisitor;
+AnnotationVisitor annotationVisitor0;
+
+classWriter.visit(V1_3, ACC_PUBLIC | ACC_SUPER, "jdk3/ArtificialStructures", null, "java/lang/Object", null);
+
+classWriter.visitSource("ArtificialStructures.java", "source-debug");
+
+// ATTRIBUTE Comment
+{
+fieldVisitor = classWriter.visitField(ACC_PUBLIC | ACC_SYNTHETIC, "f", "I", null, null);
+// ATTRIBUTE Comment
+fieldVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, "<init>", "(Ljava/lang/String;)V", null, null);
+// ATTRIBUTE Comment
+methodVisitor.visitCode();
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+methodVisitor.visitInsn(NOP);
+methodVisitor.visitInsn(RETURN);
+// ATTRIBUTE CodeComment
+methodVisitor.visitMaxs(1, 2);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(0, "<init>", "(Z)V", null, null);
+methodVisitor.visitCode();
+methodVisitor.visitVarInsn(ILOAD, 1);
+methodVisitor.visitVarInsn(ALOAD, 0);
+methodVisitor.visitInsn(SWAP);
+Label label0 = new Label();
+methodVisitor.visitJumpInsn(IFEQ, label0);
+methodVisitor.visitLdcInsn("1");
+Label label1 = new Label();
+methodVisitor.visitJumpInsn(GOTO, label1);
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(0, label0);
+methodVisitor.visitLineNumber(3, label0);
+methodVisitor.visitFrame(Opcodes.F_NEW, 2, new Object[] {Opcodes.UNINITIALIZED_THIS, Opcodes.INTEGER}, 1, new Object[] {Opcodes.UNINITIALIZED_THIS});
+methodVisitor.visitLdcInsn("0");
+methodVisitor.visitLabel(label1);
+methodVisitor.visitLineNumber(5, label1);
+methodVisitor.visitLineNumber(7, label1);
+methodVisitor.visitLineNumber(11, label1);
+methodVisitor.visitLineNumber(13, label1);
+methodVisitor.visitLineNumber(17, label1);
+methodVisitor.visitFrame(Opcodes.F_NEW, 2, new Object[] {Opcodes.UNINITIALIZED_THIS, Opcodes.INTEGER}, 2, new Object[] {Opcodes.UNINITIALIZED_THIS, "java/lang/String"});
+methodVisitor.visitMethodInsn(INVOKESPECIAL, "jdk3/ArtificialStructures", "<init>", "(Ljava/lang/String;)V", false);
+methodVisitor.visitInsn(RETURN);
+methodVisitor.visitMaxs(2, 2);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_STATIC, "dup_x2", "(IJ)V", null, null);
+methodVisitor.visitCode();
+methodVisitor.visitVarInsn(LLOAD, 1);
+methodVisitor.visitVarInsn(ILOAD, 0);
+methodVisitor.visitInsn(DUP_X2);
+methodVisitor.visitInsn(I2L);
+methodVisitor.visitInsn(LADD);
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk3/ArtificialStructures", "dup_x2", "(IJ)V", false);
+methodVisitor.visitInsn(RETURN);
+methodVisitor.visitMaxs(5, 3);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_STATIC, "dup2_x2", "(IIII)V", null, null);
+methodVisitor.visitCode();
+methodVisitor.visitVarInsn(ILOAD, 3);
+methodVisitor.visitVarInsn(ILOAD, 2);
+methodVisitor.visitVarInsn(ILOAD, 1);
+methodVisitor.visitVarInsn(ILOAD, 0);
+methodVisitor.visitInsn(DUP2_X2);
+methodVisitor.visitInsn(IADD);
+methodVisitor.visitInsn(IADD);
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk3/ArtificialStructures", "dup2_x2", "(IIII)V", false);
+methodVisitor.visitInsn(RETURN);
+methodVisitor.visitMaxs(6, 4);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_STATIC, "dup2_x2", "(IIJ)V", null, null);
+methodVisitor.visitCode();
+methodVisitor.visitVarInsn(LLOAD, 2);
+methodVisitor.visitVarInsn(ILOAD, 1);
+methodVisitor.visitVarInsn(ILOAD, 0);
+methodVisitor.visitInsn(DUP2_X2);
+methodVisitor.visitInsn(IADD);
+methodVisitor.visitInsn(I2L);
+methodVisitor.visitInsn(LADD);
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk3/ArtificialStructures", "dup2_x2", "(IIJ)V", false);
+methodVisitor.visitInsn(RETURN);
+methodVisitor.visitMaxs(6, 4);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_STATIC, "dup2_x2", "(JD)V", null, null);
+methodVisitor.visitCode();
+methodVisitor.visitVarInsn(DLOAD, 2);
+methodVisitor.visitVarInsn(LLOAD, 0);
+methodVisitor.visitInsn(DUP2_X2);
+methodVisitor.visitInsn(L2D);
+methodVisitor.visitInsn(DADD);
+methodVisitor.visitMethodInsn(INVOKESTATIC, "jdk3/ArtificialStructures", "dup2_x2", "(JD)V", false);
+methodVisitor.visitInsn(RETURN);
+methodVisitor.visitMaxs(6, 4);
+methodVisitor.visitEnd();
+}
+classWriter.visitEnd();
+
+return classWriter.toByteArray();
+}
+}

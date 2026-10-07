@@ -8,6 +8,7 @@ use crate::type_reference::TypeReference;
 use crate::visitor::{
     AnnotationVisitor, FieldVisitor, MethodVisitor, ModuleVisitor, RecordComponentVisitor,
 };
+use crate::writer::ClassWriterFlags;
 
 /// A visitor to visit a Java class. The methods of this trait must be called in the following
 /// order: `visit` \[ `visit_source` \] \[ `visit_module` \]\[ `visit_nest_host` \]\[
@@ -20,6 +21,18 @@ pub trait ClassVisitor {
     /// The class visitor to which this visitor must delegate method calls; `None` (the default)
     /// ends the chain. Must return the same visitor every time.
     fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
+        None
+    }
+
+    /// The flags of this visitor if it is a [`ClassWriter`](crate::ClassWriter), `None`
+    /// otherwise: ASM's `instanceof ClassWriter` test, with which a `CheckClassAdapter` finds
+    /// out whether its downstream computes the maximum stack sizes and frames (ADR-08).
+    ///
+    /// Like [`MethodVisitor::try_copy_method`], this method is deliberately **not** forwarded to
+    /// [`ClassVisitor::delegate`]: ASM only looks at the visitor itself. (The `&mut V` and
+    /// `Box<V>` impls do forward it, since they are the same visitor.)
+    #[doc(hidden)]
+    fn class_writer_flags(&self) -> Option<ClassWriterFlags> {
         None
     }
 
@@ -294,6 +307,9 @@ macro_rules! forward_class_visitor {
         impl<T: ClassVisitor + ?Sized> ClassVisitor for $ty {
             fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
                 (**self).delegate()
+            }
+            fn class_writer_flags(&self) -> Option<ClassWriterFlags> {
+                (**self).class_writer_flags()
             }
             fn visit(
                 &mut self,

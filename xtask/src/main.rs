@@ -41,9 +41,10 @@ tasks:
         oxasm's output with it (mismatches are written under target/parity/<tier>/<mode>/);
         default modes: those with an oxasm side, i.e. the Textifier ones (textify,
         textify-skip-code, textify-skip-debug, textify-skip-frames, textify-expand-frames),
-        the same through a ClassNode (tree-textify, ...) and the analysis ones (analyze-basic,
-        analyze-basicverifier, analyze-simpleverifier, analyze-source); or all of them with
-        --oracle-only (the writer modes have no oxasm side until P5)
+        the same through a ClassNode (tree-textify, ...), the ASMifier ones (asmify,
+        asmify-skip-code, ..., tree-asmify), the writer ones (copy, plain, maxs, frames, ...)
+        and the analysis ones (analyze-basic, analyze-basicverifier, analyze-simpleverifier,
+        analyze-source)
 ";
 
 fn main() -> ExitCode {

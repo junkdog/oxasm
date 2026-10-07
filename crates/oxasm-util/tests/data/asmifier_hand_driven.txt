@@ -1,0 +1,252 @@
+package asm.pkg.sub;
+import org.objectweb.asm.AnnotationVisitor;
+import org.objectweb.asm.Attribute;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.ConstantDynamic;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.RecordComponentVisitor;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.TypePath;
+public class C_é_1_Dump implements Opcodes {
+
+public static byte[] dump () throws Exception {
+
+ClassWriter classWriter = new ClassWriter(0);
+FieldVisitor fieldVisitor;
+RecordComponentVisitor recordComponentVisitor;
+MethodVisitor methodVisitor;
+AnnotationVisitor annotationVisitor0;
+
+classWriter.visit(V1_8, ACC_PUBLIC | ACC_SUPER | ACC_ABSTRACT | ACC_DEPRECATED, "pkg/sub/C-\u00e9(1)", "<T:Ljava/lang/Object;>Ljava/lang/Object;Ljava/lang/Comparable<TT;>;", "java/lang/Object", new String[] { "java/lang/Comparable", "java/io/Serializable" });
+
+classWriter.visitSource("C.java", "dbg\n");
+
+{
+ModuleVisitor moduleVisitor = classWriter.visitModule("m", ACC_TRANSITIVE | ACC_SYNTHETIC, "1.0");
+
+moduleVisitor.visitMainClass("pkg/Main");
+moduleVisitor.visitPackage("pkg");
+moduleVisitor.visitRequire("java.base", ACC_TRANSITIVE | ACC_STATIC_PHASE | ACC_MANDATED, null);
+moduleVisitor.visitRequire("other", 0, "2");
+moduleVisitor.visitExport("pkg", 0);
+moduleVisitor.visitExport("pkg/a", ACC_SYNTHETIC, new String[] { "x", "y" });
+moduleVisitor.visitOpen("pkg/b", 0, new String[] { "z" });
+moduleVisitor.visitUse("pkg/S");
+moduleVisitor.visitProvide("pkg/S",  new String[] { "pkg/I1", "pkg/I2" });
+moduleVisitor.visitEnd();
+}
+classWriter.visitNestHost("pkg/H");
+
+classWriter.visitOuterClass("pkg/O", "m", "()V");
+
+{
+annotationVisitor0 = classWriter.visitAnnotation("LA;", true);
+annotationVisitor0.visit("s", "x\"\n\u0001\u20ac");
+annotationVisitor0.visit("b", Byte.valueOf((byte)-3));
+annotationVisitor0.visit("z", Boolean.TRUE);
+annotationVisitor0.visit("zf", Boolean.FALSE);
+annotationVisitor0.visit("sh", Short.valueOf((short)-300));
+annotationVisitor0.visit("c", Character.valueOf((char)233));
+annotationVisitor0.visit("i", Integer.valueOf(-2147483648));
+annotationVisitor0.visit("j", Long.valueOf(9223372036854775807L));
+annotationVisitor0.visit("f", Float.valueOf("1.0E10"));
+annotationVisitor0.visit("d", Double.valueOf("-Infinity"));
+annotationVisitor0.visit("t", Type.getType("[[Ljava/lang/String;"));
+annotationVisitor0.visit("ab", new byte[] {1,-1});
+annotationVisitor0.visit("az", new boolean[] {true,false});
+annotationVisitor0.visit("as", new short[] {(short)2,(short)-2});
+annotationVisitor0.visit("ac", new char[] {(char)97,(char)65535});
+annotationVisitor0.visit("ai", new int[] {});
+annotationVisitor0.visit("aj", new long[] {-1L,5L});
+annotationVisitor0.visit("af", new float[] {0.1f,NaNf});
+annotationVisitor0.visit("ad", new double[] {0.1d,4.9E-324d});
+annotationVisitor0.visitEnum("e", "LE;", "V");
+{
+AnnotationVisitor annotationVisitor1 = annotationVisitor0.visitArray("arr");
+annotationVisitor1.visit(null, Long.valueOf(1L));
+{
+AnnotationVisitor annotationVisitor2 = annotationVisitor1.visitAnnotation(null, "LB;");
+{
+AnnotationVisitor annotationVisitor3 = annotationVisitor2.visitArray("deep");
+annotationVisitor3.visitEnd();
+}
+annotationVisitor2.visitEnd();
+}
+annotationVisitor1.visitEnd();
+}
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = classWriter.visitTypeAnnotation(285212416, TypePath.fromString("[.*1;"), "LTA;", false);
+annotationVisitor0.visitEnd();
+}
+// ATTRIBUTE Comment
+{
+Attribute attribute = new org.objectweb.asm.util.Comment();classWriter.visitAttribute(attribute);
+}
+// ATTRIBUTE Rawé
+classWriter.visitNestMember("pkg/N");
+
+classWriter.visitPermittedSubclass("pkg/P");
+
+classWriter.visitInnerClass("pkg/C$1", null, null, ACC_PRIVATE | ACC_STATIC | ACC_ENUM | ACC_ANNOTATION | ACC_ABSTRACT | ACC_INTERFACE);
+
+classWriter.visitInnerClass("pkg/C$I", "pkg/C", "I", 0);
+
+{
+recordComponentVisitor = classWriter.visitRecordComponent("rc", "I", "TT;");
+{
+annotationVisitor0 = recordComponentVisitor.visitAnnotation("LR;", false);
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = recordComponentVisitor.visitTypeAnnotation(318767104, null, "LRT;", true);
+annotationVisitor0.visitEnd();
+}
+// ATTRIBUTE Comment
+{
+Attribute attribute = new org.objectweb.asm.util.Comment();recordComponentVisitor.visitAttribute(attribute);
+}
+recordComponentVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(ACC_PROTECTED | ACC_FINAL | ACC_STATIC | ACC_VOLATILE | ACC_TRANSIENT | ACC_ENUM | ACC_SYNTHETIC | ACC_DEPRECATED, "F", "F", null, Float.valueOf("NaN"));
+{
+annotationVisitor0 = fieldVisitor.visitAnnotation("LFA;", true);
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = fieldVisitor.visitTypeAnnotation(318767104, TypePath.fromString("0;"), "LFT;", false);
+annotationVisitor0.visitEnd();
+}
+// ATTRIBUTE Comment
+{
+Attribute attribute = new org.objectweb.asm.util.Comment();fieldVisitor.visitAttribute(attribute);
+}
+fieldVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(0, "J", "J", "TT;", Long.valueOf(-7L));
+fieldVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(ACC_PUBLIC, "S", "Ljava/lang/String;", null, "\\\u0009");
+fieldVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(ACC_PRIVATE, "D", "D", null, Double.valueOf("1.0E-300"));
+fieldVisitor.visitEnd();
+}
+{
+fieldVisitor = classWriter.visitField(ACC_PRIVATE, "I", "I", null, Integer.valueOf(42));
+fieldVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_PUBLIC | ACC_SYNCHRONIZED | ACC_BRIDGE | ACC_VARARGS | ACC_NATIVE | ACC_STRICT | ACC_SYNTHETIC, "m", "(I)V", "(TT;)V", new String[] { "java/io/IOException", "java/lang/Error" });
+methodVisitor.visitParameter(null, ACC_FINAL);
+methodVisitor.visitParameter("p\u20ac", ACC_SYNTHETIC | ACC_MANDATED);
+{
+annotationVisitor0 = methodVisitor.visitAnnotationDefault();
+annotationVisitor0.visit(null, Integer.valueOf(1));
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitAnnotation("LM;", true);
+annotationVisitor0.visitEnd();
+}
+{
+annotationVisitor0 = methodVisitor.visitTypeAnnotation(335544320, null, "LMT;", true);
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitAnnotableParameterCount(1, false);
+{
+annotationVisitor0 = methodVisitor.visitParameterAnnotation(0, "LP;", false);
+annotationVisitor0.visitEnd();
+}
+// ATTRIBUTE Comment
+{
+Attribute attribute = new org.objectweb.asm.util.Comment();methodVisitor.visitAttribute(attribute);
+}
+methodVisitor.visitCode();
+Label label0 = new Label();
+Label label1 = new Label();
+Label label2 = new Label();
+methodVisitor.visitTryCatchBlock(label0, label1, label2, null);
+Label label3 = new Label();
+methodVisitor.visitTryCatchBlock(label0, label1, label3, "java/lang/Exception");
+{
+annotationVisitor0 = methodVisitor.visitTryCatchAnnotation(1107296512, null, "LTC;", true);
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitLabel(label0);
+methodVisitor.visitLineNumber(7, label0);
+methodVisitor.visitInsn(NOP);
+methodVisitor.visitIntInsn(NEWARRAY, T_INT);
+methodVisitor.visitIntInsn(BIPUSH, -5);
+methodVisitor.visitIntInsn(SIPUSH, 1000);
+methodVisitor.visitVarInsn(ILOAD, 1);
+methodVisitor.visitVarInsn(ASTORE, 300);
+methodVisitor.visitTypeInsn(NEW, "java/lang/Object");
+methodVisitor.visitFieldInsn(GETSTATIC, "pkg/C", "F", "F");
+methodVisitor.visitMethodInsn(INVOKEINTERFACE, "java/lang/Comparable", "compareTo", "(Ljava/lang/Object;)I", true);
+methodVisitor.visitMethodInsn(INVOKESTATIC, "pkg/C", "s", "()V", false);
+methodVisitor.visitLdcInsn(Integer.valueOf(-1));
+methodVisitor.visitLdcInsn(Float.valueOf("-0.0"));
+methodVisitor.visitLdcInsn(Long.valueOf(1099511627776L));
+methodVisitor.visitLdcInsn(Double.valueOf("-0.0"));
+methodVisitor.visitLdcInsn("ldc\u0000");
+methodVisitor.visitLdcInsn(Type.getType("Ljava/lang/String;"));
+methodVisitor.visitLdcInsn(Type.getType("(I)V"));
+methodVisitor.visitLdcInsn(new Handle(Opcodes.H_GETSTATIC, "o", "f", "I", false));
+methodVisitor.visitLdcInsn(new ConstantDynamic("c", "I", new Handle(Opcodes.H_INVOKESTATIC, "B", "c", "()I", true), new Object[] {}));
+methodVisitor.visitIincInsn(3, -1);
+Label label4 = new Label();
+methodVisitor.visitTableSwitchInsn(-1, 0, label2, new Label[] { label1, label4 });
+methodVisitor.visitLookupSwitchInsn(label1, new int[] { 5, -6 }, new Label[] { label2, label3 });
+methodVisitor.visitJumpInsn(IFNULL, label3);
+methodVisitor.visitInvokeDynamicInsn("run", "()Ljava/lang/Runnable;", new Handle(Opcodes.H_INVOKESTATIC, "B", "bsm", "()V", true), new Object[]{Type.getType("()V"), Type.getType("LX;"), new Handle(Opcodes.H_NEWINVOKESPECIAL, "X", "<init>", "()V", false), new ConstantDynamic("c", "I", new Handle(Opcodes.H_INVOKESTATIC, "B", "c", "()I", false), new Object[] {Integer.valueOf(1), "s", new ConstantDynamic("d", "J", new Handle(Opcodes.H_INVOKESTATIC, "B", "d", "()J", false), new Object[] {Long.valueOf(2L)})})});
+methodVisitor.visitInvokeDynamicInsn("none", "()V", new Handle(Opcodes.H_INVOKESTATIC, "B", "bsm", "()V", false), new Object[]{});
+methodVisitor.visitMultiANewArrayInsn("[[I", 2);
+{
+annotationVisitor0 = methodVisitor.visitInsnAnnotation(1140850688, TypePath.fromString("["), "LI;", false);
+annotationVisitor0.visitEnd();
+}
+methodVisitor.visitLabel(label1);
+methodVisitor.visitFrame(Opcodes.F_FULL, 3, new Object[] {"pkg/C", Opcodes.INTEGER, Opcodes.TOP}, 2, new Object[] {label0, label4});
+methodVisitor.visitFrame(Opcodes.F_NEW, 5, new Object[] {Opcodes.FLOAT, Opcodes.DOUBLE, Opcodes.LONG, Opcodes.NULL, Opcodes.UNINITIALIZED_THIS}, 0, new Object[] {});
+methodVisitor.visitFrame(Opcodes.F_APPEND,1, new Object[] {"[I"}, 0, null);
+methodVisitor.visitFrame(Opcodes.F_CHOP,2, null, 0, null);
+methodVisitor.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+methodVisitor.visitFrame(Opcodes.F_SAME1, 0, null, 1, new Object[] {"[I"});
+methodVisitor.visitInsn(RETURN);
+methodVisitor.visitLabel(label2);
+methodVisitor.visitLabel(label3);
+methodVisitor.visitLabel(label4);
+methodVisitor.visitLocalVariable("x", "I", null, label0, label2, 1);
+methodVisitor.visitLocalVariable("y", "TT;", "TT;", label1, label3, 2);
+{
+annotationVisitor0 = methodVisitor.visitLocalVariableAnnotation(1073741824, TypePath.fromString("*"), new Label[] { label0, label1 }, new Label[] { label2, label3 }, new int[] { 1, 2 }, "LLV;", true);
+annotationVisitor0.visitEnd();
+}
+// ATTRIBUTE CodeComment
+{
+Attribute attribute = new CodeComment(label2, label5);
+methodVisitor.visitAttribute(attribute);
+}
+methodVisitor.visitMaxs(1, 2);
+methodVisitor.visitEnd();
+}
+{
+methodVisitor = classWriter.visitMethod(ACC_ABSTRACT, "a", "()V", null, null);
+methodVisitor.visitEnd();
+}
+classWriter.visitEnd();
+
+return classWriter.toByteArray();
+}
+}

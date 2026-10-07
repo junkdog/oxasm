@@ -3,16 +3,18 @@
 A Rust port of [OW2 ASM](https://asm.ow2.io/) 9.10.1, the JVM bytecode read/analyze/transform/write
 library: same capabilities, same output (byte for byte), with a Rust-shaped API.
 
-**Status: P6 (the class writer's computations) done.** `oxasm` reads class files (`ClassReader`, with ASM's
-options and leniencies) into the visitor traits and writes them back (`ClassWriter`, computing the maximum stack
-sizes and the stack map frames on request, through a pluggable `ClassHierarchy`), `oxasm-tree` holds them as
+**Status: P7 (util: the check adapters and the ASMifier) done.** `oxasm` reads class files (`ClassReader`, with
+ASM's options and leniencies) into the visitor traits and writes them back (`ClassWriter`, computing the maximum
+stack sizes and the stack map frames on request, through a pluggable `ClassHierarchy`), `oxasm-tree` holds them as
 `ClassNode`s (an arena-backed `InsnList` with generational handles), `oxasm-analysis` computes their frames
-(`Analyzer` with ASM's four stock interpreters), and `oxasm-util` prints them with ASM's `Textifier`, byte for
-byte: the Textifier output, the frames of every method and the class files written back (with a new or a copied
-constant pool, with expanded frames, with `COMPUTE_MAXS` or `COMPUTE_FRAMES`, directly or through a `ClassNode`)
-equal ASM 9.10.1's, on every class of the JDK runtime image and of the T2 jars. M1's acceptance holds: ports of
-sift's `TextifierLines` and `OriginSourceInterpreter` (`crates/oxasm-util/examples/sift_probe.rs`) give sift's own
-output on every class sift compiles. Next: P7 (util's checkers and `ASMifier`) and P8 (commons).
+(`Analyzer` with ASM's four stock interpreters), and `oxasm-util` prints them (ASM's `Textifier` and `ASMifier`)
+and checks them (ASM's `Check*` adapters, which panic with ASM's exception messages). All of it matches ASM
+9.10.1 on every class of the JDK runtime image and of the T2 jars: the printed text, the frames of every method,
+the class files written back (with a new or a copied constant pool, with expanded frames, with `COMPUTE_MAXS` or
+`COMPUTE_FRAMES`, directly or through a `ClassNode`), byte for byte, and the check adapters' verdicts. M1's
+acceptance holds: ports of sift's `TextifierLines` and `OriginSourceInterpreter`
+(`crates/oxasm-util/examples/sift_probe.rs`) give sift's own output on every class sift compiles. Next: P8
+(commons).
 
 | Crate | Ports |
 |---|---|

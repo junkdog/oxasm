@@ -1,11 +1,13 @@
 //! Port of ASM's `TraceClassVisitorTest`.
 
 use oxasm::constant::Constant;
+use oxasm::reader::AttributeReadContext;
+use oxasm::writer::AttributeWriteContext;
 use oxasm::{
-    AnnotationVisitor, ClassReader, ClassVisitor, FieldVisitor, JavaStr, MethodVisitor,
-    ModuleVisitor, ParsingOptions,
+    AnnotationVisitor, AttributeCodec, ClassReader, CustomAttribute, ReadError, jstr, ClassVisitor, ClassWriter, ClassWriterFlags, FieldVisitor,
+    JavaStr, MethodVisitor, ModuleVisitor, ParsingOptions,
 };
-use oxasm_testkit::PrecompiledClass;
+use oxasm_testkit::{ClassFile, PrecompiledClass};
 use oxasm_util::{
     Textifier, TraceAnnotationVisitor, TraceClassVisitor, TraceFieldVisitor, TraceMethodVisitor,
     TraceModuleVisitor,
@@ -13,11 +15,93 @@ use oxasm_util::{
 
 /// Tests that classes are unchanged with a ClassReader->TraceClassVisitor->ClassWriter transform.
 #[test]
-#[ignore = "needs ClassWriter (P5)"]
 fn test_visit_methods() {
-    // ClassReader(classFile).accept(TraceClassVisitor(ClassWriter(0), ...), [Comment,
-    // CodeComment], 0), then ClassFile(classFile) == ClassFile(classWriter.toByteArray()).
-    unimplemented!("needs ClassWriter (P5) and the ClassFile dumper");
+    for &class in PrecompiledClass::ALL {
+        let class_file = class.bytes();
+        let class_reader = ClassReader::new(class_file).unwrap();
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+        let mut trace_class_visitor = TraceClassVisitor::with_delegate(
+            Some(&mut class_writer),
+            Textifier::new(),
+            Some(std::io::sink()),
+        );
+
+        class_reader
+            .accept_with_codecs(
+                &mut trace_class_visitor,
+                &[&CommentCodec, &CodeCommentCodec],
+                ParsingOptions::empty(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            ClassFile::new(class_file),
+            ClassFile::new(&class_writer.to_bytes().unwrap()),
+            "{class}"
+        );
+    }
+}
+
+/// ASM's `Comment` test attribute: an empty class, field or method attribute.
+#[derive(Clone, Debug)]
+struct Comment;
+
+impl CustomAttribute for Comment {
+    fn name(&self) -> &JavaStr {
+        jstr!("Comment")
+    }
+    fn write(&self, _cx: &mut AttributeWriteContext<'_>) -> Vec<u8> {
+        Vec::new()
+    }
+}
+
+/// ASM's `CodeComment` test attribute: an empty code attribute.
+#[derive(Clone, Debug)]
+struct CodeComment;
+
+impl CustomAttribute for CodeComment {
+    fn name(&self) -> &JavaStr {
+        jstr!("CodeComment")
+    }
+    fn is_code_attribute(&self) -> bool {
+        true
+    }
+    fn write(&self, _cx: &mut AttributeWriteContext<'_>) -> Vec<u8> {
+        Vec::new()
+    }
+}
+
+/// The prototype of [`Comment`] (ASM passes a `new Comment()` to `accept`).
+struct CommentCodec;
+
+impl AttributeCodec for CommentCodec {
+    fn name(&self) -> &JavaStr {
+        jstr!("Comment")
+    }
+    fn read(
+        &self,
+        _cx: &mut AttributeReadContext<'_, '_>,
+    ) -> Result<Box<dyn CustomAttribute>, ReadError> {
+        Ok(Box::new(Comment))
+    }
+}
+
+/// The prototype of [`CodeComment`].
+struct CodeCommentCodec;
+
+impl AttributeCodec for CodeCommentCodec {
+    fn name(&self) -> &JavaStr {
+        jstr!("CodeComment")
+    }
+    fn is_code_attribute(&self) -> bool {
+        true
+    }
+    fn read(
+        &self,
+        _cx: &mut AttributeReadContext<'_, '_>,
+    ) -> Result<Box<dyn CustomAttribute>, ReadError> {
+        Ok(Box::new(CodeComment))
+    }
 }
 
 /// Tests that ClassReader can accept a TraceClassVisitor without delegate.
