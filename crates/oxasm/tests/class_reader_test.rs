@@ -6,7 +6,7 @@
 
 use std::cell::Cell;
 
-use oxasm::error::{ReadError, ReadErrorKind};
+use oxasm::error::ReadErrorKind;
 use oxasm::opcodes::{ACC_ABSTRACT, ACC_SUPER, V_PREVIEW, V1_1};
 use oxasm::{
     AnnotationVisitor, ClassReader, ClassVisitor, FieldVisitor, JavaStr, MethodVisitor,
@@ -394,7 +394,7 @@ fn test_accept_empty_visitor_invalid_class() {
 
         // ASM throws an ArrayIndexOutOfBoundsException for these three (with an index > 0 in
         // its message), and an IllegalArgumentException for the others.
-        let Err(ReadError { kind, .. }) = result else {
+        let Err(error) = result else {
             panic!("{invalid_class}: accepted");
         };
         let expected = match invalid_class {
@@ -420,7 +420,7 @@ fn test_accept_empty_visitor_invalid_class() {
             InvalidClass::InvalidWideOpcode => ReadErrorKind::InvalidWideOpcode(255),
             InvalidClass::InvalidClassVersion | InvalidClass::InvalidCpInfoTag => unreachable!(),
         };
-        assert_eq!(kind, expected, "{invalid_class}");
+        assert_eq!(error.kind, expected, "{invalid_class}");
     }
 }
 

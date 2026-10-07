@@ -38,10 +38,9 @@ impl ModuleHashesAttribute {
 
 /// A `null` string where ASM's reader would return one (constant pool index 0).
 fn required(value: Option<&JavaStr>, offset: usize) -> Result<JavaString, ReadError> {
-    value.map(JavaStr::to_owned).ok_or(ReadError {
-        offset,
-        kind: ReadErrorKind::InvalidConstantPoolIndex(0),
-    })
+    value
+        .map(JavaStr::to_owned)
+        .ok_or_else(|| ReadError::at(offset, ReadErrorKind::InvalidConstantPoolIndex(0)))
 }
 
 impl CustomAttribute for ModuleHashesAttribute {

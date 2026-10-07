@@ -15,8 +15,8 @@ the JDK runtime image and of the T2 jars: the printed text, the frames of every 
 back (with a new or a copied constant pool, with expanded frames, with `COMPUTE_MAXS` or `COMPUTE_FRAMES`,
 directly or through a `ClassNode`), byte for byte, the check adapters' verdicts, and the output of the commons
 adapters. M1's acceptance holds: ports of sift's `TextifierLines` and `OriginSourceInterpreter`
-(`crates/oxasm-util/examples/sift_probe.rs`) give sift's own output on every class sift compiles. Next: P9
-(hardening, performance, API review).
+(`crates/oxasm-util/examples/sift_probe.rs`) give sift's own output on every class sift compiles. P9
+(hardening, performance, API review) is under way: the reader's string cache is 21% faster (ADR-04).
 
 | Crate | Ports |
 |---|---|
@@ -34,6 +34,7 @@ cargo test --workspace            # offline: T0 goldens are committed
 cargo xtask golden --check        # goldens == a fresh ASM 9.10.1 oracle run == ASM's own goldens
 MIRIFLAGS=-Zmiri-disable-isolation PROPTEST_CASES=16 \
   cargo +nightly miri test -p oxasm --lib jstr   # the unsafe in jstr, under Miri (ADR-18)
+MIRIFLAGS=-Zmiri-disable-isolation cargo +nightly miri test -p oxasm --lib reader   # the reader's string cache
 cargo xtask oracle textify corpus/t0/jdk8/AllFrames.class
 cargo xtask corpus t1             # extract $JAVA_HOME's runtime image (about 32k classes)
 cargo xtask parity --tier t1      # Textifier, analysis and class writer parity vs ASM (target/parity/)

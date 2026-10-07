@@ -389,11 +389,8 @@ fn test_read_label_outside_of_a_code_attribute() {
     );
 
     assert!(matches!(
-        result,
-        Err(ReadError {
-            kind: ReadErrorKind::InvalidAttribute(_),
-            ..
-        })
+        result.as_ref().map_err(|error| &error.kind),
+        Err(ReadErrorKind::InvalidAttribute(_))
     ));
 }
 

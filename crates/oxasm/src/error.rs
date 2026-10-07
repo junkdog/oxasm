@@ -15,23 +15,43 @@ pub use crate::type_path::InvalidTypePath;
 ///
 /// When [`ClassReader::accept`](crate::ClassReader::accept) fails, the visitor has seen a prefix
 /// of the events of the class (as in ASM, which throws in the middle of a visit).
+///
+/// Its contents are boxed (and reached through `Deref`), so that the reader's `Result`s stay two
+/// words and come back in registers.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
-#[error("{kind} (at offset {offset})")]
-pub struct ReadError {
+#[error("{} (at offset {})", .0.kind, .0.offset)]
+pub struct ReadError(Box<ReadErrorData>);
+
+/// The contents of a [`ReadError`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReadErrorData {
     /// The offset in the class file of the structure that could not be read.
     pub offset: usize,
     /// What is wrong.
     pub kind: ReadErrorKind,
 }
 
+impl std::ops::Deref for ReadError {
+    type Target = ReadErrorData;
+
+    fn deref(&self) -> &ReadErrorData {
+        &self.0
+    }
+}
+
 impl ReadError {
+    /// An error at the given offset in the class file.
+    #[cold]
+    #[must_use]
+    pub fn at(offset: usize, kind: ReadErrorKind) -> ReadError {
+        ReadError(Box::new(ReadErrorData { offset, kind }))
+    }
+
     /// An error at the given offset, as computed by the reader: a negative offset (which a
     /// malformed class can produce) is reported as 0.
+    #[cold]
     pub(crate) fn new(offset: i64, kind: ReadErrorKind) -> ReadError {
-        ReadError {
-            offset: usize::try_from(offset).unwrap_or(0),
-            kind,
-        }
+        ReadError::at(usize::try_from(offset).unwrap_or(0), kind)
     }
 }
 

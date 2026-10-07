@@ -7,6 +7,7 @@
 
 use std::borrow::Cow;
 use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
 
 use crate::constant::Constant;
 use crate::constant_dynamic::ConstantDynamic;
@@ -21,6 +22,12 @@ use super::{
     CONSTANT_METHOD_HANDLE_TAG, CONSTANT_METHOD_TYPE_TAG, CONSTANT_STRING_TAG, ClassReader,
     ReadError, ReadErrorKind,
 };
+
+/// The flag of a `constant_utf8_values` entry borrowed from the class file. The entry's bits 0-31
+/// are the string's offset (a class file is shorter than 2 GiB), and bits 32-47 its length.
+const UTF8_BORROWED: u64 = 1 << 62;
+/// The value of a `constant_utf8_values` entry decoded into `constant_utf8_decoded`.
+const UTF8_DECODED: u64 = 1 << 63;
 
 /// ASM 9.11's bound on nested `ConstantDynamic` bootstrap arguments (`depthLimit`).
 const MAX_CONSTANT_DYNAMIC_DEPTH: u32 = 127;
@@ -271,17 +278,54 @@ impl<'b> ClassReader<'b> {
                 ReadErrorKind::InvalidConstantPoolIndex(constant_pool_entry_index as u16),
             ));
         };
-        if let Some(value) = cell.get() {
-            return Ok(value);
+        let state = cell.load(Ordering::Acquire);
+        if state & UTF8_BORROWED != 0 {
+            let offset = (state & 0xFFFF_FFFF) as usize;
+            let length = ((state >> 32) & 0xFFFF) as usize;
+            let bytes = &self.class_file[offset..offset + length];
+            // SAFETY: the entry was stored below, from a string that `read_utf` borrowed from
+            // these bytes, so they are valid UTF-8.
+            return Ok(unsafe { JavaStr::from_semi_utf8_unchecked(bytes) });
+        }
+        if state == UTF8_DECODED {
+            // The release store of UTF8_DECODED happened after both cells were initialized.
+            let decoded = self.constant_utf8_decoded.get().expect("initialized");
+            return Ok(decoded[constant_pool_entry_index]
+                .get()
+                .expect("initialized"));
         }
         let cp_info_offset = self.cp_info_offset(constant_pool_entry_index)?;
+        let utf_offset = cp_info_offset + 2;
         let value = self.read_utf(
-            cp_info_offset + 2,
+            utf_offset,
             i32::from(self.u16_at(cp_info_offset)?),
             self.max_string_length,
         )?;
-        // Another thread may have decoded the same string meanwhile: either value is fine.
-        Ok(cell.get_or_init(|| value))
+        match value {
+            Cow::Borrowed(value) => {
+                debug_assert!(std::ptr::eq(
+                    value.as_bytes(),
+                    &self.class_file[utf_offset as usize..utf_offset as usize + value.len()]
+                ));
+                // Racing threads store the same value.
+                cell.store(
+                    UTF8_BORROWED | (value.len() as u64) << 32 | utf_offset as u64,
+                    Ordering::Release,
+                );
+                Ok(value)
+            }
+            Cow::Owned(value) => {
+                let decoded = self.constant_utf8_decoded.get_or_init(|| {
+                    (0..self.constant_utf8_values.len())
+                        .map(|_| OnceLock::new())
+                        .collect()
+                });
+                // Another thread may have decoded the same string meanwhile: either value is fine.
+                let value = decoded[constant_pool_entry_index].get_or_init(|| value);
+                cell.store(UTF8_DECODED, Ordering::Release);
+                Ok(value)
+            }
+        }
     }
 
     /// ASM's `readUtf(int, int, char[])`: decodes the `utf_length` bytes at `utf_offset` as
@@ -301,10 +345,18 @@ impl<'b> ClassReader<'b> {
         if utf_length >= 0
             && utf_length as usize <= capacity
             && let Ok(bytes) = self.slice_at(utf_offset, utf_length)
-            && (bytes.is_ascii() || (!bytes.iter().any(|&b| b >= 0xF0)))
-            && let Ok(s) = std::str::from_utf8(bytes)
         {
-            return Ok(Cow::Borrowed(JavaStr::from_str(s)));
+            if bytes.is_ascii() {
+                // SAFETY: ASCII is canonical semi-UTF-8.
+                return Ok(Cow::Borrowed(unsafe {
+                    JavaStr::from_semi_utf8_unchecked(bytes)
+                }));
+            }
+            if !bytes.iter().any(|&b| b >= 0xF0)
+                && let Ok(s) = std::str::from_utf8(bytes)
+            {
+                return Ok(Cow::Borrowed(JavaStr::from_str(s)));
+            }
         }
         let mut current_offset = utf_offset;
         let end_offset = utf_offset + i64::from(utf_length);
@@ -520,4 +572,107 @@ fn invalid_constant(offset: i64, constant_pool_entry_index: usize) -> ReadError 
         offset,
         ReadErrorKind::InvalidConstant(constant_pool_entry_index as u16),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::jstr;
+
+    /// A class file prefix whose constant pool holds the given `CONSTANT_Utf8` entries.
+    fn class_file(strings: &[&[u8]]) -> Vec<u8> {
+        let mut bytes = vec![0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 52];
+        bytes.extend_from_slice(&(strings.len() as u16 + 1).to_be_bytes());
+        for string in strings {
+            bytes.push(super::super::CONSTANT_UTF8_TAG);
+            bytes.extend_from_slice(&(string.len() as u16).to_be_bytes());
+            bytes.extend_from_slice(string);
+        }
+        // access_flags, which ASM's decoding of a truncated sequence reads.
+        bytes.extend_from_slice(&[0, 0]);
+        bytes
+    }
+
+    fn borrows_from(reader: &ClassReader<'_>, value: &JavaStr) -> bool {
+        reader
+            .class_file
+            .as_ptr_range()
+            .contains(&value.as_bytes().as_ptr())
+    }
+
+    const STRINGS: [&[u8]; 5] = [
+        b"java/lang/Object",
+        "caf\u{e9}".as_bytes(),
+        b"",
+        // Modified UTF-8's NUL, which is not UTF-8.
+        &[b'a', 0xC0, 0x80],
+        // A 4 bytes sequence, which ASM decodes as a 3 bytes one plus a continuation byte.
+        "\u{1F600}".as_bytes(),
+    ];
+
+    #[test]
+    fn utf_borrows_utf8_and_decodes_the_rest_once() {
+        let bytes = class_file(&STRINGS);
+        let reader = ClassReader::new(&bytes).unwrap();
+        for index in 1..=STRINGS.len() {
+            let first = reader.utf(index).unwrap();
+            let second = reader.utf(index).unwrap();
+            assert!(std::ptr::eq(first, second), "entry {index} is cached");
+            assert_eq!(borrows_from(&reader, first), index <= 3, "entry {index}");
+            let uncached = reader
+                .read_utf(
+                    reader.cp_info_offset(index).unwrap() + 2,
+                    STRINGS[index - 1].len() as i32,
+                    reader.max_string_length,
+                )
+                .unwrap();
+            assert_eq!(first, &*uncached, "entry {index}");
+        }
+        assert_eq!(reader.utf(1).unwrap(), jstr!("java/lang/Object"));
+        assert_eq!(reader.utf(2).unwrap(), jstr!("caf\u{e9}"));
+        assert_eq!(reader.utf(3).unwrap(), jstr!(""));
+        assert_eq!(reader.utf(4).unwrap(), jstr!("a\0"));
+        assert_eq!(
+            reader.utf(STRINGS.len() + 1).unwrap_err().kind,
+            ReadErrorKind::InvalidConstantPoolIndex(STRINGS.len() as u16 + 1)
+        );
+    }
+
+    #[test]
+    fn utf_is_decoded_consistently_by_racing_threads() {
+        let bytes = class_file(&STRINGS);
+        let reader = ClassReader::new(&bytes).unwrap();
+        let results: Vec<Vec<&JavaStr>> = std::thread::scope(|scope| {
+            let threads: Vec<_> = (0..4)
+                .map(|thread| {
+                    let reader = &reader;
+                    scope.spawn(move || {
+                        // Each thread visits the entries in a different order.
+                        (0..STRINGS.len())
+                            .map(|i| (i + thread) % STRINGS.len() + 1)
+                            .map(|index| (index, reader.utf(index).unwrap()))
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            threads
+                .into_iter()
+                .map(|thread| {
+                    let mut values = thread.join().unwrap();
+                    values.sort_by_key(|&(index, _)| index);
+                    values.into_iter().map(|(_, value)| value).collect()
+                })
+                .collect()
+        });
+        // Every thread got the cached value, borrowed or decoded.
+        for values in &results {
+            for (i, value) in values.iter().enumerate() {
+                assert!(
+                    std::ptr::eq(*value, reader.utf(i + 1).unwrap()),
+                    "entry {}",
+                    i + 1
+                );
+            }
+        }
+    }
 }

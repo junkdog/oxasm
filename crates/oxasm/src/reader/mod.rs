@@ -39,14 +39,13 @@ mod context;
 mod frames;
 mod members;
 
-use std::borrow::Cow;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::attribute::{Attribute, AttributeCodec, CustomAttribute, UnknownAttribute};
 use crate::constant_dynamic::ConstantDynamic;
 use crate::constants;
-use crate::jstr::JavaStr;
+use crate::jstr::{JavaStr, JavaString};
 use crate::label::Label;
 use crate::opcodes;
 use crate::visitor::ClassVisitor;
@@ -114,8 +113,14 @@ pub struct ClassReader<'b> {
     /// entries) is 0.
     cp_info_offsets: Box<[u32]>,
     /// The `String` objects corresponding to the `CONSTANT_Utf8` constant pool items, decoded on
-    /// first use.
-    constant_utf8_values: Box<[OnceLock<Cow<'b, JavaStr>>]>,
+    /// first use. Each entry is 0 until then, and then holds `UTF8_BORROWED | length << 32 |
+    /// offset` for a string borrowed from `class_file` (almost all of them), or `UTF8_DECODED`
+    /// for one in `constant_utf8_decoded`. Racing decoders store the same value, so a release
+    /// store publishes it, without a compare-and-swap.
+    constant_utf8_values: Box<[AtomicU64]>,
+    /// The `CONSTANT_Utf8` constant pool items that are not valid UTF-8 as they stand, decoded
+    /// on first use. Allocated on first need, as such strings are rare.
+    constant_utf8_decoded: OnceLock<Box<[OnceLock<JavaString>]>>,
     /// The `ConstantDynamic` objects corresponding to the `CONSTANT_Dynamic` constant pool items,
     /// decoded on first use, with the number of `ConstantDynamic` in their tree. Empty if the
     /// constant pool has no `CONSTANT_Dynamic` entry.
@@ -161,6 +166,7 @@ impl<'b> ClassReader<'b> {
             header: 0,
             cp_info_offsets: Box::default(),
             constant_utf8_values: Box::default(),
+            constant_utf8_decoded: OnceLock::new(),
             constant_dynamic_values: Box::default(),
             bootstrap_method_offsets: None,
             max_string_length: 0,
@@ -241,7 +247,9 @@ impl<'b> ClassReader<'b> {
         // The Classfile's access_flags field is just after the last constant pool entry.
         reader.header = current_cp_info_offset;
         reader.cp_info_offsets = cp_info_offsets.into_boxed_slice();
-        reader.constant_utf8_values = (0..constant_pool_count).map(|_| OnceLock::new()).collect();
+        reader.constant_utf8_values = (0..constant_pool_count)
+            .map(|_| AtomicU64::new(0))
+            .collect();
 
         // Allocate the cache of ConstantDynamic values, if there is at least one.
         if has_constant_dynamic {
