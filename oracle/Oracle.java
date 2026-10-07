@@ -39,6 +39,11 @@
  *   analyze --interp I [--opts O] [--hierarchy F]
  *                                Analyzer.analyze for every method, with I one of basic,
  *                                basicverifier, simpleverifier (needs --hierarchy) or source
+ *   commons --mode M [--mapping F]
+ *                                the class through an asm-commons adapter (P8), with M one of
+ *                                remap (needs --mapping), svuid, static-init-merger, tcb-sort,
+ *                                jsr, lvs, advice, instruction-adapter, analyzer-adapter and
+ *                                code-size; see Oracle.commons
  *   sift-probe --sift CP         M1's sift probe: sift's TextifierLines over every line of the
  *                                class's Textifier output, then the analyze output of every method
  *                                under sift's OriginSourceInterpreter. CP is the class path of
@@ -51,6 +56,9 @@
  *   hierarchy                    prints "name \t super \t is_interface(0|1)" for every input
  *                                class, sorted by name (no records); classes whose name or
  *                                super class name contains a tab or line terminator are left out
+ *   mapping                      prints the SimpleRemapper mapping of `commons --mode remap` for
+ *                                the input classes, one "key \t value" line per entry (no
+ *                                records); see Oracle.mapping
  *   serve                        persistent mode, see below
  *   gen <scenario...>            writes the T3 synthetic classes (one record per scenario: the
  *                                class file, or the exception of ClassWriter.toByteArray); oxasm's
@@ -66,7 +74,7 @@
  *   response: u8 status (0 ok, 1 err), u32 k, k bytes of payload
  *
  * All integers are big-endian. Only the per-class commands (textify, tree-textify, asmify, dump,
- * roundtrip, tree-roundtrip, analyze) are served.
+ * roundtrip, tree-roundtrip, analyze, check, commons, sift-probe) are served.
  *
  * The hierarchy model (--hierarchy F, a file in the format printed by `hierarchy`) replaces class
  * loading for COMPUTE_FRAMES and SimpleVerifier, so that results never depend on which classes
@@ -111,10 +119,23 @@ import java.util.zip.ZipFile;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.FieldVisitor;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.commons.AdviceAdapter;
+import org.objectweb.asm.commons.AnalyzerAdapter;
+import org.objectweb.asm.commons.ClassRemapper;
+import org.objectweb.asm.commons.CodeSizeEvaluator;
+import org.objectweb.asm.commons.InstructionAdapter;
+import org.objectweb.asm.commons.JSRInlinerAdapter;
+import org.objectweb.asm.commons.LocalVariablesSorter;
+import org.objectweb.asm.commons.SerialVersionUIDAdder;
+import org.objectweb.asm.commons.SimpleRemapper;
+import org.objectweb.asm.commons.StaticInitMerger;
+import org.objectweb.asm.commons.TryCatchBlockSorter;
 import org.objectweb.asm.test.ClassFile;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
@@ -157,6 +178,7 @@ public final class Oracle {
         case "version" -> out.write((ASM_VERSION + "\n").getBytes(StandardCharsets.UTF_8));
         case "serve" -> serve(new DataInputStream(System.in), new DataOutputStream(out));
         case "hierarchy" -> hierarchy(options, out);
+        case "mapping" -> mapping(options, out);
         case "verify" -> verify(options, out);
         case "gen" -> gen(options, out);
         default -> {
@@ -187,8 +209,8 @@ public final class Oracle {
   private static void usage(final String message) {
     System.err.println("oracle: " + message);
     System.err.println(
-        "usage: Oracle {textify|tree-textify|asmify|tree-asmify|check|dump|roundtrip|tree-roundtrip|analyze|sift-probe|verify"
-            + "|hierarchy|gen|serve"
+        "usage: Oracle {textify|tree-textify|asmify|tree-asmify|check|dump|roundtrip|tree-roundtrip|analyze|commons|sift-probe"
+            + "|verify|hierarchy|mapping|gen|serve"
             + "|version} [options] <inputs...>");
     System.exit(2);
   }
@@ -271,6 +293,21 @@ public final class Oracle {
             default -> throw new UsageException("unknown --interp " + interp);
           }
           yield classFile -> analyze(classFile, interp, opts, hierarchy);
+        }
+        case "commons" -> {
+          args.allow("--mode", "--mapping");
+          String mode = args.require("--mode");
+          Mapping mapping = Mapping.load(args.get("--mapping"));
+          if (mode.equals("remap") && mapping == null) {
+            throw new UsageException("--mode remap needs --mapping");
+          }
+          yield classFile -> {
+            try {
+              return commons(classFile, mode, mapping);
+            } catch (Throwable t) { // NOPMD: the oracle reports whatever ASM throws.
+              throw new Located(t);
+            }
+          };
         }
         case "sift-probe" -> {
           args.allow("--sift");
@@ -973,6 +1010,513 @@ public final class Oracle {
   }
 
   // -----------------------------------------------------------------------------------------------
+  // commons (P8)
+  // -----------------------------------------------------------------------------------------------
+
+  /**
+   * The commons modes: the class read and written back through an asm-commons adapter, mirroring
+   * ASM's own "all classes" tests. Every mode writes with a ClassWriter(0) (jsr: with
+   * COMPUTE_MAXS, the JSRInlinerAdapter's documented usage) and returns the class file, except
+   * code-size, which prints "name+descriptor min max" for each method with code.
+   *
+   * <ul>
+   *   <li>remap: ClassRemapper(SimpleRemapper(mapping)), with the mapping printed by `mapping`;
+   *   <li>svuid: SerialVersionUIDAdder;
+   *   <li>static-init-merger: StaticInitMerger with the prefix "clinit$", through a ClassNode
+   *       in which the merged static initializer is moved after the other methods (oxasm's
+   *       adapter visits it at visitEnd);
+   *   <li>tcb-sort: every method in a TryCatchBlockSorter;
+   *   <li>jsr: every method in a JSRInlinerAdapter;
+   *   <li>lvs: every method in a LocalVariablesSorter (EXPAND_FRAMES);
+   *   <li>advice: every method with code in an AdviceAdapter whose onMethodEnter visits
+   *       AdviceAdapterTest's basic advice (System.err.println("enter"), through the adapter),
+   *       then stores the method's access flags in a new local, and whose onMethodExit visits
+   *       the basic advice with "exit" (EXPAND_FRAMES);
+   *   <li>instruction-adapter: every method in an InstructionAdapter;
+   *   <li>analyzer-adapter: AnalyzerAdapterTest's ClassAnalyzerAdapter, which inserts an F_NEW
+   *       frame computed by an AnalyzerAdapter before every instruction that has none
+   *       (EXPAND_FRAMES; the AnalyzerAdapter recomputes max locals from 0);
+   *   <li>code-size: every method's CodeSizeEvaluator.getMinSize() and getMaxSize().
+   * </ul>
+   */
+  static byte[] commons(final byte[] classFile, final String mode, final Mapping mapping) {
+    ClassReader classReader = new ClassReader(classFile);
+    if (mode.equals("code-size")) {
+      StringBuilder text = new StringBuilder();
+      classReader.accept(
+          new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            public MethodVisitor visitMethod(
+                final int access,
+                final String name,
+                final String descriptor,
+                final String signature,
+                final String[] exceptions) {
+              return new CodeSizeEvaluator(Opcodes.ASM9, null) {
+                @Override
+                public void visitMaxs(final int maxStack, final int maxLocals) {
+                  text.append(name)
+                      .append(descriptor)
+                      .append(' ')
+                      .append(getMinSize())
+                      .append(' ')
+                      .append(getMaxSize())
+                      .append('\n');
+                }
+              };
+            }
+          },
+          0);
+      return semiUtf8(text.toString());
+    }
+    ClassWriter classWriter =
+        new ClassWriter(mode.equals("jsr") ? ClassWriter.COMPUTE_MAXS : 0);
+    int readerOptions = 0;
+    ClassVisitor classVisitor =
+        switch (mode) {
+          case "remap" ->
+              new ClassRemapper(classWriter, new SimpleRemapper(Opcodes.ASM9, mapping.map));
+          case "svuid" -> new SerialVersionUIDAdder(Opcodes.ASM9, classWriter) {};
+          case "static-init-merger" -> {
+            // oxasm's StaticInitMerger visits the merged <clinit> at visitEnd (ADR-02: a class
+            // visitor has one live child), where ASM's visits it alongside the first renamed
+            // one: compare with ASM's methods in oxasm's order, through a ClassNode.
+            ClassNode classNode = new ClassNode();
+            MethodNode[] merged = new MethodNode[1];
+            classReader.accept(
+                new StaticInitMerger(Opcodes.ASM9, "clinit$", classNode) {
+                  @Override
+                  public MethodVisitor visitMethod(
+                      final int access,
+                      final String name,
+                      final String descriptor,
+                      final String signature,
+                      final String[] exceptions) {
+                    int before = classNode.methods.size();
+                    MethodVisitor methodVisitor =
+                        super.visitMethod(access, name, descriptor, signature, exceptions);
+                    if (classNode.methods.size() == before + 2) {
+                      merged[0] = classNode.methods.get(before + 1);
+                    }
+                    return methodVisitor;
+                  }
+                },
+                0);
+            if (merged[0] != null) {
+              classNode.methods.remove(merged[0]);
+              classNode.methods.add(merged[0]);
+            }
+            classNode.accept(classWriter);
+            yield null;
+          }
+          case "tcb-sort" ->
+              new MethodAdapters(
+                  classWriter,
+                  (owner, access, name, descriptor, signature, exceptions, mv) ->
+                      new TryCatchBlockSorter(mv, access, name, descriptor, signature, exceptions));
+          case "jsr" ->
+              new MethodAdapters(
+                  classWriter,
+                  (owner, access, name, descriptor, signature, exceptions, mv) ->
+                      new JSRInlinerAdapter(
+                          Opcodes.ASM9, mv, access, name, descriptor, signature, exceptions) {});
+          case "lvs" -> {
+            readerOptions = ClassReader.EXPAND_FRAMES;
+            yield new MethodAdapters(
+                classWriter,
+                (owner, access, name, descriptor, signature, exceptions, mv) ->
+                    new LocalVariablesSorter(Opcodes.ASM9, access, descriptor, mv) {});
+          }
+          case "advice" -> {
+            readerOptions = ClassReader.EXPAND_FRAMES;
+            yield new MethodAdapters(
+                classWriter,
+                (owner, access, name, descriptor, signature, exceptions, mv) -> {
+                  if (mv == null || (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) {
+                    return mv;
+                  }
+                  return new AdviceAdapter(Opcodes.ASM9, mv, access, name, descriptor) {
+                    /** AdviceAdapterTest's newBasicAdvice, visited through this adapter. */
+                    private void basic(final boolean isAfterAdvice) {
+                      visitFieldInsn(
+                          Opcodes.GETSTATIC, "java/lang/System", "err", "Ljava/io/PrintStream;");
+                      visitLdcInsn(isAfterAdvice ? "exit" : "enter");
+                      visitMethodInsn(
+                          Opcodes.INVOKEVIRTUAL,
+                          "java/io/PrintStream",
+                          "println",
+                          "(Ljava/lang/String;)V",
+                          false);
+                    }
+
+                    @Override
+                    protected void onMethodEnter() {
+                      basic(false);
+                      int local = newLocal(Type.INT_TYPE);
+                      push(methodAccess);
+                      storeLocal(local);
+                    }
+
+                    @Override
+                    protected void onMethodExit(final int opcode) {
+                      basic(true);
+                    }
+                  };
+                });
+          }
+          case "instruction-adapter" ->
+              new MethodAdapters(
+                  classWriter,
+                  (owner, access, name, descriptor, signature, exceptions, mv) ->
+                      new InstructionAdapter(Opcodes.ASM9, mv) {});
+          case "analyzer-adapter" -> {
+            readerOptions = ClassReader.EXPAND_FRAMES;
+            yield new MethodAdapters(
+                classWriter,
+                (owner, access, name, descriptor, signature, exceptions, mv) -> {
+                  AnalyzedFramesInserter inserter = new AnalyzedFramesInserter(mv);
+                  AnalyzerAdapter analyzerAdapter =
+                      new AnalyzerAdapter(Opcodes.ASM9, owner, access, name, descriptor, inserter) {
+                        @Override
+                        public void visitMaxs(final int maxStack, final int maxLocals) {
+                          // AnalyzerAdapter should correctly recompute maxLocals from scratch.
+                          super.visitMaxs(maxStack, 0);
+                        }
+                      };
+                  inserter.analyzerAdapter = analyzerAdapter;
+                  return analyzerAdapter;
+                });
+          }
+          default -> throw new UsageException("unknown --mode " + mode);
+        };
+    if (classVisitor != null) {
+      classReader.accept(classVisitor, readerOptions);
+    }
+    return classWriter.toByteArray();
+  }
+
+  /** Wraps the method visitor of a class visitor's every method. */
+  @FunctionalInterface
+  interface MethodAdapterFactory {
+    MethodVisitor create(
+        String owner,
+        int access,
+        String name,
+        String descriptor,
+        String signature,
+        String[] exceptions,
+        MethodVisitor methodVisitor);
+  }
+
+  /** A class visitor that wraps the method visitors of its delegate with a factory. */
+  static final class MethodAdapters extends ClassVisitor {
+
+    private final MethodAdapterFactory factory;
+    private String owner;
+
+    MethodAdapters(final ClassVisitor classVisitor, final MethodAdapterFactory factory) {
+      super(Opcodes.ASM9, classVisitor);
+      this.factory = factory;
+    }
+
+    @Override
+    public void visit(
+        final int version,
+        final int access,
+        final String name,
+        final String signature,
+        final String superName,
+        final String[] interfaces) {
+      owner = name;
+      super.visit(version, access, name, signature, superName, interfaces);
+    }
+
+    @Override
+    public MethodVisitor visitMethod(
+        final int access,
+        final String name,
+        final String descriptor,
+        final String signature,
+        final String[] exceptions) {
+      MethodVisitor methodVisitor =
+          super.visitMethod(access, name, descriptor, signature, exceptions);
+      return factory.create(owner, access, name, descriptor, signature, exceptions, methodVisitor);
+    }
+  }
+
+  /**
+   * AnalyzerAdapterTest's AnalyzedFramesInserter: inserts an F_NEW frame before each instruction,
+   * from the types computed with an AnalyzerAdapter, unless the instruction already has one.
+   */
+  static final class AnalyzedFramesInserter extends MethodVisitor {
+
+    AnalyzerAdapter analyzerAdapter;
+    private boolean hasOriginalFrame;
+
+    AnalyzedFramesInserter(final MethodVisitor methodVisitor) {
+      super(Opcodes.ASM9, methodVisitor);
+    }
+
+    @Override
+    public void visitFrame(
+        final int type,
+        final int numLocal,
+        final Object[] local,
+        final int numStack,
+        final Object[] stack) {
+      super.visitFrame(type, numLocal, local, numStack, stack);
+      hasOriginalFrame = true;
+    }
+
+    private void maybeInsertFrame() {
+      // Don't insert a frame if we already have one for this instruction, from the original class.
+      if (!hasOriginalFrame && analyzerAdapter.locals != null && analyzerAdapter.stack != null) {
+        ArrayList<Object> local = toFrameTypes(analyzerAdapter.locals);
+        ArrayList<Object> stack = toFrameTypes(analyzerAdapter.stack);
+        super.visitFrame(
+            Opcodes.F_NEW, local.size(), local.toArray(), stack.size(), stack.toArray());
+      }
+      hasOriginalFrame = false;
+    }
+
+    /** Long and double take one element in visitFrame, but two in an AnalyzerAdapter. */
+    private static ArrayList<Object> toFrameTypes(final List<Object> analyzerTypes) {
+      ArrayList<Object> frameTypes = new ArrayList<>();
+      for (int i = 0; i < analyzerTypes.size(); ++i) {
+        if (i > 0
+            && (analyzerTypes.get(i - 1) == Opcodes.LONG
+                || analyzerTypes.get(i - 1) == Opcodes.DOUBLE)) {
+          continue;
+        }
+        frameTypes.add(analyzerTypes.get(i));
+      }
+      return frameTypes;
+    }
+
+    @Override
+    public void visitInsn(final int opcode) {
+      maybeInsertFrame();
+      super.visitInsn(opcode);
+    }
+
+    @Override
+    public void visitIntInsn(final int opcode, final int operand) {
+      maybeInsertFrame();
+      super.visitIntInsn(opcode, operand);
+    }
+
+    @Override
+    public void visitVarInsn(final int opcode, final int varIndex) {
+      maybeInsertFrame();
+      super.visitVarInsn(opcode, varIndex);
+    }
+
+    @Override
+    public void visitTypeInsn(final int opcode, final String type) {
+      maybeInsertFrame();
+      super.visitTypeInsn(opcode, type);
+    }
+
+    @Override
+    public void visitFieldInsn(
+        final int opcode, final String owner, final String name, final String descriptor) {
+      maybeInsertFrame();
+      super.visitFieldInsn(opcode, owner, name, descriptor);
+    }
+
+    @Override
+    public void visitMethodInsn(
+        final int opcode,
+        final String owner,
+        final String name,
+        final String descriptor,
+        final boolean isInterface) {
+      maybeInsertFrame();
+      super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+    }
+
+    @Override
+    public void visitInvokeDynamicInsn(
+        final String name,
+        final String descriptor,
+        final Handle bootstrapMethodHandle,
+        final Object... bootstrapMethodArguments) {
+      maybeInsertFrame();
+      super.visitInvokeDynamicInsn(
+          name, descriptor, bootstrapMethodHandle, bootstrapMethodArguments);
+    }
+
+    @Override
+    public void visitJumpInsn(final int opcode, final Label label) {
+      maybeInsertFrame();
+      super.visitJumpInsn(opcode, label);
+    }
+
+    @Override
+    public void visitLdcInsn(final Object value) {
+      maybeInsertFrame();
+      super.visitLdcInsn(value);
+    }
+
+    @Override
+    public void visitIincInsn(final int varIndex, final int increment) {
+      maybeInsertFrame();
+      super.visitIincInsn(varIndex, increment);
+    }
+
+    @Override
+    public void visitTableSwitchInsn(
+        final int min, final int max, final Label dflt, final Label... labels) {
+      maybeInsertFrame();
+      super.visitTableSwitchInsn(min, max, dflt, labels);
+    }
+
+    @Override
+    public void visitLookupSwitchInsn(final Label dflt, final int[] keys, final Label[] labels) {
+      maybeInsertFrame();
+      super.visitLookupSwitchInsn(dflt, keys, labels);
+    }
+
+    @Override
+    public void visitMultiANewArrayInsn(final String descriptor, final int numDimensions) {
+      maybeInsertFrame();
+      super.visitMultiANewArrayInsn(descriptor, numDimensions);
+    }
+  }
+
+  /**
+   * A SimpleRemapper mapping, read from a file in the format printed by `mapping` (one
+   * "key \t value" line per entry, semi-UTF-8). Loaded once per path.
+   */
+  static final class Mapping {
+
+    private static final Map<String, Mapping> LOADED = new HashMap<>();
+
+    final Map<String, String> map = new HashMap<>();
+
+    static synchronized Mapping load(final String path) {
+      if (path == null) {
+        return null;
+      }
+      return LOADED.computeIfAbsent(path, Mapping::read);
+    }
+
+    private static Mapping read(final String path) {
+      Mapping mapping = new Mapping();
+      try {
+        for (String line : fromSemiUtf8(Files.readAllBytes(Path.of(path))).split("\n", -1)) {
+          if (line.isEmpty()) {
+            continue;
+          }
+          String[] fields = line.split("\t", -1);
+          if (fields.length != 2) {
+            throw new UsageException("malformed mapping line: " + line);
+          }
+          mapping.map.putIfAbsent(fields[0], fields[1]);
+        }
+      } catch (IOException e) {
+        throw new UsageException("cannot read " + path + ": " + e);
+      }
+      return mapping;
+    }
+  }
+
+  /**
+   * Prints the deterministic SimpleRemapper mapping of the `commons --mode remap` sweeps: for
+   * every input class N (module-info classes aside), sorted by key,
+   *
+   * <ul>
+   *   <li>"N" to "N_R" (classes),
+   *   <li>"N.f" to "f_r" for each field f (fields and record components),
+   *   <li>"N.m(D)" to "m_r" for each method m(D) other than constructors and static initializers,
+   *   <li>"LN;.m" to "m_r" for each method m of an annotation interface N (annotation attributes),
+   *   <li>".n(D)" to "n_r" for each invokedynamic instruction n(D) of the class's code.
+   * </ul>
+   *
+   * Entries with a tab or a line terminator are left out, and the first value of a key wins.
+   */
+  static void mapping(final Args args, final OutputStream out) throws IOException {
+    args.allow();
+    TreeMap<String, String> entries = new TreeMap<>();
+    forEachInput(
+        args.inputs,
+        input -> {
+          try {
+            new ClassReader(input.bytes())
+                .accept(
+                    new ClassVisitor(Opcodes.ASM9) {
+                      private String owner;
+                      private boolean isAnnotation;
+
+                      private void put(final String key, final String value) {
+                        if (isTsvField(key) && isTsvField(value)) {
+                          entries.putIfAbsent(key, value);
+                        }
+                      }
+
+                      @Override
+                      public void visit(
+                          final int version,
+                          final int access,
+                          final String name,
+                          final String signature,
+                          final String superName,
+                          final String[] interfaces) {
+                        owner = name;
+                        isAnnotation = (access & Opcodes.ACC_ANNOTATION) != 0;
+                        if ((access & Opcodes.ACC_MODULE) == 0) {
+                          put(name, name + "_R");
+                        }
+                      }
+
+                      @Override
+                      public FieldVisitor visitField(
+                          final int access,
+                          final String name,
+                          final String descriptor,
+                          final String signature,
+                          final Object value) {
+                        put(owner + '.' + name, name + "_r");
+                        return null;
+                      }
+
+                      @Override
+                      public MethodVisitor visitMethod(
+                          final int access,
+                          final String name,
+                          final String descriptor,
+                          final String signature,
+                          final String[] exceptions) {
+                        if (!name.startsWith("<")) {
+                          put(owner + '.' + name + descriptor, name + "_r");
+                          if (isAnnotation) {
+                            put('L' + owner + ";." + name, name + "_r");
+                          }
+                        }
+                        return new MethodVisitor(Opcodes.ASM9) {
+                          @Override
+                          public void visitInvokeDynamicInsn(
+                              final String name,
+                              final String descriptor,
+                              final Handle bootstrapMethodHandle,
+                              final Object... bootstrapMethodArguments) {
+                            put('.' + name + descriptor, name + "_r");
+                          }
+                        };
+                      }
+                    },
+                    ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+          } catch (RuntimeException | StackOverflowError e) {
+            // A malformed class (fuzzed inputs): its names are not mapped.
+            System.err.println("oracle: skipping " + input.id() + ": " + describe(e));
+          }
+        });
+    for (Map.Entry<String, String> entry : entries.entrySet()) {
+      out.write(semiUtf8(entry.getKey() + '\t' + entry.getValue() + '\n'));
+    }
+  }
+
+  // -----------------------------------------------------------------------------------------------
   // verify
   // -----------------------------------------------------------------------------------------------
 
@@ -1338,7 +1882,37 @@ public final class Oracle {
   }
 
   static String describe(final Throwable t) {
+    if (t instanceof Located located) {
+      return describe(located.getCause()) + "\n\tat " + located.site;
+    }
     return t.getClass().getName() + ": " + t.getMessage();
+  }
+
+  /**
+   * An exception of ASM's, with the first ASM method on its stack (other than Type's and
+   * ByteVector's helpers, which throw for their callers): `describe` adds it on a second
+   * line ("\tat <class>.<method>"), so that the parity harness can tell where ASM threw (the
+   * commons modes, whose adapters may fail where ASM's class writer threw first).
+   */
+  static final class Located extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
+    final String site;
+
+    Located(final Throwable cause) {
+      super(cause);
+      String firstAsmFrame = "?";
+      for (StackTraceElement frame : cause.getStackTrace()) {
+        // Type's and ByteVector's helpers throw for their callers: the site is the caller.
+        if (frame.getClassName().startsWith("org.objectweb.asm.")
+            && !frame.getClassName().equals("org.objectweb.asm.Type")
+            && !frame.getClassName().equals("org.objectweb.asm.ByteVector")) {
+          firstAsmFrame = frame.getClassName() + "." + frame.getMethodName();
+          break;
+        }
+      }
+      this.site = firstAsmFrame;
+    }
   }
 
   static int parseReaderOptions(final String value) {

@@ -24,6 +24,7 @@ use oxasm_util::{Asmifier, Printer, Textifier, TraceClassVisitor};
 
 use crate::analysis::{self, Interp};
 use crate::args::Args;
+use crate::commons::{self, Commons, Mapping};
 use crate::oracle::{Oracle, ServeRequest};
 use crate::{is_class_file, relative_id, root_path, sha256_hex, walk_files};
 
@@ -47,6 +48,11 @@ struct Mode {
     /// For a check mode, how the class is checked: oxasm's side is "OK", or the panic message
     /// of a check adapter (ASM's exception), or the output of `verify`.
     check: Option<Check>,
+    /// For a commons mode, the adapter the class goes through (P8): oxasm's side is the class
+    /// file, or the text of `code-size`.
+    commons: Option<Commons>,
+    /// Whether the mode needs the tier's remapping (`remap`).
+    needs_mapping: bool,
 }
 
 /// How a check mode checks a class (the oracle's `check --mode`).
@@ -81,10 +87,11 @@ impl Mode {
             || self.analyze.is_some()
             || self.roundtrip.is_some()
             || self.check.is_some()
+            || self.commons.is_some_and(|c| c.has_oxasm_side())
     }
 }
 
-const MODES: [Mode; 35] = [
+const MODES: [Mode; 45] = [
     Mode::textify("textify", "textify", ParsingOptions::empty()),
     Mode::textify(
         "textify-skip-code",
@@ -227,6 +234,31 @@ const MODES: [Mode; 35] = [
         needs_hierarchy: true,
         ..Mode::check("check-verify", "check --mode verify", Check::Verify)
     },
+    Mode {
+        needs_mapping: true,
+        ..Mode::commons("remap", "commons --mode remap", Commons::Remap)
+    },
+    Mode::commons("svuid", "commons --mode svuid", Commons::Svuid),
+    Mode::commons(
+        "static-init-merger",
+        "commons --mode static-init-merger",
+        Commons::StaticInitMerger,
+    ),
+    Mode::commons("tcb-sort", "commons --mode tcb-sort", Commons::TcbSort),
+    Mode::commons("jsr", "commons --mode jsr", Commons::Jsr),
+    Mode::commons("lvs", "commons --mode lvs", Commons::Lvs),
+    Mode::commons("advice", "commons --mode advice", Commons::Advice),
+    Mode::commons(
+        "instruction-adapter",
+        "commons --mode instruction-adapter",
+        Commons::InstructionAdapter,
+    ),
+    Mode::commons(
+        "analyzer-adapter",
+        "commons --mode analyzer-adapter",
+        Commons::AnalyzerAdapter,
+    ),
+    Mode::commons("code-size", "commons --mode code-size", Commons::CodeSize),
 ];
 
 impl Mode {
@@ -241,6 +273,15 @@ impl Mode {
             analyze: None,
             roundtrip: None,
             check: None,
+            commons: None,
+            needs_mapping: false,
+        }
+    }
+
+    const fn commons(name: &'static str, command: &'static str, commons: Commons) -> Mode {
+        Mode {
+            commons: Some(commons),
+            ..Mode::new(name, command)
         }
     }
 
@@ -339,6 +380,9 @@ impl Roundtrip {
     }
 }
 
+/// The stack size of the threads that compute oxasm's side of a mode.
+const COMPARISON_STACK_SIZE: usize = 64 << 20;
+
 /// The fewest classes worth starting another oracle JVM for.
 const MIN_CLASSES_PER_JVM: usize = 500;
 
@@ -365,6 +409,7 @@ pub fn cli(mut args: Args) -> Result<()> {
         .transpose()
         .context("--jobs")?;
     let hierarchy = args.value("--hierarchy")?.map(PathBuf::from);
+    let mapping = args.value("--mapping")?.map(PathBuf::from);
     let oracle_only = args.flag("--oracle-only");
     args.finish()?;
 
@@ -386,9 +431,12 @@ pub fn cli(mut args: Args) -> Result<()> {
             .collect::<Result<_>>()?
     };
 
-    if modes.iter().any(|m| m.check.is_some()) {
-        // The check adapters panic on the classes they reject, which is an expected outcome:
-        // only report the other panics.
+    if modes
+        .iter()
+        .any(|m| m.check.is_some() || m.commons.is_some())
+    {
+        // The check adapters panic on the classes they reject, and the commons adapters where
+        // ASM throws, which is an expected outcome: only report the other panics.
         let default_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
             let message = info
@@ -421,10 +469,18 @@ pub fn cli(mut args: Args) -> Result<()> {
         None
     };
 
+    let mapping = if modes.iter().any(|m| m.needs_mapping) {
+        Some(match mapping {
+            Some(path) => path,
+            None => tier_mapping(&oracle, &tier)?,
+        })
+    } else {
+        None
+    };
+
     if !oracle_only && let Some(mode) = modes.iter().find(|m| !m.has_oxasm_side()) {
         bail!(
-            "mode {} has no oxasm side yet (it needs the writer, P5/P6); pass --oracle-only to \
-             only fill the oracle cache",
+            "mode {} has no oxasm side yet; pass --oracle-only to only fill the oracle cache",
             mode.name
         );
     }
@@ -436,11 +492,32 @@ pub fn cli(mut args: Args) -> Result<()> {
         }
         _ => None,
     };
+    // oxasm's side of the remap mode reads the same mapping.
+    let remapping = match &mapping {
+        Some(path) if !oracle_only => Some(commons::read_mapping(path)?),
+        _ => None,
+    };
     let mut mismatched_modes = Vec::new();
     for mode in modes {
-        let cache = fill_mode(&oracle, &tier, mode, &classes, hierarchy.as_deref(), jobs)?;
+        let cache = fill_mode(
+            &oracle,
+            &tier,
+            mode,
+            &classes,
+            hierarchy.as_deref(),
+            mapping.as_deref(),
+            jobs,
+        )?;
         if !oracle_only
-            && compare_mode(&tier, mode, &classes, &cache, map_hierarchy.as_ref(), jobs)? > 0
+            && compare_mode(
+                &tier,
+                mode,
+                &classes,
+                &cache,
+                map_hierarchy.as_ref(),
+                remapping.as_ref(),
+                jobs,
+            )? > 0
         {
             mismatched_modes.push(mode.name);
         }
@@ -459,10 +536,18 @@ enum Outcome {
     Ok(Vec<u8>),
     /// The side failed: the oracle's exception, or oxasm's error (or panic).
     Err(String),
+    /// oxasm panicked as ASM throws (a commons adapter): agrees with the oracle's exception
+    /// only if it is the same one.
+    Thrown(String),
 }
 
 /// oxasm's side of a mode for one class.
-fn oxasm_outcome(mode: &Mode, class_file: &[u8], hierarchy: Option<&MapHierarchy>) -> Outcome {
+fn oxasm_outcome(
+    mode: &Mode,
+    class_file: &[u8],
+    hierarchy: Option<&MapHierarchy>,
+    mapping: Option<&Mapping>,
+) -> Outcome {
     let result = std::panic::catch_unwind(|| -> Result<Vec<u8>, String> {
         if let Some(interp) = mode.analyze {
             let hierarchy = hierarchy.map(|h| h as &dyn ClassHierarchy);
@@ -473,6 +558,9 @@ fn oxasm_outcome(mode: &Mode, class_file: &[u8], hierarchy: Option<&MapHierarchy
         }
         if let Some(check) = mode.check {
             return check_class(class_file, check, hierarchy);
+        }
+        if let Some(adapter) = mode.commons {
+            return commons::run(class_file, adapter, mapping);
         }
         let options = mode
             .textify
@@ -486,6 +574,18 @@ fn oxasm_outcome(mode: &Mode, class_file: &[u8], hierarchy: Option<&MapHierarchy
     match result {
         Ok(Ok(output)) => Outcome::Ok(output),
         Ok(Err(error)) => Outcome::Err(error),
+        // A commons adapter panics where ASM throws, with the `toString()` of ASM's exception
+        // (ADR-06): an expected failure, compared with ASM's.
+        Err(ref panic)
+            if mode.commons.is_some()
+                && let Some(message) = panic
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+                    .or_else(|| panic.downcast_ref::<&str>().copied())
+                    .filter(|m| m.starts_with("java.lang.")) =>
+        {
+            Outcome::Thrown(message.to_owned())
+        }
         Err(panic) => Outcome::Err(format!(
             "PANIC: {}",
             panic
@@ -618,6 +718,7 @@ fn compare_mode(
     classes: &[Class],
     cache: &Path,
     hierarchy: Option<&MapHierarchy>,
+    mapping: Option<&Mapping>,
     jobs: usize,
 ) -> Result<usize> {
     let out = root_path("target/parity")
@@ -627,45 +728,56 @@ fn compare_mode(
         fs::remove_dir_all(&out)?;
     }
     let chunk_size = classes.len().div_ceil(jobs.max(1)).max(1);
-    let results: Vec<Result<Vec<(usize, String)>>> = std::thread::scope(|scope| {
+    let results: Vec<Result<Comparison>> = std::thread::scope(|scope| {
         let handles: Vec<_> = classes
             .chunks(chunk_size)
             .enumerate()
             .map(|(chunk_index, chunk)| {
                 let out = out.as_path();
-                scope.spawn(move || -> Result<Vec<(usize, String)>> {
-                    let mut mismatches = Vec::new();
-                    for (i, class) in chunk.iter().enumerate() {
-                        let mut oracle = oracle_outcome(cache, class)?;
-                        let mut oxasm = oxasm_outcome(mode, &class.bytes, hierarchy);
-                        if mode.check.is_some() {
-                            // oxasm's panic messages are Rust strings, where each unpaired
-                            // surrogate of a name became one U+FFFD (JavaStr's Display): compare
-                            // both sides so.
-                            for outcome in [&mut oracle, &mut oxasm] {
-                                if let Outcome::Ok(text) = outcome
-                                    && let Ok(java_text) = JavaStr::from_semi_utf8(text)
-                                {
-                                    *text = java_text.to_string().into_bytes();
+                // The reader's depth bounds (ADR-06) hold 256 levels of nesting in a few KB of
+                // stack per level when optimized, but xtask's unoptimized frames are larger:
+                // more than the 2 MiB default for a thread at 256 levels of annotations.
+                std::thread::Builder::new()
+                    .stack_size(COMPARISON_STACK_SIZE)
+                    .spawn_scoped(scope, move || -> Result<Comparison> {
+                        let mut mismatches = Vec::new();
+                        let mut categories = Vec::new();
+                        for (i, class) in chunk.iter().enumerate() {
+                            let mut oracle = oracle_outcome(cache, class)?;
+                            let mut oxasm = oxasm_outcome(mode, &class.bytes, hierarchy, mapping);
+                            if mode.check.is_some() {
+                                // oxasm's panic messages are Rust strings, where each unpaired
+                                // surrogate of a name became one U+FFFD (JavaStr's Display): compare
+                                // both sides so.
+                                for outcome in [&mut oracle, &mut oxasm] {
+                                    if let Outcome::Ok(text) = outcome
+                                        && let Ok(java_text) = JavaStr::from_semi_utf8(text)
+                                    {
+                                        *text = java_text.to_string().into_bytes();
+                                    }
                                 }
                             }
-                        }
-                        if let Some(report) = mismatch(&oracle, &oxasm) {
-                            fs::create_dir_all(out)?;
-                            let base = out.join(&class.sha256);
-                            fs::write(base.with_extension("class"), &class.bytes)?;
-                            for (side, outcome) in [("oracle", &oracle), ("oxasm", &oxasm)] {
-                                let bytes = match outcome {
-                                    Outcome::Ok(bytes) => bytes.as_slice(),
-                                    Outcome::Err(error) => error.as_bytes(),
-                                };
-                                fs::write(base.with_extension(side), bytes)?;
+                            if let Some(category) = documented_category(&oracle, &oxasm) {
+                                categories.push(category);
+                            } else if let Some(report) = mismatch(&oracle, &oxasm) {
+                                fs::create_dir_all(out)?;
+                                let base = out.join(&class.sha256);
+                                fs::write(base.with_extension("class"), &class.bytes)?;
+                                for (side, outcome) in [("oracle", &oracle), ("oxasm", &oxasm)] {
+                                    let bytes = match outcome {
+                                        Outcome::Ok(bytes) => bytes.as_slice(),
+                                        Outcome::Err(error) | Outcome::Thrown(error) => {
+                                            error.as_bytes()
+                                        }
+                                    };
+                                    fs::write(base.with_extension(side), bytes)?;
+                                }
+                                mismatches.push((chunk_index * chunk_size + i, report));
                             }
-                            mismatches.push((chunk_index * chunk_size + i, report));
                         }
-                    }
-                    Ok(mismatches)
-                })
+                        Ok((mismatches, categories))
+                    })
+                    .expect("spawning a comparison thread")
             })
             .collect();
         handles
@@ -674,8 +786,13 @@ fn compare_mode(
             .collect()
     });
     let mut mismatches = Vec::new();
+    let mut categories = std::collections::BTreeMap::<&str, usize>::new();
     for result in results {
-        mismatches.extend(result?);
+        let (chunk_mismatches, chunk_categories) = result?;
+        mismatches.extend(chunk_mismatches);
+        for category in chunk_categories {
+            *categories.entry(category).or_default() += 1;
+        }
     }
     mismatches.sort();
     println!(
@@ -684,6 +801,9 @@ fn compare_mode(
         classes.len(),
         mismatches.len()
     );
+    for (category, count) in &categories {
+        println!("  documented divergence, {count} classes: {category}");
+    }
     for (index, report) in mismatches.iter().take(20) {
         let class = &classes[*index];
         println!("  {} ({}): {report}", class.id, &class.sha256[..12]);
@@ -709,11 +829,125 @@ fn oracle_outcome(cache: &Path, class: &Class) -> Result<Outcome> {
     ))
 }
 
+/// The mismatches of a chunk of classes (their indices and reports), and the documented
+/// divergences found in it.
+type Comparison = (Vec<(usize, String)>, Vec<&'static str>);
+
+/// The documented divergence (oxasm-verification, "Known nondeterminism") the two outcomes
+/// disagree by, if any: such a class counts as agreeing, and is reported by category.
+fn documented_category(oracle: &Outcome, oxasm: &Outcome) -> Option<&'static str> {
+    // The reader categories (P2, ADR-06 and ADR-09): oxasm's reader rejects a class that ASM's
+    // reader passes on.
+    if let Outcome::Err(error) = oxasm {
+        if error.starts_with("invalid constant pool index 0 ") {
+            return Some("a null string (oxasm's reader rejects it, ASM's passes null on)");
+        }
+        if error.starts_with("invalid method handle reference kind ") {
+            return Some("an invalid method handle kind (oxasm's reader rejects it)");
+        }
+    }
+    // Where ASM's commons modes say where ASM threw, and oxasm does not fail.
+    if let (Outcome::Err(error), Outcome::Ok(_)) = (oracle, oxasm)
+        && let Some(site) = oracle_exception(error).1
+    {
+        // ASM reads a type path's length as a signed byte (P6, the user chose the JVMS reading).
+        if site.starts_with("org.objectweb.asm.TypePath.") {
+            return Some("a type path of 128 steps or more (ASM's signed path_length throws)");
+        }
+        // ASM's tree throws on malformed input where oxasm's stores (P3).
+        if site.starts_with("org.objectweb.asm.tree.") {
+            return Some("ASM's tree throws where oxasm's stores (malformed input)");
+        }
+        // A chop frame removing more locals than there are, read with EXPAND_FRAMES: ASM's
+        // writer throws on the negative count, oxasm's visitors get no locals (P5).
+        if site == "org.objectweb.asm.MethodWriter.visitFrameStart" {
+            return Some("a negative frame local count in expanded mode (ASM's writer throws)");
+        }
+    }
+    let (Outcome::Err(error), Outcome::Thrown(thrown)) = (oracle, oxasm) else {
+        return None;
+    };
+    // ASM's class writer throws in the middle of the visit, where oxasm's records the error for
+    // `to_bytes` (ADR-06): the adapter goes on, and may panic on a later event (P7).
+    let (exception, site) = oracle_exception(error);
+    if exception
+        == "java.lang.IllegalArgumentException: Class versions V1_5 or less must use F_NEW frames."
+        || site.is_some_and(|site| ASM_WRITER_CLASSES.iter().any(|c| site.starts_with(c)))
+    {
+        return Some("the class writer's deferred error (ASM's writer throws first, both fail)");
+    }
+    if !error.starts_with("java.lang.") {
+        return None;
+    }
+    // ASM's Type parses a method descriptor lazily (an `L` without its `;` gives a type whose
+    // name fails later, if ever asked for), where oxasm's fails at once.
+    if thrown.starts_with("java.lang.IllegalArgumentException: Invalid descriptor: ")
+        && !same_exception(error, thrown)
+    {
+        return Some("a malformed descriptor that ASM's Type reads lazily (both fail)");
+    }
+    // oxasm's signature reader keeps the offset of a malformed signature, not ASM's exception
+    // (ADR-14).
+    if thrown.starts_with("java.lang.IllegalArgumentException: invalid signature at offset ")
+        || thrown == "java.lang.IllegalArgumentException: Too many nested type arguments"
+    {
+        return Some("a malformed signature (both throw, with different exceptions)");
+    }
+    None
+}
+
+/// The classes of ASM's class writer (with a `.`, to match the start of a throw site).
+const ASM_WRITER_CLASSES: [&str; 12] = [
+    "org.objectweb.asm.AnnotationWriter.",
+    "org.objectweb.asm.ClassWriter.",
+    "org.objectweb.asm.CurrentFrame.",
+    "org.objectweb.asm.FieldWriter.",
+    "org.objectweb.asm.Frame.",
+    "org.objectweb.asm.Handler.",
+    "org.objectweb.asm.Label.",
+    "org.objectweb.asm.MethodWriter.",
+    "org.objectweb.asm.ModuleWriter.",
+    "org.objectweb.asm.RecordComponentWriter.",
+    "org.objectweb.asm.Symbol.",
+    "org.objectweb.asm.SymbolTable.",
+];
+
+/// An oracle error (`<class>: <message>`), and the ASM method that threw it if the oracle says
+/// (the commons modes print it on a second line, `\tat <class>.<method>`).
+fn oracle_exception(error: &str) -> (&str, Option<&str>) {
+    match error.split_once("\n\tat ") {
+        Some((exception, site)) => (exception, Some(site.trim_end())),
+        None => (error, None),
+    }
+}
+
+/// Whether oxasm's panic (`thrown`) stands for the oracle's exception (`error`, printed as
+/// `<class>: <message>`).
+fn same_exception(error: &str, thrown: &str) -> bool {
+    let error = oracle_exception(error).0;
+    // The oracle prints each unpaired surrogate of a message as '?', and a panic message has a
+    // U+FFFD (JavaStr's Display).
+    let thrown = thrown.replace('\u{FFFD}', "?");
+    error == thrown
+        // An exception without a message, which the oracle prints as "<class>: null".
+        || (!thrown.contains(": ") && error.strip_suffix(": null") == Some(&thrown))
+        // Java's helpful NullPointerException messages describe the JVM's bytecode.
+        || (thrown == "java.lang.NullPointerException"
+            && error.starts_with("java.lang.NullPointerException"))
+}
+
 /// A description of how the two outcomes disagree, or `None` if they agree.
 fn mismatch(oracle: &Outcome, oxasm: &Outcome) -> Option<String> {
     match (oracle, oxasm) {
         (Outcome::Ok(a), Outcome::Ok(b)) if a == b => None,
         (Outcome::Err(_), Outcome::Err(error)) if !error.starts_with("PANIC") => None,
+        // The oracle prints each unpaired surrogate of a message as '?', and a panic message has
+        // a U+FFFD (JavaStr's Display).
+        (Outcome::Err(error), Outcome::Thrown(thrown)) if same_exception(error, thrown) => None,
+        (Outcome::Err(error), Outcome::Thrown(thrown)) => Some(format!(
+            "oxasm panics {thrown:?} where ASM throws {error:?}"
+        )),
+        (Outcome::Ok(_), Outcome::Thrown(thrown)) => Some(format!("only oxasm fails: {thrown}")),
         (Outcome::Ok(a), Outcome::Ok(b))
             if a.starts_with(&[0xCA, 0xFE, 0xBA, 0xBE])
                 && b.starts_with(&[0xCA, 0xFE, 0xBA, 0xBE]) =>
@@ -760,6 +994,7 @@ fn mismatch(oracle: &Outcome, oxasm: &Outcome) -> Option<String> {
         (Outcome::Ok(_), Outcome::Err(error)) => Some(format!("only oxasm fails: {error}")),
         (Outcome::Err(error), Outcome::Ok(_)) => Some(format!("only ASM fails: {error}")),
         (Outcome::Err(error), Outcome::Err(oxasm)) => Some(format!("{oxasm} (ASM: {error})")),
+        (Outcome::Thrown(_), _) => unreachable!("only oxasm's side panics"),
     }
 }
 
@@ -770,6 +1005,7 @@ fn fill_mode(
     mode: &Mode,
     classes: &[Class],
     hierarchy: Option<&Path>,
+    mapping: Option<&Path>,
     jobs: usize,
 ) -> Result<PathBuf> {
     let mut command = mode.command.to_owned();
@@ -786,6 +1022,19 @@ fn fill_mode(
         command.push_str(&format!(" --hierarchy {}", hierarchy.display()));
         // Results depend on the hierarchy, so it is part of the cache key.
         key.push_str(&format!("-h{}", &sha256_hex(&tsv)[..12]));
+    }
+    if mode.needs_mapping {
+        let mapping = mapping.expect("mapping resolved for this mode");
+        let tsv =
+            fs::read(mapping).with_context(|| format!("cannot read {}", mapping.display()))?;
+        ensure!(
+            !mapping.to_string_lossy().contains(char::is_whitespace),
+            "the mapping path must not contain whitespace: {}",
+            mapping.display()
+        );
+        command.push_str(&format!(" --mapping {}", mapping.display()));
+        // Results depend on the mapping, so it is part of the cache key.
+        key.push_str(&format!("-m{}", &sha256_hex(&tsv)[..12]));
     }
     let cache = root_path("target/oracle").join(tier_key(tier)).join(&key);
     fs::create_dir_all(&cache)?;
@@ -867,6 +1116,22 @@ fn tier_hierarchy(oracle: &Oracle, tier: &str) -> Result<PathBuf> {
             );
         }
     }
+    let tsv = oracle.text(&words)?;
+    fs::create_dir_all(path.parent().expect("file has a parent"))?;
+    fs::write(&path, tsv)?;
+    Ok(path)
+}
+
+/// `target/oracle/<tier>/mapping.tsv`: the remapping of the `remap` mode, printed by the oracle's
+/// `mapping` command over the tier (every class, member and invokedynamic name of the tier gets a
+/// new name; see `Oracle.mapping`). Like the hierarchy, it is regenerated on every run, and
+/// cached results are keyed by its hash.
+fn tier_mapping(oracle: &Oracle, tier: &str) -> Result<PathBuf> {
+    let path = root_path("target/oracle")
+        .join(tier_key(tier))
+        .join("mapping.tsv");
+    let mut words = vec!["mapping".to_owned()];
+    words.extend(tier_inputs(tier)?);
     let tsv = oracle.text(&words)?;
     fs::create_dir_all(path.parent().expect("file has a parent"))?;
     fs::write(&path, tsv)?;

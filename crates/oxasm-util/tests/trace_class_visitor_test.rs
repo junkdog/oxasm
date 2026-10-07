@@ -4,8 +4,9 @@ use oxasm::constant::Constant;
 use oxasm::reader::AttributeReadContext;
 use oxasm::writer::AttributeWriteContext;
 use oxasm::{
-    AnnotationVisitor, AttributeCodec, ClassReader, CustomAttribute, ReadError, jstr, ClassVisitor, ClassWriter, ClassWriterFlags, FieldVisitor,
-    JavaStr, MethodVisitor, ModuleVisitor, ParsingOptions,
+    AnnotationVisitor, AttributeCodec, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags,
+    CustomAttribute, FieldVisitor, JavaStr, MethodVisitor, ModuleVisitor, ParsingOptions,
+    ReadError, jstr,
 };
 use oxasm_testkit::{ClassFile, PrecompiledClass};
 use oxasm_util::{

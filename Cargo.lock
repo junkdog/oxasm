@@ -260,7 +260,12 @@ name = "oxasm-commons"
 version = "0.0.0"
 dependencies = [
  "oxasm",
+ "oxasm-analysis",
+ "oxasm-testkit",
  "oxasm-tree",
+ "oxasm-util",
+ "rustc-hash",
+ "sha1",
 ]
 
 [[package]]
@@ -429,6 +434,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
 name = "sha2"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -570,9 +586,11 @@ dependencies = [
  "anyhow",
  "oxasm",
  "oxasm-analysis",
+ "oxasm-commons",
  "oxasm-testkit",
  "oxasm-tree",
  "oxasm-util",
+ "rustc-hash",
  "sha2",
  "zip",
 ]

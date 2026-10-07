@@ -5,6 +5,7 @@
 
 mod analysis;
 mod args;
+mod commons;
 mod corpus;
 mod golden;
 mod oracle;

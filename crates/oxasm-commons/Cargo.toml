@@ -9,6 +9,13 @@ license.workspace = true
 [dependencies]
 oxasm.workspace = true
 oxasm-tree.workspace = true
+rustc-hash.workspace = true
+sha1.workspace = true
+
+[dev-dependencies]
+oxasm-analysis.workspace = true
+oxasm-testkit.workspace = true
+oxasm-util.workspace = true
 
 [lints]
 workspace = true

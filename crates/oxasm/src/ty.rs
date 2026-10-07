@@ -60,7 +60,8 @@ pub enum TypeSort {
 /// invalid type character (an `IllegalArgumentException`), or Java's `Index <i> out of bounds
 /// for length <n>` for a descriptor that ends too early (the `StringIndexOutOfBoundsException`
 /// of `charAt`, with `i` and `n` in UTF-16 units). See [`InvalidDescriptor::message`] for the
-/// exact text, which may have unpaired surrogates.
+/// exact text, which may have unpaired surrogates. The panicking methods of [`Type`] panic with
+/// [`InvalidDescriptor::exception`], the `toString()` of ASM's exception (ADR-06).
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("{}", self.message())]
 pub struct InvalidDescriptor {
@@ -71,6 +72,23 @@ pub struct InvalidDescriptor {
 }
 
 impl InvalidDescriptor {
+    /// The `toString()` of ASM's exception: its class, then its message.
+    #[must_use]
+    pub fn exception(&self) -> JavaString {
+        let mut exception = JavaString::from(match self.out_of_bounds {
+            Some(_) => "java.lang.StringIndexOutOfBoundsException: ",
+            None => "java.lang.IllegalArgumentException: ",
+        });
+        exception.push_java_str(&self.message());
+        exception
+    }
+
+    /// Panics as ASM throws (ADR-06): with the `toString()` of ASM's exception.
+    #[track_caller]
+    fn throw(&self) -> ! {
+        panic!("{}", self.exception())
+    }
+
     /// The message of ASM's exception.
     #[must_use]
     pub fn message(&self) -> JavaString {
@@ -181,7 +199,7 @@ impl Type {
     #[must_use]
     #[track_caller]
     pub fn get_type(type_descriptor: impl AsRef<JavaStr>) -> Type {
-        Type::try_get_type(type_descriptor).unwrap_or_else(|e| panic!("{e}"))
+        Type::try_get_type(type_descriptor).unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the type corresponding to the given field or method type descriptor.
@@ -204,8 +222,7 @@ impl Type {
     #[must_use]
     #[track_caller]
     pub fn get_element_type(&self) -> Type {
-        self.try_get_element_type()
-            .unwrap_or_else(|e| panic!("{e}"))
+        self.try_get_element_type().unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the type of the elements of this array type. This method should only be used for
@@ -291,7 +308,7 @@ impl Type {
     #[track_caller]
     pub fn get_argument_types(&self) -> Vec<Type> {
         let descriptor = self.descriptor_buf();
-        argument_types(&descriptor, 0).unwrap_or_else(|e| panic!("{e}"))
+        argument_types(&descriptor, 0).unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the types corresponding to the argument types of the given method descriptor.
@@ -302,7 +319,7 @@ impl Type {
     #[must_use]
     #[track_caller]
     pub fn get_argument_types_of(method_descriptor: impl AsRef<JavaStr>) -> Vec<Type> {
-        Type::try_get_argument_types_of(method_descriptor).unwrap_or_else(|e| panic!("{e}"))
+        Type::try_get_argument_types_of(method_descriptor).unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the types corresponding to the argument types of the given method descriptor.
@@ -326,7 +343,7 @@ impl Type {
     #[track_caller]
     pub fn get_return_type(&self) -> Type {
         let descriptor = self.descriptor_buf();
-        return_type(&descriptor).unwrap_or_else(|e| panic!("{e}"))
+        return_type(&descriptor).unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the type corresponding to the return type of the given method descriptor.
@@ -337,7 +354,7 @@ impl Type {
     #[must_use]
     #[track_caller]
     pub fn get_return_type_of(method_descriptor: impl AsRef<JavaStr>) -> Type {
-        Type::try_get_return_type_of(method_descriptor).unwrap_or_else(|e| panic!("{e}"))
+        Type::try_get_return_type_of(method_descriptor).unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the type corresponding to the return type of the given method descriptor.
@@ -379,7 +396,7 @@ impl Type {
     ///
     /// # Panics
     ///
-    /// On a method type, or a malformed array type.
+    /// On a method type (ASM's `AssertionError`, ADR-06), or a malformed array type.
     #[must_use]
     #[track_caller]
     pub fn get_class_name(&self) -> JavaString {
@@ -401,7 +418,7 @@ impl Type {
                 return class_name;
             }
             TypeSort::Object => return self.value().replace('/', '.'),
-            TypeSort::Method => panic!("get_class_name() on a method type: {self}"),
+            TypeSort::Method => panic!("java.lang.AssertionError"),
         };
         JavaString::from(name)
     }
@@ -485,14 +502,14 @@ impl Type {
     ///
     /// # Panics
     ///
-    /// On a method type.
+    /// On a method type (ASM's `AssertionError`, ADR-06).
     #[must_use]
     #[track_caller]
     pub fn get_size(&self) -> usize {
         match self.sort {
             TypeSort::Void => 0,
             TypeSort::Long | TypeSort::Double => 2,
-            TypeSort::Method => panic!("get_size() on a method type: {self}"),
+            TypeSort::Method => panic!("java.lang.AssertionError"),
             _ => 1,
         }
     }
@@ -519,7 +536,7 @@ impl Type {
     #[must_use]
     #[track_caller]
     pub fn get_argument_count_of(method_descriptor: impl AsRef<JavaStr>) -> usize {
-        Type::try_get_argument_count_of(method_descriptor).unwrap_or_else(|e| panic!("{e}"))
+        Type::try_get_argument_count_of(method_descriptor).unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the number of arguments in the given method descriptor.
@@ -574,8 +591,7 @@ impl Type {
     #[must_use]
     #[track_caller]
     pub fn get_arguments_and_return_sizes_of(method_descriptor: impl AsRef<JavaStr>) -> u32 {
-        Type::try_get_arguments_and_return_sizes_of(method_descriptor)
-            .unwrap_or_else(|e| panic!("{e}"))
+        Type::try_get_arguments_and_return_sizes_of(method_descriptor).unwrap_or_else(|e| e.throw())
     }
 
     /// Computes the size of the arguments and of the return value of a method, packed as in
@@ -629,13 +645,14 @@ impl Type {
     ///
     /// # Panics
     ///
-    /// If the opcode is not supported for this type (ASM's `UnsupportedOperationException`); see
+    /// If the opcode is not supported for this type, as ASM throws an
+    /// `UnsupportedOperationException` (with its `toString()`, ADR-06); see
     /// [`Type::checked_opcode`].
     #[must_use]
     #[track_caller]
     pub fn get_opcode(&self, opcode: u8) -> u8 {
         self.checked_opcode(opcode)
-            .unwrap_or_else(|| panic!("opcode {opcode} is not supported for type {self}"))
+            .unwrap_or_else(|| panic!("java.lang.UnsupportedOperationException"))
     }
 
     /// [`Type::get_opcode`], with `None` where ASM throws `UnsupportedOperationException`.

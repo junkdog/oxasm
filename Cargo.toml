@@ -29,6 +29,7 @@ oxasm-testkit = { path = "crates/oxasm-testkit" }
 bitflags = "2.13.2"
 dyn-clone = "1.0.20"
 rustc-hash = "2.1.3"
+sha1 = "0.11"
 thiserror = "2.0.21"
 
 # dev only
