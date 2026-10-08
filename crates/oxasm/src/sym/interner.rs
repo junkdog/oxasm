@@ -31,8 +31,8 @@
 use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
 use std::cell::UnsafeCell;
 use std::fmt;
-use std::mem::MaybeUninit;
 use std::hash::Hasher;
+use std::mem::MaybeUninit;
 use std::num::NonZeroU32;
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering::*};

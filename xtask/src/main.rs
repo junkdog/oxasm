@@ -5,6 +5,7 @@
 
 mod analysis;
 mod args;
+mod bench;
 mod commons;
 mod corpus;
 mod golden;
@@ -46,6 +47,16 @@ tasks:
         asmify-skip-code, ..., tree-asmify), the writer ones (copy, plain, maxs, frames, ...)
         and the analysis ones (analyze-basic, analyze-basicverifier, analyze-simpleverifier,
         analyze-source)
+  bench [--tier <t0|t1|t2|dir:<path>> [--sample <n>]] [--scenario <name>]... [--rounds <n>]
+        [--warmup <n>] [--iterations <n>] [--cpus <list>] [--prepare]
+        oxasm against ASM 9.10.1 on the scenarios of crates/oxasm-bench (ASM's JMH benchmarks):
+        one release `oxasm-bench run` and one oracle `bench` process per scenario, side and round
+        (5 rounds of 10 warm-up and 20 measured passes by default; --cpus pins both with
+        taskset), then a table of the time per op and the ratios; the classes are T0 and a
+        2000-class T1 sample by default, filtered to those every scenario accepts and packed
+        under target/bench/<set>/ (--prepare rebuilds the pack and stops, e.g. for
+        `cargo bench -p oxasm-bench`); results go to target/bench/<set>/summary-*.txt and
+        runs-*.tsv
 ";
 
 fn main() -> ExitCode {
@@ -69,6 +80,7 @@ fn run() -> Result<()> {
         "golden" => golden::cli(args),
         "corpus" => corpus::cli(args),
         "parity" => parity::cli(args),
+        "bench" => bench::cli(args),
         "help" | "--help" | "-h" => {
             print!("{USAGE}");
             Ok(())

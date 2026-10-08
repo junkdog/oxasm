@@ -60,6 +60,13 @@
  *                                the input classes, one "key \t value" line per entry (no
  *                                records); see Oracle.mapping
  *   serve                        persistent mode, see below
+ *   bench --scenario S --pack F [--hierarchy H] [--warmup W] [--iterations N]
+ *                                ASM's side of `cargo xtask bench`: a warm loop of W (10) passes,
+ *                                then N (20) measured passes of scenario S over the classes of the
+ *                                pack F (u32 big-endian length, class file bytes, repeated),
+ *                                printing "#bench <S> <pass> <ops> <nanoseconds> <check>" per
+ *                                measured pass (no records); the scenarios mirror ASM's JMH
+ *                                benchmarks, as crates/oxasm-bench does on oxasm's side
  *   gen <scenario...>            writes the T3 synthetic classes (one record per scenario: the
  *                                class file, or the exception of ClassWriter.toByteArray); oxasm's
  *                                crates/oxasm/tests/t3_synthetic_test.rs generates the same
@@ -87,6 +94,7 @@
  *   - a name missing from F throws TypeNotPresentException(name), as class loading would.
  */
 
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -116,6 +124,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import org.objectweb.asm.AnnotationVisitor;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -123,8 +132,10 @@ import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.ModuleVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.TypePath;
 import org.objectweb.asm.commons.AdviceAdapter;
 import org.objectweb.asm.commons.AnalyzerAdapter;
 import org.objectweb.asm.commons.ClassRemapper;
@@ -181,6 +192,7 @@ public final class Oracle {
         case "mapping" -> mapping(options, out);
         case "verify" -> verify(options, out);
         case "gen" -> gen(options, out);
+        case "bench" -> bench(options, out);
         default -> {
           ClassCommand classCommand = ClassCommand.create(command, options);
           forEachInput(
@@ -210,7 +222,7 @@ public final class Oracle {
     System.err.println("oracle: " + message);
     System.err.println(
         "usage: Oracle {textify|tree-textify|asmify|tree-asmify|check|dump|roundtrip|tree-roundtrip|analyze|commons|sift-probe"
-            + "|verify|hierarchy|mapping|gen|serve"
+            + "|verify|hierarchy|mapping|gen|bench|serve"
             + "|version} [options] <inputs...>");
     System.exit(2);
   }
@@ -1760,6 +1772,743 @@ public final class Oracle {
     methodVisitor.visitMaxs(3, 6);
     methodVisitor.visitEnd();
     return classWriter.toByteArray();
+  }
+
+  // -----------------------------------------------------------------------------------------------
+  // bench: ASM's side of `cargo xtask bench` (keep in sync with crates/oxasm-bench)
+  // -----------------------------------------------------------------------------------------------
+
+  /** The number of classes generate_hello_world generates per pass. */
+  static final int HELLO_WORLDS_PER_PASS = 10_000;
+
+  /** Where results go that nothing else reads, so that the JIT cannot drop their computation. */
+  static Object sink;
+
+  /** One pass of a scenario over the pack: returns the check value (see crates/oxasm-bench). */
+  @FunctionalInterface
+  interface BenchPass {
+    long run() throws Exception;
+  }
+
+  static void bench(final Args args, final OutputStream out) throws Exception {
+    args.allow("--scenario", "--pack", "--hierarchy", "--warmup", "--iterations");
+    String scenario = args.require("--scenario");
+    List<byte[]> classes = readPack(args.require("--pack"));
+    Hierarchy hierarchy = Hierarchy.load(args.get("--hierarchy"));
+    int warmup = parseCount(args.get("--warmup"), 10);
+    int iterations = parseCount(args.get("--iterations"), 20);
+    List<String> descriptors = new ArrayList<>();
+    List<String> methodDescriptors = new ArrayList<>();
+    for (byte[] classFile : classes) {
+      new ClassReader(classFile).accept(new CollectTypes(descriptors, methodDescriptors), 0);
+    }
+    int ops = classes.size();
+    BenchPass pass;
+    switch (scenario) {
+      case "class_info" ->
+          pass =
+              () -> {
+                long check = 0;
+                for (byte[] classFile : classes) {
+                  ClassReader classReader = new ClassReader(classFile);
+                  int access = classReader.getAccess();
+                  sink = classReader.getClassName();
+                  sink = classReader.getSuperName();
+                  check += access + classReader.getInterfaces().length;
+                }
+                return check;
+              };
+      case "read" ->
+          pass =
+              () -> {
+                long check = 0;
+                for (byte[] classFile : classes) {
+                  CountingVisitor countingVisitor = new CountingVisitor();
+                  new ClassReader(classFile).accept(countingVisitor, 0);
+                  check += countingVisitor.count;
+                }
+                return check;
+              };
+      case "read_tree" ->
+          pass =
+              () -> {
+                long check = 0;
+                for (byte[] classFile : classes) {
+                  ClassNode classNode = new ClassNode();
+                  new ClassReader(classFile).accept(classNode, 0);
+                  check += classNode.fields.size() + classNode.methods.size();
+                  for (MethodNode method : classNode.methods) {
+                    check += method.instructions.size();
+                  }
+                  sink = classNode;
+                }
+                return check;
+              };
+      case "read_write",
+          "read_write_copy_pool",
+          "read_write_compute_maxs",
+          "read_write_compute_frames" -> {
+        if (scenario.equals("read_write_compute_frames") && hierarchy == null) {
+          throw new UsageException(scenario + " needs --hierarchy");
+        }
+        pass =
+            () -> {
+              long check = 0;
+              for (byte[] classFile : classes) {
+                ClassReader classReader = new ClassReader(classFile);
+                ClassWriter classWriter =
+                    switch (scenario) {
+                      case "read_write" -> new ClassWriter(0);
+                      case "read_write_copy_pool" -> new ClassWriter(classReader, 0);
+                      case "read_write_compute_maxs" -> new ClassWriter(ClassWriter.COMPUTE_MAXS);
+                      default ->
+                          new HierarchyClassWriter(null, ClassWriter.COMPUTE_FRAMES, hierarchy);
+                    };
+                classReader.accept(classWriter, 0);
+                check += classWriter.toByteArray().length;
+              }
+              return check;
+            };
+      }
+      case "read_tree_write" ->
+          pass =
+              () -> {
+                long check = 0;
+                for (byte[] classFile : classes) {
+                  ClassWriter classWriter = new ClassWriter(0);
+                  ClassNode classNode = new ClassNode();
+                  new ClassReader(classFile).accept(classNode, 0);
+                  classNode.accept(classWriter);
+                  check += classWriter.toByteArray().length;
+                }
+                return check;
+              };
+      case "generate_hello_world" -> {
+        ops = HELLO_WORLDS_PER_PASS;
+        pass =
+            () -> {
+              long check = 0;
+              for (int i = 0; i < HELLO_WORLDS_PER_PASS; ++i) {
+                check += generateHelloWorld().length;
+              }
+              return check;
+            };
+      }
+      case "type_get" -> {
+        ops = descriptors.size() + methodDescriptors.size();
+        pass =
+            () -> {
+              long check = 0;
+              for (String descriptor : descriptors) {
+                check += Type.getType(descriptor).getSort();
+              }
+              for (String methodDescriptor : methodDescriptors) {
+                check += Type.getType(methodDescriptor).getSort();
+              }
+              return check;
+            };
+      }
+      case "type_arguments_and_return" -> {
+        ops = methodDescriptors.size();
+        pass =
+            () -> {
+              long check = 0;
+              for (String methodDescriptor : methodDescriptors) {
+                Type[] argumentTypes = Type.getArgumentTypes(methodDescriptor);
+                Type returnType = Type.getReturnType(methodDescriptor);
+                check += argumentTypes.length + returnType.getSort();
+                sink = Type.getMethodType(returnType, argumentTypes);
+              }
+              return check;
+            };
+      }
+      case "type_sizes" -> {
+        ops = methodDescriptors.size();
+        pass =
+            () -> {
+              long check = 0;
+              for (String methodDescriptor : methodDescriptors) {
+                check += Type.getArgumentsAndReturnSizes(methodDescriptor);
+              }
+              return check;
+            };
+      }
+      default -> throw new UsageException("unknown --scenario " + scenario);
+    }
+    for (int i = 0; i < warmup + iterations; ++i) {
+      long start = System.nanoTime();
+      long check = pass.run();
+      long nanos = System.nanoTime() - start;
+      if (i >= warmup) {
+        String line =
+            "#bench " + scenario + " " + (i - warmup) + " " + ops + " " + nanos + " " + check + "\n";
+        out.write(line.getBytes(StandardCharsets.UTF_8));
+      }
+    }
+  }
+
+  private static int parseCount(final String text, final int defaultValue) {
+    if (text == null) {
+      return defaultValue;
+    }
+    try {
+      return Integer.parseInt(text);
+    } catch (NumberFormatException e) {
+      throw new UsageException("not a count: " + text);
+    }
+  }
+
+  /** Reads a pack: the concatenation of u32 big-endian length, class file bytes. */
+  static List<byte[]> readPack(final String path) throws IOException {
+    List<byte[]> classes = new ArrayList<>();
+    try (DataInputStream in =
+        new DataInputStream(new BufferedInputStream(Files.newInputStream(Path.of(path))))) {
+      while (true) {
+        int length;
+        try {
+          length = in.readInt();
+        } catch (EOFException e) {
+          return classes;
+        }
+        classes.add(readExactly(in, length));
+      }
+    }
+  }
+
+  /** AsmGenerator.generateClass, from ASM's benchmarks. */
+  static byte[] generateHelloWorld() {
+    ClassWriter classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+
+    classWriter.visit(
+        Opcodes.V1_1, Opcodes.ACC_PUBLIC, "HelloWorld", null, "java/lang/Object", null);
+    classWriter.visitSource("HelloWorld.java", null);
+
+    MethodVisitor methodVisitor =
+        classWriter.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+    methodVisitor.visitVarInsn(Opcodes.ALOAD, 0);
+    methodVisitor.visitMethodInsn(
+        Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+    methodVisitor.visitInsn(Opcodes.RETURN);
+    methodVisitor.visitMaxs(0, 0);
+    methodVisitor.visitEnd();
+
+    methodVisitor =
+        classWriter.visitMethod(
+            Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, "main", "([Ljava/lang/String;)V", null, null);
+    methodVisitor.visitFieldInsn(
+        Opcodes.GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;");
+    methodVisitor.visitLdcInsn("Hello world!");
+    methodVisitor.visitMethodInsn(
+        Opcodes.INVOKEVIRTUAL, "java/io/PrintStream", "println", "(Ljava/lang/String;)V", false);
+    methodVisitor.visitInsn(Opcodes.RETURN);
+    methodVisitor.visitMaxs(0, 0);
+    methodVisitor.visitEnd();
+
+    return classWriter.toByteArray();
+  }
+
+  /** AsmAdapter.CountingVisitor, from ASM's benchmarks. */
+  static final class CountingVisitor extends ClassVisitor {
+
+    int count;
+
+    final AnnotationVisitor annotationVisitor =
+        new AnnotationVisitor(Opcodes.ASM9) {
+
+          @Override
+          public void visit(final String name, final Object value) {
+            ++count;
+          }
+
+          @Override
+          public void visitEnum(final String name, final String descriptor, final String value) {
+            ++count;
+          }
+
+          @Override
+          public AnnotationVisitor visitAnnotation(final String name, final String descriptor) {
+            ++count;
+            return this;
+          }
+
+          @Override
+          public AnnotationVisitor visitArray(final String name) {
+            ++count;
+            return this;
+          }
+        };
+
+    CountingVisitor() {
+      super(Opcodes.ASM9);
+    }
+
+    @Override
+    public void visit(
+        final int version,
+        final int access,
+        final String name,
+        final String signature,
+        final String superName,
+        final String[] interfaces) {
+      ++count;
+    }
+
+    @Override
+    public void visitSource(final String source, final String debug) {
+      ++count;
+    }
+
+    @Override
+    public ModuleVisitor visitModule(final String name, final int access, final String version) {
+      ++count;
+      return null;
+    }
+
+    @Override
+    public void visitOuterClass(final String owner, final String name, final String descriptor) {
+      ++count;
+    }
+
+    @Override
+    public AnnotationVisitor visitAnnotation(final String descriptor, final boolean visible) {
+      ++count;
+      return annotationVisitor;
+    }
+
+    @Override
+    public AnnotationVisitor visitTypeAnnotation(
+        final int typeRef,
+        final TypePath typePath,
+        final String descriptor,
+        final boolean visible) {
+      ++count;
+      return annotationVisitor;
+    }
+
+    @Override
+    public void visitInnerClass(
+        final String name, final String outerName, final String innerName, final int access) {
+      ++count;
+    }
+
+    @Override
+    public FieldVisitor visitField(
+        final int access,
+        final String name,
+        final String descriptor,
+        final String signature,
+        final Object value) {
+      ++count;
+      return new FieldVisitor(api) {
+
+        @Override
+        public AnnotationVisitor visitAnnotation(final String descriptor, final boolean visible) {
+          ++count;
+          return annotationVisitor;
+        }
+
+        @Override
+        public AnnotationVisitor visitTypeAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final String descriptor,
+            final boolean visible) {
+          ++count;
+          return annotationVisitor;
+        }
+      };
+    }
+
+    @Override
+    public MethodVisitor visitMethod(
+        final int access,
+        final String name,
+        final String descriptor,
+        final String signature,
+        final String[] exceptions) {
+      return new MethodVisitor(api) {
+
+        @Override
+        public void visitParameter(final String name, final int access) {
+          ++count;
+        }
+
+        @Override
+        public AnnotationVisitor visitAnnotationDefault() {
+          ++count;
+          return annotationVisitor;
+        }
+
+        @Override
+        public AnnotationVisitor visitAnnotation(final String descriptor, final boolean visible) {
+          ++count;
+          return annotationVisitor;
+        }
+
+        @Override
+        public AnnotationVisitor visitTypeAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final String descriptor,
+            final boolean visible) {
+          ++count;
+          return annotationVisitor;
+        }
+
+        @Override
+        public void visitAnnotableParameterCount(final int parameterCount, final boolean visible) {
+          ++count;
+        }
+
+        @Override
+        public AnnotationVisitor visitParameterAnnotation(
+            final int parameter, final String descriptor, final boolean visible) {
+          ++count;
+          return annotationVisitor;
+        }
+
+        @Override
+        public void visitFrame(
+            final int type,
+            final int numLocal,
+            final Object[] local,
+            final int numStack,
+            final Object[] stack) {
+          ++count;
+        }
+
+        @Override
+        public void visitInsn(final int opcode) {
+          ++count;
+        }
+
+        @Override
+        public void visitIntInsn(final int opcode, final int operand) {
+          ++count;
+        }
+
+        @Override
+        public void visitVarInsn(final int opcode, final int varIndex) {
+          ++count;
+        }
+
+        @Override
+        public void visitTypeInsn(final int opcode, final String type) {
+          ++count;
+        }
+
+        @Override
+        public void visitFieldInsn(
+            final int opcode, final String owner, final String name, final String descriptor) {
+          ++count;
+        }
+
+        @Override
+        public void visitMethodInsn(
+            final int opcode,
+            final String owner,
+            final String name,
+            final String descriptor,
+            final boolean isInterface) {
+          ++count;
+        }
+
+        @Override
+        public void visitInvokeDynamicInsn(
+            final String name,
+            final String descriptor,
+            final Handle bootstrapMethodHandle,
+            final Object... bootstrapMethodArguments) {
+          ++count;
+        }
+
+        @Override
+        public void visitJumpInsn(final int opcode, final Label label) {
+          ++count;
+        }
+
+        @Override
+        public void visitLabel(final Label label) {
+          ++count;
+        }
+
+        @Override
+        public void visitLdcInsn(final Object value) {
+          ++count;
+        }
+
+        @Override
+        public void visitIincInsn(final int varIndex, final int increment) {
+          ++count;
+        }
+
+        @Override
+        public void visitTableSwitchInsn(
+            final int min, final int max, final Label dflt, final Label... labels) {
+          ++count;
+        }
+
+        @Override
+        public void visitLookupSwitchInsn(
+            final Label dflt, final int[] keys, final Label[] labels) {
+          ++count;
+        }
+
+        @Override
+        public void visitMultiANewArrayInsn(final String descriptor, final int numDimensions) {
+          ++count;
+        }
+
+        @Override
+        public AnnotationVisitor visitInsnAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final String descriptor,
+            final boolean visible) {
+          ++count;
+          return annotationVisitor;
+        }
+
+        @Override
+        public void visitTryCatchBlock(
+            final Label start, final Label end, final Label handler, final String type) {
+          ++count;
+        }
+
+        @Override
+        public AnnotationVisitor visitTryCatchAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final String descriptor,
+            final boolean visible) {
+          ++count;
+          return annotationVisitor;
+        }
+
+        @Override
+        public void visitLocalVariable(
+            final String name,
+            final String descriptor,
+            final String signature,
+            final Label start,
+            final Label end,
+            final int index) {
+          ++count;
+        }
+
+        @Override
+        public AnnotationVisitor visitLocalVariableAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final Label[] start,
+            final Label[] end,
+            final int[] index,
+            final String descriptor,
+            final boolean visible) {
+          ++count;
+          return annotationVisitor;
+        }
+
+        @Override
+        public void visitLineNumber(final int line, final Label start) {
+          ++count;
+        }
+
+        @Override
+        public void visitMaxs(final int maxStack, final int maxLocals) {
+          ++count;
+        }
+      };
+    }
+  }
+
+  /** TypeBenchmark.CollectTypesVisitor, from ASM's benchmarks (with the ASM9 api). */
+  static final class CollectTypes extends ClassVisitor {
+
+    final List<String> descriptors;
+    final List<String> methodDescriptors;
+
+    final AnnotationVisitor annotationVisitor;
+
+    CollectTypes(final List<String> descriptors, final List<String> methodDescriptors) {
+      super(Opcodes.ASM9);
+      this.descriptors = descriptors;
+      this.methodDescriptors = methodDescriptors;
+      this.annotationVisitor =
+          new AnnotationVisitor(api) {
+
+            @Override
+            public void visitEnum(final String name, final String descriptor, final String value) {
+              descriptors.add(descriptor);
+            }
+
+            @Override
+            public AnnotationVisitor visitAnnotation(final String name, final String descriptor) {
+              descriptors.add(descriptor);
+              return this;
+            }
+          };
+    }
+
+    @Override
+    public void visitOuterClass(final String owner, final String name, final String descriptor) {
+      if (descriptor != null) {
+        methodDescriptors.add(descriptor);
+      }
+    }
+
+    @Override
+    public AnnotationVisitor visitAnnotation(final String descriptor, final boolean visible) {
+      descriptors.add(descriptor);
+      return annotationVisitor;
+    }
+
+    @Override
+    public AnnotationVisitor visitTypeAnnotation(
+        final int typeRef,
+        final TypePath typePath,
+        final String descriptor,
+        final boolean visible) {
+      descriptors.add(descriptor);
+      return annotationVisitor;
+    }
+
+    @Override
+    public FieldVisitor visitField(
+        final int access,
+        final String name,
+        final String descriptor,
+        final String signature,
+        final Object value) {
+      descriptors.add(descriptor);
+      return new FieldVisitor(api) {
+
+        @Override
+        public AnnotationVisitor visitAnnotation(final String descriptor, final boolean visible) {
+          descriptors.add(descriptor);
+          return annotationVisitor;
+        }
+
+        @Override
+        public AnnotationVisitor visitTypeAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final String descriptor,
+            final boolean visible) {
+          descriptors.add(descriptor);
+          return annotationVisitor;
+        }
+      };
+    }
+
+    @Override
+    public MethodVisitor visitMethod(
+        final int access,
+        final String name,
+        final String descriptor,
+        final String signature,
+        final String[] exceptions) {
+      methodDescriptors.add(descriptor);
+      return new MethodVisitor(api) {
+
+        @Override
+        public AnnotationVisitor visitAnnotation(final String descriptor, final boolean visible) {
+          descriptors.add(descriptor);
+          return annotationVisitor;
+        }
+
+        @Override
+        public AnnotationVisitor visitTypeAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final String descriptor,
+            final boolean visible) {
+          descriptors.add(descriptor);
+          return annotationVisitor;
+        }
+
+        @Override
+        public AnnotationVisitor visitParameterAnnotation(
+            final int parameter, final String descriptor, final boolean visible) {
+          descriptors.add(descriptor);
+          return annotationVisitor;
+        }
+
+        @Override
+        public void visitFieldInsn(
+            final int opcode, final String owner, final String name, final String descriptor) {
+          descriptors.add(descriptor);
+        }
+
+        @Override
+        public void visitMethodInsn(
+            final int opcode,
+            final String owner,
+            final String name,
+            final String descriptor,
+            final boolean isInterface) {
+          methodDescriptors.add(descriptor);
+        }
+
+        @Override
+        public void visitInvokeDynamicInsn(
+            final String name,
+            final String descriptor,
+            final Handle bootstrapMethodHandle,
+            final Object... bootstrapMethodArguments) {
+          methodDescriptors.add(descriptor);
+        }
+
+        @Override
+        public void visitMultiANewArrayInsn(final String descriptor, final int numDimensions) {
+          descriptors.add(descriptor);
+        }
+
+        @Override
+        public AnnotationVisitor visitInsnAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final String descriptor,
+            final boolean visible) {
+          descriptors.add(descriptor);
+          return annotationVisitor;
+        }
+
+        @Override
+        public AnnotationVisitor visitTryCatchAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final String descriptor,
+            final boolean visible) {
+          descriptors.add(descriptor);
+          return annotationVisitor;
+        }
+
+        @Override
+        public void visitLocalVariable(
+            final String name,
+            final String descriptor,
+            final String signature,
+            final Label start,
+            final Label end,
+            final int index) {
+          descriptors.add(descriptor);
+        }
+
+        @Override
+        public AnnotationVisitor visitLocalVariableAnnotation(
+            final int typeRef,
+            final TypePath typePath,
+            final Label[] start,
+            final Label[] end,
+            final int[] index,
+            final String descriptor,
+            final boolean visible) {
+          descriptors.add(descriptor);
+          return annotationVisitor;
+        }
+      };
+    }
   }
 
   // -----------------------------------------------------------------------------------------------

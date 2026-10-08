@@ -388,10 +388,10 @@ const COMPARISON_STACK_SIZE: usize = 64 << 20;
 const MIN_CLASSES_PER_JVM: usize = 500;
 
 /// One class of a tier.
-struct Class {
-    id: String,
+pub(crate) struct Class {
+    pub(crate) id: String,
     sha256: String,
-    bytes: Vec<u8>,
+    pub(crate) bytes: Vec<u8>,
 }
 
 pub fn cli(mut args: Args) -> Result<()> {
@@ -454,9 +454,7 @@ pub fn cli(mut args: Args) -> Result<()> {
     let oracle = Oracle::locate()?;
     let mut classes = tier_classes(&tier)?;
     if let Some(n) = sample {
-        // A stable sample: the classes whose ids hash lowest.
-        classes.sort_by_cached_key(|c| sha256_hex(c.id.as_bytes()));
-        classes.truncate(n);
+        stable_sample(&mut classes, n);
     }
     let jobs = jobs
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, |n| n.get().div_ceil(2)));
@@ -1106,7 +1104,7 @@ fn fill_mode(
 /// `target/oracle/<tier>/hierarchy.tsv`: the hierarchy of the tier plus, for tiers other than T1,
 /// the JDK classes of T1 (when extracted). It is regenerated on every run, so it follows the
 /// corpus; cached results stay valid because their key includes its hash.
-fn tier_hierarchy(oracle: &Oracle, tier: &str) -> Result<PathBuf> {
+pub(crate) fn tier_hierarchy(oracle: &Oracle, tier: &str) -> Result<PathBuf> {
     let path = root_path("target/oracle")
         .join(tier_key(tier))
         .join("hierarchy.tsv");
@@ -1148,7 +1146,7 @@ fn tier_mapping(oracle: &Oracle, tier: &str) -> Result<PathBuf> {
 
 /// The directory name of a tier under `target/oracle` and `target/parity`: the tier itself, or
 /// `dir-<hash of the path>` for a `dir:<path>` tier.
-fn tier_key(tier: &str) -> String {
+pub(crate) fn tier_key(tier: &str) -> String {
     match tier.strip_prefix("dir:") {
         Some(path) => format!("dir-{}", &sha256_hex(path.as_bytes())[..12]),
         None => tier.to_owned(),
@@ -1185,8 +1183,14 @@ fn jars(dir: &Path) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
+/// Keeps a stable sample of `n` classes: the classes whose ids hash lowest.
+pub(crate) fn stable_sample(classes: &mut Vec<Class>, n: usize) {
+    classes.sort_by_cached_key(|c| sha256_hex(c.id.as_bytes()));
+    classes.truncate(n);
+}
+
 /// Every class file of a tier, with the same ids the oracle gives them.
-fn tier_classes(tier: &str) -> Result<Vec<Class>> {
+pub(crate) fn tier_classes(tier: &str) -> Result<Vec<Class>> {
     let mut classes = Vec::new();
     for input in tier_inputs(tier)? {
         let input = PathBuf::from(input);

@@ -1,0 +1,22 @@
+[package]
+name = "oxasm-bench"
+description = "Benchmark scenarios mirroring ASM's JMH benchmarks, for `cargo xtask bench` and criterion"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+oxasm.workspace = true
+oxasm-tree.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "scenarios"
+harness = false
+
+[lints]
+workspace = true

@@ -9,6 +9,7 @@ members = [
     "crates/oxasm-commons",
     "crates/oxasm-util",
     "crates/oxasm-testkit",
+    "crates/oxasm-bench",
     "xtask",
 ]
 
@@ -25,6 +26,7 @@ oxasm-analysis = { path = "crates/oxasm-analysis" }
 oxasm-commons = { path = "crates/oxasm-commons" }
 oxasm-util = { path = "crates/oxasm-util" }
 oxasm-testkit = { path = "crates/oxasm-testkit" }
+oxasm-bench = { path = "crates/oxasm-bench" }
 
 bitflags = "2.13.2"
 dyn-clone = "1.0.20"
@@ -33,6 +35,7 @@ sha1 = "0.11"
 thiserror = "2.0.21"
 
 # dev only
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 proptest = "1.11.0"
 
 # xtask only
