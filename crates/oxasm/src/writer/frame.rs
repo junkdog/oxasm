@@ -6,6 +6,8 @@
 //! implicit first frame of an expanded method, and `putAbstractType`), and the frame computation
 //! (`execute`, `merge`).
 
+use std::borrow::Cow;
+
 use crate::constant::FrameValue;
 use crate::constants::ACC_CONSTRUCTOR;
 use crate::error::WriteError;
@@ -210,32 +212,40 @@ pub(crate) fn get_abstract_type_from_descriptor(
     }
 }
 
-/// Java's `buffer.substring(begin, buffer.length() - 1)`, for an ASCII `begin`: the characters
-/// from `begin` to the end, less the last UTF-16 unit.
-fn substring_to_last_char(buffer: &JavaStr, begin: usize) -> Result<JavaString, WriteError> {
-    let length_utf16 = buffer.len_utf16();
-    let begin_utf16 = utf16_index(buffer, begin);
-    if length_utf16 == 0 || begin_utf16 > length_utf16 - 1 {
+/// Java's `buffer.substring(begin, buffer.length() - 1)`, for a `begin` just after an ASCII
+/// character: the characters from `begin` to the end, less the last UTF-16 unit. Borrows
+/// `buffer` unless its last character is a supplementary one.
+fn substring_to_last_char(buffer: &JavaStr, begin: usize) -> Result<Cow<'_, JavaStr>, WriteError> {
+    let bytes = buffer.as_bytes();
+    if begin >= bytes.len() {
         // Java's message for substring(begin, end) with begin > end.
+        let length_utf16 = buffer.len_utf16();
+        let begin_utf16 = utf16_index(buffer, begin);
         return Err(WriteError::IndexOutOfBounds(format!(
             "begin {begin_utf16}, end {}, length {length_utf16}",
             length_utf16.wrapping_sub(1)
         )));
     }
-    let rest = buffer.get(begin..buffer.len()).unwrap_or_default();
-    let mut result = JavaString::new();
-    let mut chars = rest.chars().peekable();
-    while let Some(c) = chars.next() {
-        if chars.peek().is_some() {
-            result.push_java(c);
-        } else if c.len_utf16() == 2 {
-            // Removing the last UTF-16 unit of a supplementary character leaves its high
-            // surrogate.
-            let high = 0xd800 | ((c.as_u32() - 0x10000) >> 10);
-            result.push_java(JavaCodePoint::from_u32(high).expect("a surrogate"));
-        }
+    // The start of the last character (a descriptor's `;` is ASCII: the first test ends it).
+    let mut last = bytes.len() - 1;
+    while bytes[last] & 0xc0 == 0x80 {
+        last -= 1;
     }
-    Ok(result)
+    let rest = buffer.get(begin..last).expect("code point boundaries");
+    if bytes[last] < 0xf0 {
+        // A BMP character is one UTF-16 unit.
+        return Ok(Cow::Borrowed(rest));
+    }
+    // Removing the last UTF-16 unit of a supplementary character leaves its high surrogate.
+    let c = buffer
+        .get(last..bytes.len())
+        .and_then(|c| c.chars().next())
+        .expect("a supplementary character");
+    let high = 0xd800 | ((c.as_u32() - 0x10000) >> 10);
+    let mut result = JavaString::with_capacity(rest.len() + 3);
+    result.push_java_str(rest);
+    result.push_java(JavaCodePoint::from_u32(high).expect("a surrogate"));
+    Ok(Cow::Owned(result))
 }
 
 /// The characters of `buffer` from the ASCII byte offset `begin` (for error messages).
@@ -1016,8 +1026,8 @@ impl Frame {
                 self.push_descriptor(symbol_table, symbol.value())?;
             }
             NEW => {
-                let value = symbol()?.value().to_owned();
-                self.push(UNINITIALIZED_KIND | symbol_table.add_uninitialized_type(&value, arg))?;
+                let value = symbol()?.value();
+                self.push(UNINITIALIZED_KIND | symbol_table.add_uninitialized_type(value, arg))?;
             }
             NEWARRAY => {
                 self.pop();
@@ -1035,27 +1045,27 @@ impl Frame {
                 self.push(ARRAY_OF | element_type)?;
             }
             ANEWARRAY => {
-                let array_element_type = symbol()?.value().to_owned();
+                let array_element_type = symbol()?.value();
                 self.pop();
                 match array_element_type.as_bytes().first() {
                     Some(b'[') => {
                         let mut descriptor = JavaString::new();
                         descriptor.push('[');
-                        descriptor.push_java_str(&array_element_type);
+                        descriptor.push_java_str(array_element_type);
                         self.push_descriptor(symbol_table, &descriptor)?;
                     }
                     Some(_) => self.push(
-                        ARRAY_OF | REFERENCE_KIND | symbol_table.add_type(&array_element_type),
+                        ARRAY_OF | REFERENCE_KIND | symbol_table.add_type(array_element_type),
                     )?,
                     None => return Err(index_out_of_bounds(0, 0)),
                 }
             }
             CHECKCAST => {
-                let cast_type = symbol()?.value().to_owned();
+                let cast_type = symbol()?.value();
                 self.pop();
                 match cast_type.as_bytes().first() {
-                    Some(b'[') => self.push_descriptor(symbol_table, &cast_type)?,
-                    Some(_) => self.push(REFERENCE_KIND | symbol_table.add_type(&cast_type))?,
+                    Some(b'[') => self.push_descriptor(symbol_table, cast_type)?,
+                    Some(_) => self.push(REFERENCE_KIND | symbol_table.add_type(cast_type))?,
                     None => return Err(index_out_of_bounds(0, 0)),
                 }
             }
@@ -1536,4 +1546,54 @@ fn merge_type(
         return Ok(true);
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::borrow::Cow;
+
+    use super::substring_to_last_char;
+    use crate::jstr::{JavaCodePoint, JavaStr, JavaString};
+
+    fn substring(buffer: &str, begin: usize) -> Result<Cow<'_, JavaStr>, String> {
+        substring_to_last_char(JavaStr::from_str(buffer), begin).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn substring_to_last_char_borrows_up_to_a_bmp_character() {
+        let internal_name = substring("Ljava/lang/String;", 1).unwrap();
+        assert!(matches!(internal_name, Cow::Borrowed(_)));
+        assert_eq!(*internal_name, *JavaStr::from_str("java/lang/String"));
+        // Java's "Laé".substring(1, 2): é is one UTF-16 unit, of two bytes.
+        assert_eq!(*substring("Laé", 1).unwrap(), *JavaStr::from_str("a"));
+        assert_eq!(*substring("L€", 1).unwrap(), *JavaStr::from_str(""));
+        assert_eq!(*substring("[[Lé;", 3).unwrap(), *JavaStr::from_str("é"));
+    }
+
+    #[test]
+    fn substring_to_last_char_keeps_a_supplementary_characters_high_surrogate() {
+        // U+1F600 is the surrogate pair D83D DE00: Java's substring keeps D83D.
+        let mut expected = JavaString::from("a");
+        expected.push_java(JavaCodePoint::from_u32(0xd83d).unwrap());
+        let result = substring("La\u{1f600}", 1).unwrap();
+        assert!(matches!(result, Cow::Owned(_)));
+        assert_eq!(*result, *expected);
+    }
+
+    #[test]
+    fn substring_to_last_char_fails_at_the_end() {
+        assert_eq!(
+            substring("L", 1).unwrap_err(),
+            substring_error("begin 1, end 0, length 1")
+        );
+        // The UTF-16 length of the buffer, not its byte length.
+        assert_eq!(
+            substring("\u{1f600}L", 5).unwrap_err(),
+            substring_error("begin 3, end 2, length 3")
+        );
+    }
+
+    fn substring_error(message: &str) -> String {
+        crate::error::WriteError::IndexOutOfBounds(message.to_owned()).to_string()
+    }
 }
