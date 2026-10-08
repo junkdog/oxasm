@@ -20,7 +20,7 @@ use crate::constants;
 use crate::error::{ReadError, ReadErrorKind, WriteError};
 use crate::handle::Handle;
 use crate::hierarchy::{ClassHierarchy, HierarchyError};
-use crate::jstr::{JavaCompactStr, JavaStr};
+use crate::jstr::{JavaStr, JavaString};
 use crate::label::Label;
 use crate::opcodes::HandleKind;
 use crate::reader::ClassReader;
@@ -80,8 +80,9 @@ pub(crate) const FORWARD_UNINITIALIZED_TYPE_TAG: u8 = 130;
 pub(crate) const MERGED_TYPE_TAG: u8 = 131;
 
 /// An entry of the constant pool, of the BootstrapMethods attribute, or of the (ASM specific)
-/// type table of a class (ASM's `Symbol`).
-#[derive(Clone, Debug)]
+/// type table of a class (ASM's `Symbol`). Its strings are spans of its table's string arena,
+/// read with [`SymbolTable::text`].
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct Symbol {
     /// The index of this symbol in the constant pool, in the BootstrapMethods attribute, or in
     /// the (ASM specific) type table of a class (depending on the `tag` value).
@@ -90,17 +91,17 @@ pub(crate) struct Symbol {
     pub(crate) tag: u8,
     /// The internal name of the owner class of this symbol. Only used for fieldref, methodref,
     /// interface methodref and method handle symbols.
-    pub(crate) owner: Option<JavaCompactStr>,
+    pub(crate) owner: Span,
     /// The name of the class field or method corresponding to this symbol. Only used for
     /// fieldref, methodref, interface methodref, name and type, method handle, dynamic and
     /// invokedynamic symbols.
-    pub(crate) name: Option<JavaCompactStr>,
+    pub(crate) name: Span,
     /// The string value of this symbol: a field or method descriptor for fieldref, methodref,
     /// interface methodref, name and type, method handle, method type, dynamic and invokedynamic
     /// symbols, an arbitrary string for utf8 and string symbols, an internal class name for
-    /// class, type, uninitialized type and forward uninitialized type symbols, `None` for the
+    /// class, type, uninitialized type and forward uninitialized type symbols, empty for the
     /// others.
-    pub(crate) value: Option<JavaCompactStr>,
+    pub(crate) value: Span,
     /// The numeric value of this symbol: the value of integer, float, long and double symbols
     /// (raw bits), the `reference_kind` of method handle symbols (shifted left by 8 bits for an
     /// interface owner and a kind of at least `H_INVOKEVIRTUAL`), the bootstrap method index of
@@ -116,15 +117,73 @@ pub(crate) struct Symbol {
     pub(crate) info: i32,
 }
 
-impl Symbol {
-    /// The value of this symbol, which its tag requires to be present.
-    pub(crate) fn value(&self) -> &JavaStr {
-        self.value.as_deref().unwrap_or_default()
+/// A string of a [`SymbolTable`]: a range of its string arena, which holds the bytes of a
+/// [`JavaStr`] that was added to it whole. The default span is the empty string. A span is only
+/// read with the table that made it (its fields are private to this module).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Span {
+    start: u32,
+    len: u32,
+}
+
+/// The strings of a [`SymbolTable`]'s symbols, end to end in one buffer that only grows (ASM's
+/// symbols hold `String` references). A symbol that repeats the strings of the symbols it refers
+/// to (a member reference: its class and name and type) shares their spans, so each distinct
+/// string is stored once, and a symbol is plain data.
+#[derive(Debug, Default)]
+struct Strings {
+    bytes: Vec<u8>,
+}
+
+impl Strings {
+    /// The string of the given span.
+    fn get(&self, span: Span) -> &JavaStr {
+        let start = span.start as usize;
+        let bytes = &self.bytes[start..start + span.len as usize];
+        debug_assert!(JavaStr::from_semi_utf8(bytes).is_ok());
+        // SAFETY: a span is only made by `push`, from the bytes of a whole `JavaStr`
+        // (canonical semi-UTF-8), and the buffer is only ever appended to.
+        unsafe { JavaStr::from_semi_utf8_unchecked(bytes) }
     }
+
+    /// The string of the given text.
+    fn resolve<'s>(&'s self, text: Text<'s>) -> &'s JavaStr {
+        match text {
+            Text::Own(span) => self.get(span),
+            Text::Other(s) => s,
+        }
+    }
+
+    /// Whether the given span holds the given string.
+    fn eq(&self, span: Span, s: &JavaStr) -> bool {
+        span.len as usize == s.len() && self.get(span) == s
+    }
+
+    /// Adds the given string, or returns `None` if the buffer would exceed 4 GiB.
+    fn push(&mut self, s: &JavaStr) -> Option<Span> {
+        let start = u32::try_from(self.bytes.len()).ok()?;
+        let len = u32::try_from(s.len()).ok()?;
+        start.checked_add(len)?;
+        self.bytes.extend_from_slice(s.as_bytes());
+        Some(Span { start, len })
+    }
+}
+
+/// A string given to a [`SymbolTable`]: one of its own, or any other (which it copies if it
+/// keeps it).
+#[derive(Clone, Copy, Debug)]
+enum Text<'a> {
+    Own(Span),
+    Other(&'a JavaStr),
 }
 
 /// The number of buckets of a new, empty [`SymbolTable`]'s hash set (ASM's 256).
 const INITIAL_CAPACITY: usize = 256;
+
+/// The initial capacity, in bytes, of a new [`SymbolTable`]'s strings: those of a small class,
+/// such as a hello world (growing them from empty made generating one 6% slower, and 256 bytes
+/// 1%).
+const INITIAL_STRINGS_CAPACITY: usize = 1024;
 
 /// A reference to an entry of a [`SymbolTable`]'s arena, or `None`: the entry's index plus one,
 /// so that a link takes 4 bytes and an array of empty buckets is allocated zeroed.
@@ -143,7 +202,7 @@ fn linked(link: NonZeroU32) -> u32 {
 
 /// An entry of the hash set of a [`SymbolTable`]: a symbol, its hash code, and the next entry of
 /// its bucket.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct Entry {
     symbol: Symbol,
     /// The hash code of this entry (non negative, as in ASM).
@@ -161,9 +220,11 @@ pub(crate) struct SymbolTable {
     /// The major version number of the class to which this symbol table belongs.
     major_version: i32,
     /// The internal name of the class to which this symbol table belongs.
-    class_name: Option<JavaCompactStr>,
+    class_name: Span,
     /// Every entry of this table, in insertion order (the storage of ASM's `Entry` objects).
     arena: Vec<Entry>,
+    /// The strings of the entries, and the class name.
+    strings: Strings,
     /// A hash set of all the entries in this table (constant pool, bootstrap method and type
     /// table entries): each bucket links to its first entry in `arena`, the others being linked
     /// through [`Entry::next`].
@@ -215,8 +276,11 @@ impl SymbolTable {
         SymbolTable {
             source_id: None,
             major_version: 0,
-            class_name: None,
+            class_name: Span::default(),
             arena: Vec::new(),
+            strings: Strings {
+                bytes: Vec::with_capacity(INITIAL_STRINGS_CAPACITY),
+            },
             entries: vec![None; INITIAL_CAPACITY],
             constant_pool_count: 1,
             constant_pool: ByteVector::new(),
@@ -247,8 +311,12 @@ impl SymbolTable {
         let mut table = SymbolTable {
             source_id: Some(class_reader.id()),
             major_version: 0,
-            class_name: None,
+            class_name: Span::default(),
             arena: Vec::with_capacity(constant_pool_count),
+            // The decoded strings are about as long as their modified UTF-8 encodings.
+            strings: Strings {
+                bytes: Vec::with_capacity(pool.len()),
+            },
             // Reserve enough space in 'entries' to avoid too many hash set collisions (entries is
             // not dynamically resized by the add_* calls below), and to account for bootstrap
             // method entries.
@@ -262,12 +330,9 @@ impl SymbolTable {
             label_entries: FxHashMap::default(),
             error: None,
         };
-        let required = |s: Option<&JavaStr>, offset: i64| {
-            s.map(JavaCompactStr::new).ok_or_else(|| {
-                // ASM's NullPointerException on a null string.
-                ReadError::new(offset, ReadErrorKind::InvalidConstantPoolIndex(0))
-            })
-        };
+        // The span of each CONSTANT_Utf8 entry, by constant pool index, once added: the entries
+        // that refer to it share it.
+        let spans = &mut vec![None; constant_pool_count];
         // Add the constant pool items in the symbol table entries.
         let mut has_bootstrap_methods = false;
         let mut item_index = 1;
@@ -281,15 +346,11 @@ impl SymbolTable {
                 | CONSTANT_INTERFACE_METHODREF_TAG => {
                     let name_and_type_item_offset = class_reader
                         .cp_info_offset(usize::from(class_reader.u16_at(item_offset + 2)?))?;
-                    let owner = required(class_reader.read_class_at(item_offset)?, item_offset)?;
-                    let name = required(
-                        class_reader.utf8_at(name_and_type_item_offset)?,
-                        name_and_type_item_offset,
-                    )?;
-                    let descriptor = required(
-                        class_reader.utf8_at(name_and_type_item_offset + 2)?,
-                        name_and_type_item_offset + 2,
-                    )?;
+                    let owner = table.class_span_at(class_reader, spans, item_offset)?;
+                    let name =
+                        table.utf8_span_at(class_reader, spans, name_and_type_item_offset)?;
+                    let descriptor =
+                        table.utf8_span_at(class_reader, spans, name_and_type_item_offset + 2)?;
                     table
                         .add_constant_member_reference_at(index, item_tag, owner, name, descriptor);
                 }
@@ -298,9 +359,8 @@ impl SymbolTable {
                     table.add_constant_integer_or_float_at(index, item_tag, value);
                 }
                 CONSTANT_NAME_AND_TYPE_TAG => {
-                    let name = required(class_reader.utf8_at(item_offset)?, item_offset)?;
-                    let descriptor =
-                        required(class_reader.utf8_at(item_offset + 2)?, item_offset + 2)?;
+                    let name = table.utf8_span_at(class_reader, spans, item_offset)?;
+                    let descriptor = table.utf8_span_at(class_reader, spans, item_offset + 2)?;
                     table.add_constant_name_and_type_at(index, name, descriptor);
                 }
                 CONSTANT_LONG_TAG | CONSTANT_DOUBLE_TAG => {
@@ -308,7 +368,7 @@ impl SymbolTable {
                     table.add_constant_long_or_double_at(index, item_tag, value);
                 }
                 CONSTANT_UTF8_TAG => {
-                    let value = JavaCompactStr::new(class_reader.utf(item_index)?);
+                    let value = table.utf8_span(class_reader, spans, item_index)?;
                     table.add_constant_utf8_at(index, value);
                 }
                 CONSTANT_METHOD_HANDLE_TAG => {
@@ -318,18 +378,11 @@ impl SymbolTable {
                         class_reader.u16_at(member_ref_item_offset + 2)?,
                     ))?;
                     let reference_kind = i32::from(class_reader.u8_at(item_offset)?);
-                    let owner = required(
-                        class_reader.read_class_at(member_ref_item_offset)?,
-                        member_ref_item_offset,
-                    )?;
-                    let name = required(
-                        class_reader.utf8_at(name_and_type_item_offset)?,
-                        name_and_type_item_offset,
-                    )?;
-                    let descriptor = required(
-                        class_reader.utf8_at(name_and_type_item_offset + 2)?,
-                        name_and_type_item_offset + 2,
-                    )?;
+                    let owner = table.class_span_at(class_reader, spans, member_ref_item_offset)?;
+                    let name =
+                        table.utf8_span_at(class_reader, spans, name_and_type_item_offset)?;
+                    let descriptor =
+                        table.utf8_span_at(class_reader, spans, name_and_type_item_offset + 2)?;
                     let is_interface = class_reader.u8_at(member_ref_item_offset - 1)?
                         == CONSTANT_INTERFACE_METHODREF_TAG;
                     table.add_constant_method_handle_at(
@@ -345,14 +398,10 @@ impl SymbolTable {
                     has_bootstrap_methods = true;
                     let name_and_type_item_offset = class_reader
                         .cp_info_offset(usize::from(class_reader.u16_at(item_offset + 2)?))?;
-                    let name = required(
-                        class_reader.utf8_at(name_and_type_item_offset)?,
-                        name_and_type_item_offset,
-                    )?;
-                    let descriptor = required(
-                        class_reader.utf8_at(name_and_type_item_offset + 2)?,
-                        name_and_type_item_offset + 2,
-                    )?;
+                    let name =
+                        table.utf8_span_at(class_reader, spans, name_and_type_item_offset)?;
+                    let descriptor =
+                        table.utf8_span_at(class_reader, spans, name_and_type_item_offset + 2)?;
                     let bootstrap_method_index = i32::from(class_reader.u16_at(item_offset)?);
                     table.add_constant_dynamic_or_invoke_dynamic_reference_at(
                         item_tag,
@@ -367,7 +416,7 @@ impl SymbolTable {
                 | CONSTANT_METHOD_TYPE_TAG
                 | CONSTANT_MODULE_TAG
                 | CONSTANT_PACKAGE_TAG => {
-                    let value = required(class_reader.utf8_at(item_offset)?, item_offset)?;
+                    let value = table.utf8_span_at(class_reader, spans, item_offset)?;
                     table.add_constant_utf8_reference_at(index, item_tag, value);
                 }
                 _ => {
@@ -437,9 +486,9 @@ impl SymbolTable {
                     symbol: Symbol {
                         index: i,
                         tag: BOOTSTRAP_METHOD_TAG,
-                        owner: None,
-                        name: None,
-                        value: None,
+                        owner: Span::default(),
+                        name: Span::default(),
+                        value: Span::default(),
                         data: offset,
                         info: 0,
                     },
@@ -463,6 +512,67 @@ impl SymbolTable {
         hash(BOOTSTRAP_METHOD_TAG, |h| bytes.hash(h))
     }
 
+    /// The span of the `CONSTANT_Utf8` entry of the given index of a class reader (its
+    /// [`ClassReader::utf`]), whose string is added on first use: `spans` holds them by index.
+    fn utf8_span(
+        &mut self,
+        class_reader: &ClassReader<'_>,
+        spans: &mut [Option<Span>],
+        index: usize,
+    ) -> Result<Span, ReadError> {
+        if let Some(&Some(span)) = spans.get(index) {
+            return Ok(span);
+        }
+        let span = self.push_str(class_reader.utf(index)?);
+        if let Some(slot) = spans.get_mut(index) {
+            *slot = Some(span);
+        }
+        Ok(span)
+    }
+
+    /// [`Self::utf8_span`] of the index at the given offset of a class reader (its
+    /// [`ClassReader::utf8_at`]), which must not be null.
+    fn utf8_span_at(
+        &mut self,
+        class_reader: &ClassReader<'_>,
+        spans: &mut [Option<Span>],
+        offset: i64,
+    ) -> Result<Span, ReadError> {
+        self.utf8_span_at_or(class_reader, spans, offset, offset)
+    }
+
+    /// [`Self::utf8_span_at`], reporting a null string at `null_offset` (ASM's
+    /// NullPointerException).
+    fn utf8_span_at_or(
+        &mut self,
+        class_reader: &ClassReader<'_>,
+        spans: &mut [Option<Span>],
+        offset: i64,
+        null_offset: i64,
+    ) -> Result<Span, ReadError> {
+        let index = class_reader.u16_at(offset)?;
+        if offset == 0 || index == 0 {
+            return Err(ReadError::new(
+                null_offset,
+                ReadErrorKind::InvalidConstantPoolIndex(0),
+            ));
+        }
+        self.utf8_span(class_reader, spans, usize::from(index))
+    }
+
+    /// The span of the class name of the `CONSTANT_Class` entry whose index is at the given
+    /// offset of a class reader (its [`ClassReader::read_class_at`]), which must not be null.
+    fn class_span_at(
+        &mut self,
+        class_reader: &ClassReader<'_>,
+        spans: &mut [Option<Span>],
+        offset: i64,
+    ) -> Result<Span, ReadError> {
+        let cp_info_offset =
+            class_reader.cp_info_offset(usize::from(class_reader.u16_at(offset)?))?;
+        self.utf8_span_at_or(class_reader, spans, cp_info_offset, offset)
+    }
+
     /// The identity of the class reader from which this table was constructed, if any.
     pub(crate) fn source_id(&self) -> Option<u64> {
         self.source_id
@@ -475,7 +585,38 @@ impl SymbolTable {
 
     /// Returns the internal name of the class to which this symbol table belongs.
     pub(crate) fn class_name(&self) -> &JavaStr {
-        self.class_name.as_deref().unwrap_or_default()
+        self.strings.get(self.class_name)
+    }
+
+    /// The span of the internal name of the class to which this symbol table belongs.
+    pub(crate) fn class_name_span(&self) -> Span {
+        self.class_name
+    }
+
+    /// The string of the given span of this table.
+    pub(crate) fn text(&self, span: Span) -> &JavaStr {
+        self.strings.get(span)
+    }
+
+    /// Adds the given string to the strings of this table, unless it is one of them. Records an
+    /// error, and returns the empty string, if they would exceed 4 GiB (a class whose constant
+    /// pool is too large anyway).
+    fn own(&mut self, text: Text<'_>) -> Span {
+        match text {
+            Text::Own(span) => span,
+            Text::Other(s) => self.push_str(s),
+        }
+    }
+
+    /// [`Self::own`] for a string that is not one of this table's.
+    fn push_str(&mut self, s: &JavaStr) -> Span {
+        self.strings.push(s).unwrap_or_else(|| {
+            self.fail(WriteError::ClassTooLarge {
+                class_name: self.class_name().to_owned(),
+                constant_pool_count: self.constant_pool_count as usize,
+            });
+            Span::default()
+        })
     }
 
     /// Sets the major version and the name of the class to which this symbol table belongs.
@@ -486,8 +627,10 @@ impl SymbolTable {
         class_name: &JavaStr,
     ) -> i32 {
         self.major_version = major_version;
-        self.class_name = Some(JavaCompactStr::new(class_name));
-        self.add_constant_class(class_name).index
+        let entry = self.add_constant_class_entry(class_name);
+        let symbol = *self.symbol(entry);
+        self.class_name = symbol.value;
+        symbol.index
     }
 
     /// Returns the number of items in this symbol table's `constant_pool` array (plus 1).
@@ -625,36 +768,24 @@ impl SymbolTable {
     fn new_entry(
         &mut self,
         tag: u8,
-        owner: Option<&JavaStr>,
-        name: Option<&JavaStr>,
-        value: Option<&JavaStr>,
+        owner: Span,
+        name: Span,
+        value: Span,
         data: i64,
         hash_code: i32,
     ) -> Entry {
         let index = self.constant_pool_count;
         self.constant_pool_count += 1;
-        Entry {
-            symbol: Symbol {
-                index,
-                tag,
-                owner: owner.map(JavaCompactStr::new),
-                name: name.map(JavaCompactStr::new),
-                value: value.map(JavaCompactStr::new),
-                data,
-                info: 0,
-            },
-            hash_code,
-            next: None,
-        }
+        Self::entry_at(index, tag, owner, name, value, data, hash_code)
     }
 
     /// An entry read from a class reader's constant pool, at the given index.
     fn entry_at(
         index: i32,
         tag: u8,
-        owner: Option<JavaCompactStr>,
-        name: Option<JavaCompactStr>,
-        value: Option<JavaCompactStr>,
+        owner: Span,
+        name: Span,
+        value: Span,
         data: i64,
         hash_code: i32,
     ) -> Entry {
@@ -695,16 +826,23 @@ impl SymbolTable {
             Constant::Double(v) => {
                 self.add_constant_long_or_double(CONSTANT_DOUBLE_TAG, v.to_bits() as i64)
             }
-            Constant::String(v) => self.add_constant_utf8_reference(CONSTANT_STRING_TAG, v),
+            Constant::String(v) => {
+                self.add_constant_utf8_reference(CONSTANT_STRING_TAG, Text::Other(v))
+            }
             Constant::Type(t) => match t.get_sort() {
-                TypeSort::Object => {
-                    self.add_constant_utf8_reference(CONSTANT_CLASS_TAG, t.get_internal_name())
-                }
-                TypeSort::Method => {
-                    self.add_constant_utf8_reference(CONSTANT_METHOD_TYPE_TAG, &t.get_descriptor())
-                }
+                TypeSort::Object => self.add_constant_utf8_reference(
+                    CONSTANT_CLASS_TAG,
+                    Text::Other(t.get_internal_name()),
+                ),
+                TypeSort::Method => self.add_constant_utf8_reference(
+                    CONSTANT_METHOD_TYPE_TAG,
+                    Text::Other(&t.get_descriptor()),
+                ),
                 // A primitive or array type.
-                _ => self.add_constant_utf8_reference(CONSTANT_CLASS_TAG, &t.get_descriptor()),
+                _ => self.add_constant_utf8_reference(
+                    CONSTANT_CLASS_TAG,
+                    Text::Other(&t.get_descriptor()),
+                ),
             },
             Constant::Handle(h) => self.add_constant_method_handle_entry(
                 i32::from(h.get_tag().tag()),
@@ -720,13 +858,19 @@ impl SymbolTable {
     /// Adds a `CONSTANT_Class_info` to the constant pool of this symbol table. Does nothing if
     /// the constant pool already contains a similar item.
     pub(crate) fn add_constant_class(&mut self, value: &JavaStr) -> &Symbol {
-        let entry = self.add_constant_utf8_reference(CONSTANT_CLASS_TAG, value);
+        let entry = self.add_constant_class_entry(value);
         self.symbol(entry)
     }
 
     /// [`Self::add_constant_class`], returning the entry.
     pub(crate) fn add_constant_class_entry(&mut self, value: &JavaStr) -> u32 {
-        self.add_constant_utf8_reference(CONSTANT_CLASS_TAG, value)
+        self.add_constant_utf8_reference(CONSTANT_CLASS_TAG, Text::Other(value))
+    }
+
+    /// [`Self::add_constant_class`] for a string of this table. Returns its index.
+    pub(crate) fn add_constant_class_of(&mut self, value: Span) -> i32 {
+        let entry = self.add_constant_utf8_reference(CONSTANT_CLASS_TAG, Text::Own(value));
+        self.symbol(entry).index
     }
 
     /// Adds a `CONSTANT_Fieldref_info` to the constant pool of this symbol table. Does nothing if
@@ -783,19 +927,29 @@ impl SymbolTable {
         descriptor: &JavaStr,
     ) -> u32 {
         let hash_code = Self::member_reference_hash(tag, owner, name, descriptor);
+        let strings = &self.strings;
         if let Some(entry) = self.find(hash_code, |s| {
             s.tag == tag
-                && s.owner.as_deref() == Some(owner)
-                && s.name.as_deref() == Some(name)
-                && s.value.as_deref() == Some(descriptor)
+                && strings.eq(s.owner, owner)
+                && strings.eq(s.name, name)
+                && strings.eq(s.value, descriptor)
         }) {
             return entry;
         }
-        let class_index = self.add_constant_class(owner).index;
-        let name_and_type_index = self.add_constant_name_and_type(name, descriptor);
+        let class = self.add_constant_class_entry(owner);
+        let class = *self.symbol(class);
+        let name_and_type = self.add_constant_name_and_type_entry(name, descriptor);
+        let name_and_type = *self.symbol(name_and_type);
         self.constant_pool
-            .put122(i32::from(tag), class_index, name_and_type_index);
-        let entry = self.new_entry(tag, Some(owner), Some(name), Some(descriptor), 0, hash_code);
+            .put122(i32::from(tag), class.index, name_and_type.index);
+        let entry = self.new_entry(
+            tag,
+            class.value,
+            name_and_type.name,
+            name_and_type.value,
+            0,
+            hash_code,
+        );
         self.put(entry)
     }
 
@@ -819,19 +973,18 @@ impl SymbolTable {
         &mut self,
         index: i32,
         tag: u8,
-        owner: JavaCompactStr,
-        name: JavaCompactStr,
-        descriptor: JavaCompactStr,
+        owner: Span,
+        name: Span,
+        descriptor: Span,
     ) {
-        let hash_code = Self::member_reference_hash(tag, &owner, &name, &descriptor);
-        self.add(Self::entry_at(
-            index,
+        let hash_code = Self::member_reference_hash(
             tag,
-            Some(owner),
-            Some(name),
-            Some(descriptor),
-            0,
-            hash_code,
+            self.strings.get(owner),
+            self.strings.get(name),
+            self.strings.get(descriptor),
+        );
+        self.add(Self::entry_at(
+            index, tag, owner, name, descriptor, 0, hash_code,
         ));
     }
 
@@ -839,7 +992,7 @@ impl SymbolTable {
     /// Adds a `CONSTANT_String_info` to the constant pool of this symbol table. Does nothing if
     /// the constant pool already contains a similar item.
     pub(crate) fn add_constant_string(&mut self, value: &JavaStr) -> &Symbol {
-        let entry = self.add_constant_utf8_reference(CONSTANT_STRING_TAG, value);
+        let entry = self.add_constant_utf8_reference(CONSTANT_STRING_TAG, Text::Other(value));
         self.symbol(entry)
     }
 
@@ -865,7 +1018,8 @@ impl SymbolTable {
             return entry;
         }
         self.constant_pool.put_byte(i32::from(tag)).put_int(value);
-        let entry = self.new_entry(tag, None, None, None, i64::from(value), hash_code);
+        let none = Span::default();
+        let entry = self.new_entry(tag, none, none, none, i64::from(value), hash_code);
         self.put(entry)
     }
 
@@ -873,12 +1027,13 @@ impl SymbolTable {
     /// symbol table.
     fn add_constant_integer_or_float_at(&mut self, index: i32, tag: u8, value: i32) {
         let hash_code = hash(tag, |h| value.hash(h));
+        let none = Span::default();
         self.add(Self::entry_at(
             index,
             tag,
-            None,
-            None,
-            None,
+            none,
+            none,
+            none,
             i64::from(value),
             hash_code,
         ));
@@ -908,8 +1063,9 @@ impl SymbolTable {
         let index = self.constant_pool_count;
         self.constant_pool.put_byte(i32::from(tag)).put_long(value);
         self.constant_pool_count += 2;
+        let none = Span::default();
         self.put(Self::entry_at(
-            index, tag, None, None, None, value, hash_code,
+            index, tag, none, none, none, value, hash_code,
         ))
     }
 
@@ -917,8 +1073,9 @@ impl SymbolTable {
     /// symbol table.
     fn add_constant_long_or_double_at(&mut self, index: i32, tag: u8, value: i64) {
         let hash_code = hash(tag, |h| value.hash(h));
+        let none = Span::default();
         self.add(Self::entry_at(
-            index, tag, None, None, None, value, hash_code,
+            index, tag, none, none, none, value, hash_code,
         ));
     }
 
@@ -929,22 +1086,26 @@ impl SymbolTable {
         name: &JavaStr,
         descriptor: &JavaStr,
     ) -> i32 {
+        let entry = self.add_constant_name_and_type_entry(name, descriptor);
+        self.symbol(entry).index
+    }
+
+    /// [`Self::add_constant_name_and_type`], returning the entry.
+    fn add_constant_name_and_type_entry(&mut self, name: &JavaStr, descriptor: &JavaStr) -> u32 {
         let tag = CONSTANT_NAME_AND_TYPE_TAG;
         let hash_code = Self::name_and_type_hash(name, descriptor);
+        let strings = &self.strings;
         if let Some(entry) = self.find(hash_code, |s| {
-            s.tag == tag
-                && s.name.as_deref() == Some(name)
-                && s.value.as_deref() == Some(descriptor)
+            s.tag == tag && strings.eq(s.name, name) && strings.eq(s.value, descriptor)
         }) {
-            return self.symbol(entry).index;
+            return entry;
         }
-        let name_index = self.add_constant_utf8(name);
-        let descriptor_index = self.add_constant_utf8(descriptor);
+        let (name_index, name) = self.add_constant_utf8_text(Text::Other(name));
+        let (descriptor_index, descriptor) = self.add_constant_utf8_text(Text::Other(descriptor));
         self.constant_pool
             .put122(i32::from(tag), name_index, descriptor_index);
-        let entry = self.new_entry(tag, None, Some(name), Some(descriptor), 0, hash_code);
-        let entry = self.put(entry);
-        self.symbol(entry).index
+        let entry = self.new_entry(tag, Span::default(), name, descriptor, 0, hash_code);
+        self.put(entry)
     }
 
     /// The hash code of a name and type symbol.
@@ -956,19 +1117,15 @@ impl SymbolTable {
     }
 
     /// Adds a new `CONSTANT_NameAndType_info` to the constant pool of this symbol table.
-    fn add_constant_name_and_type_at(
-        &mut self,
-        index: i32,
-        name: JavaCompactStr,
-        descriptor: JavaCompactStr,
-    ) {
-        let hash_code = Self::name_and_type_hash(&name, &descriptor);
+    fn add_constant_name_and_type_at(&mut self, index: i32, name: Span, descriptor: Span) {
+        let hash_code =
+            Self::name_and_type_hash(self.strings.get(name), self.strings.get(descriptor));
         self.add(Self::entry_at(
             index,
             CONSTANT_NAME_AND_TYPE_TAG,
-            None,
-            Some(name),
-            Some(descriptor),
+            Span::default(),
+            name,
+            descriptor,
             0,
             hash_code,
         ));
@@ -977,34 +1134,52 @@ impl SymbolTable {
     /// Adds a `CONSTANT_Utf8_info` to the constant pool of this symbol table. Does nothing if the
     /// constant pool already contains a similar item. Returns its index.
     pub(crate) fn add_constant_utf8(&mut self, value: &JavaStr) -> i32 {
-        let hash_code = hash_str(CONSTANT_UTF8_TAG, value);
+        self.add_constant_utf8_text(Text::Other(value)).0
+    }
+
+    /// [`Self::add_constant_utf8`], returning the index and the span of the string. The string
+    /// is kept even if it is too large for the constant pool (ASM throws before adding the
+    /// entry, and the index is 0), for the entries that refer to it.
+    fn add_constant_utf8_text(&mut self, value: Text<'_>) -> (i32, Span) {
+        let string = self.strings.resolve(value);
+        let hash_code = hash_str(CONSTANT_UTF8_TAG, string);
+        let strings = &self.strings;
         if let Some(entry) = self.find(hash_code, |s| {
-            s.tag == CONSTANT_UTF8_TAG && s.value.as_deref() == Some(value)
+            s.tag == CONSTANT_UTF8_TAG && strings.eq(s.value, string)
         }) {
-            return self.symbol(entry).index;
+            let symbol = self.symbol(entry);
+            return (symbol.index, symbol.value);
         }
         let position = self.constant_pool.size();
         self.constant_pool.put_byte(i32::from(CONSTANT_UTF8_TAG));
-        if let Err(error) = self.constant_pool.put_utf8(value) {
+        if let Err(error) = self.constant_pool.put_utf8(string) {
             // ASM throws before adding the entry.
             self.constant_pool.truncate(position);
             self.fail(error);
-            return 0;
+            return (0, self.own(value));
         }
-        let entry = self.new_entry(CONSTANT_UTF8_TAG, None, None, Some(value), 0, hash_code);
+        let value = self.own(value);
+        let entry = self.new_entry(
+            CONSTANT_UTF8_TAG,
+            Span::default(),
+            Span::default(),
+            value,
+            0,
+            hash_code,
+        );
         let entry = self.put(entry);
-        self.symbol(entry).index
+        (self.symbol(entry).index, value)
     }
 
     /// Adds a new `CONSTANT_Utf8_info` to the constant pool of this symbol table.
-    fn add_constant_utf8_at(&mut self, index: i32, value: JavaCompactStr) {
-        let hash_code = hash_str(CONSTANT_UTF8_TAG, &value);
+    fn add_constant_utf8_at(&mut self, index: i32, value: Span) {
+        let hash_code = hash_str(CONSTANT_UTF8_TAG, self.strings.get(value));
         self.add(Self::entry_at(
             index,
             CONSTANT_UTF8_TAG,
-            None,
-            None,
-            Some(value),
+            Span::default(),
+            Span::default(),
+            value,
             0,
             hash_code,
         ));
@@ -1044,28 +1219,28 @@ impl SymbolTable {
         // Note that we don't need to include isInterface in the hash computation, because it is
         // redundant with owner (we can't have the same owner with different isInterface values).
         let hash_code = Self::method_handle_hash(owner, name, descriptor, data);
+        let strings = &self.strings;
         if let Some(entry) = self.find(hash_code, |s| {
             s.tag == tag
                 && s.data == i64::from(data)
-                && s.owner.as_deref() == Some(owner)
-                && s.name.as_deref() == Some(name)
-                && s.value.as_deref() == Some(descriptor)
+                && strings.eq(s.owner, owner)
+                && strings.eq(s.name, name)
+                && strings.eq(s.value, descriptor)
         }) {
             return entry;
         }
-        let member_index = if reference_kind <= i32::from(HandleKind::PutStatic.tag()) {
-            self.add_constant_fieldref(owner, name, descriptor).index
+        let member = *if reference_kind <= i32::from(HandleKind::PutStatic.tag()) {
+            self.add_constant_fieldref(owner, name, descriptor)
         } else {
             self.add_constant_methodref(owner, name, descriptor, is_interface)
-                .index
         };
         self.constant_pool
-            .put112(i32::from(tag), reference_kind, member_index);
+            .put112(i32::from(tag), reference_kind, member.index);
         let entry = self.new_entry(
             tag,
-            Some(owner),
-            Some(name),
-            Some(descriptor),
+            member.owner,
+            member.name,
+            member.value,
             i64::from(data),
             hash_code,
         );
@@ -1087,19 +1262,24 @@ impl SymbolTable {
         &mut self,
         index: i32,
         reference_kind: i32,
-        owner: JavaCompactStr,
-        name: JavaCompactStr,
-        descriptor: JavaCompactStr,
+        owner: Span,
+        name: Span,
+        descriptor: Span,
         is_interface: bool,
     ) {
         let data = Self::get_constant_method_handle_symbol_data(reference_kind, is_interface);
-        let hash_code = Self::method_handle_hash(&owner, &name, &descriptor, data);
+        let hash_code = Self::method_handle_hash(
+            self.strings.get(owner),
+            self.strings.get(name),
+            self.strings.get(descriptor),
+            data,
+        );
         self.add(Self::entry_at(
             index,
             CONSTANT_METHOD_HANDLE_TAG,
-            Some(owner),
-            Some(name),
-            Some(descriptor),
+            owner,
+            name,
+            descriptor,
             i64::from(data),
             hash_code,
         ));
@@ -1116,7 +1296,8 @@ impl SymbolTable {
     /// Adds a `CONSTANT_MethodType_info` to the constant pool of this symbol table. Does nothing
     /// if the constant pool already contains a similar item.
     pub(crate) fn add_constant_method_type(&mut self, method_descriptor: &JavaStr) -> &Symbol {
-        let entry = self.add_constant_utf8_reference(CONSTANT_METHOD_TYPE_TAG, method_descriptor);
+        let entry = self
+            .add_constant_utf8_reference(CONSTANT_METHOD_TYPE_TAG, Text::Other(method_descriptor));
         self.symbol(entry)
     }
 
@@ -1186,22 +1367,24 @@ impl SymbolTable {
         bootstrap_method_index: i32,
     ) -> u32 {
         let hash_code = Self::dynamic_hash(tag, name, descriptor, bootstrap_method_index);
+        let strings = &self.strings;
         if let Some(entry) = self.find(hash_code, |s| {
             s.tag == tag
                 && s.data == i64::from(bootstrap_method_index)
-                && s.name.as_deref() == Some(name)
-                && s.value.as_deref() == Some(descriptor)
+                && strings.eq(s.name, name)
+                && strings.eq(s.value, descriptor)
         }) {
             return entry;
         }
-        let name_and_type_index = self.add_constant_name_and_type(name, descriptor);
+        let name_and_type = self.add_constant_name_and_type_entry(name, descriptor);
+        let name_and_type = *self.symbol(name_and_type);
         self.constant_pool
-            .put122(i32::from(tag), bootstrap_method_index, name_and_type_index);
+            .put122(i32::from(tag), bootstrap_method_index, name_and_type.index);
         let entry = self.new_entry(
             tag,
-            None,
-            Some(name),
-            Some(descriptor),
+            Span::default(),
+            name_and_type.name,
+            name_and_type.value,
             i64::from(bootstrap_method_index),
             hash_code,
         );
@@ -1228,17 +1411,22 @@ impl SymbolTable {
         &mut self,
         tag: u8,
         index: i32,
-        name: JavaCompactStr,
-        descriptor: JavaCompactStr,
+        name: Span,
+        descriptor: Span,
         bootstrap_method_index: i32,
     ) {
-        let hash_code = Self::dynamic_hash(tag, &name, &descriptor, bootstrap_method_index);
+        let hash_code = Self::dynamic_hash(
+            tag,
+            self.strings.get(name),
+            self.strings.get(descriptor),
+            bootstrap_method_index,
+        );
         self.add(Self::entry_at(
             index,
             tag,
-            None,
-            Some(name),
-            Some(descriptor),
+            Span::default(),
+            name,
+            descriptor,
             i64::from(bootstrap_method_index),
             hash_code,
         ));
@@ -1247,47 +1435,42 @@ impl SymbolTable {
     /// Adds a `CONSTANT_Module_info` to the constant pool of this symbol table. Does nothing if
     /// the constant pool already contains a similar item.
     pub(crate) fn add_constant_module(&mut self, module_name: &JavaStr) -> &Symbol {
-        let entry = self.add_constant_utf8_reference(CONSTANT_MODULE_TAG, module_name);
+        let entry = self.add_constant_utf8_reference(CONSTANT_MODULE_TAG, Text::Other(module_name));
         self.symbol(entry)
     }
 
     /// Adds a `CONSTANT_Package_info` to the constant pool of this symbol table. Does nothing if
     /// the constant pool already contains a similar item.
     pub(crate) fn add_constant_package(&mut self, package_name: &JavaStr) -> &Symbol {
-        let entry = self.add_constant_utf8_reference(CONSTANT_PACKAGE_TAG, package_name);
+        let entry =
+            self.add_constant_utf8_reference(CONSTANT_PACKAGE_TAG, Text::Other(package_name));
         self.symbol(entry)
     }
 
     /// Adds a `CONSTANT_Class_info`, `CONSTANT_String_info`, `CONSTANT_MethodType_info`,
     /// `CONSTANT_Module_info` or `CONSTANT_Package_info` to the constant pool of this symbol
     /// table. Does nothing if the constant pool already contains a similar item.
-    fn add_constant_utf8_reference(&mut self, tag: u8, value: &JavaStr) -> u32 {
-        let hash_code = hash_str(tag, value);
-        if let Some(entry) = self.find(hash_code, |s| {
-            s.tag == tag && s.value.as_deref() == Some(value)
-        }) {
+    fn add_constant_utf8_reference(&mut self, tag: u8, value: Text<'_>) -> u32 {
+        let string = self.strings.resolve(value);
+        let hash_code = hash_str(tag, string);
+        let strings = &self.strings;
+        if let Some(entry) = self.find(hash_code, |s| s.tag == tag && strings.eq(s.value, string)) {
             return entry;
         }
-        let utf8_index = self.add_constant_utf8(value);
+        let (utf8_index, value) = self.add_constant_utf8_text(value);
         self.constant_pool.put12(i32::from(tag), utf8_index);
-        let entry = self.new_entry(tag, None, None, Some(value), 0, hash_code);
+        let none = Span::default();
+        let entry = self.new_entry(tag, none, none, value, 0, hash_code);
         self.put(entry)
     }
 
     /// Adds a new `CONSTANT_Class_info`, `CONSTANT_String_info`, `CONSTANT_MethodType_info`,
     /// `CONSTANT_Module_info` or `CONSTANT_Package_info` to the constant pool of this symbol
     /// table.
-    fn add_constant_utf8_reference_at(&mut self, index: i32, tag: u8, value: JavaCompactStr) {
-        let hash_code = hash_str(tag, &value);
-        self.add(Self::entry_at(
-            index,
-            tag,
-            None,
-            None,
-            Some(value),
-            0,
-            hash_code,
-        ));
+    fn add_constant_utf8_reference_at(&mut self, index: i32, tag: u8, value: Span) {
+        let hash_code = hash_str(tag, self.strings.get(value));
+        let none = Span::default();
+        self.add(Self::entry_at(index, tag, none, none, value, 0, hash_code));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1365,12 +1548,13 @@ impl SymbolTable {
         }
         let index = self.bootstrap_method_count;
         self.bootstrap_method_count += 1;
+        let none = Span::default();
         let entry = self.put(Self::entry_at(
             index,
             BOOTSTRAP_METHOD_TAG,
-            None,
-            None,
-            None,
+            none,
+            none,
+            none,
             offset as i64,
             hash_code,
         ));
@@ -1401,20 +1585,33 @@ impl SymbolTable {
     /// Adds a type in the type table of this symbol table. Does nothing if the type table
     /// already contains a similar type. Returns its index.
     pub(crate) fn add_type(&mut self, value: &JavaStr) -> i32 {
-        let hash_code = hash_str(TYPE_TAG, value);
+        self.add_type_text(Text::Other(value))
+    }
+
+    /// [`Self::add_type`] for a string of this table.
+    pub(crate) fn add_type_of(&mut self, value: Span) -> i32 {
+        self.add_type_text(Text::Own(value))
+    }
+
+    /// [`Self::add_type`] for any string.
+    fn add_type_text(&mut self, value: Text<'_>) -> i32 {
+        let string = self.strings.resolve(value);
+        let hash_code = hash_str(TYPE_TAG, string);
+        let strings = &self.strings;
         if let Some(entry) = self.find(hash_code, |s| {
-            s.tag == TYPE_TAG && s.value.as_deref() == Some(value)
+            s.tag == TYPE_TAG && strings.eq(s.value, string)
         }) {
             return self.symbol(entry).index;
         }
         let index = self.type_table.len() as i32;
+        let value = self.own(value);
         self.add_type_internal(Entry {
             symbol: Symbol {
                 index,
                 tag: TYPE_TAG,
-                owner: None,
-                name: None,
-                value: Some(JavaCompactStr::new(value)),
+                owner: Span::default(),
+                name: Span::default(),
+                value,
                 data: 0,
                 info: 0,
             },
@@ -1430,21 +1627,23 @@ impl SymbolTable {
             value.hash(h);
             bytecode_offset.hash(h);
         });
+        let strings = &self.strings;
         if let Some(entry) = self.find(hash_code, |s| {
             s.tag == UNINITIALIZED_TYPE_TAG
                 && s.data == i64::from(bytecode_offset)
-                && s.value.as_deref() == Some(value)
+                && strings.eq(s.value, value)
         }) {
             return self.symbol(entry).index;
         }
         let index = self.type_table.len() as i32;
+        let value = self.push_str(value);
         self.add_type_internal(Entry {
             symbol: Symbol {
                 index,
                 tag: UNINITIALIZED_TYPE_TAG,
-                owner: None,
-                name: None,
-                value: Some(JavaCompactStr::new(value)),
+                owner: Span::default(),
+                name: Span::default(),
+                value,
                 data: i64::from(bytecode_offset),
                 info: 0,
             },
@@ -1461,21 +1660,23 @@ impl SymbolTable {
             value.hash(h);
             label_index.hash(h);
         });
+        let strings = &self.strings;
         if let Some(entry) = self.find(hash_code, |s| {
             s.tag == FORWARD_UNINITIALIZED_TYPE_TAG
                 && s.data == i64::from(label_index)
-                && s.value.as_deref() == Some(value)
+                && strings.eq(s.value, value)
         }) {
             return self.symbol(entry).index;
         }
         let index = self.type_table.len() as i32;
+        let value = self.push_str(value);
         self.add_type_internal(Entry {
             symbol: Symbol {
                 index,
                 tag: FORWARD_UNINITIALIZED_TYPE_TAG,
-                owner: None,
-                name: None,
-                value: Some(JavaCompactStr::new(value)),
+                owner: Span::default(),
+                name: Span::default(),
+                value,
                 data: i64::from(label_index),
                 info: 0,
             },
@@ -1514,17 +1715,16 @@ impl SymbolTable {
         let assertion_error = || WriteError::InvalidArgument("java.lang.AssertionError".to_owned());
         let type1 = self
             .try_get_type(type_table_index1)
-            .ok_or_else(assertion_error)?
-            .value()
-            .to_owned();
+            .ok_or_else(assertion_error)?;
         let type2 = self
             .try_get_type(type_table_index2)
-            .ok_or_else(assertion_error)?
-            .value()
-            .to_owned();
-        let common_super_class = match hierarchy {
-            Some(hierarchy) => hierarchy.common_super_class(&type1, &type2)?,
-            None => return Err(HierarchyError::NoHierarchy(type1, type2).into()),
+            .ok_or_else(assertion_error)?;
+        let (type1, type2) = (self.text(type1.value), self.text(type2.value));
+        let common_super_class: JavaString = match hierarchy {
+            Some(hierarchy) => hierarchy.common_super_class(type1, type2)?,
+            None => {
+                return Err(HierarchyError::NoHierarchy(type1.to_owned(), type2.to_owned()).into());
+            }
         };
         let common_super_type_index = self.add_type(&common_super_class);
         let index = self.type_table.len() as i32;
@@ -1532,9 +1732,9 @@ impl SymbolTable {
             symbol: Symbol {
                 index,
                 tag: MERGED_TYPE_TAG,
-                owner: None,
-                name: None,
-                value: None,
+                owner: Span::default(),
+                name: Span::default(),
+                value: Span::default(),
                 data,
                 info: common_super_type_index,
             },
@@ -1562,5 +1762,76 @@ impl SymbolTable {
         self.label_table.push(label);
         self.label_entries.insert(label, index);
         index
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::jstr::JavaCodePoint;
+
+    /// A string of one lone surrogate.
+    fn surrogate(code_point: u32) -> JavaString {
+        let mut s = JavaString::new();
+        s.push_java(JavaCodePoint::from_u32(code_point).expect("a surrogate"));
+        s
+    }
+
+    #[test]
+    fn strings_keep_adjacent_surrogates_apart() {
+        // A high then a low surrogate, end to end in the buffer, would be a supplementary
+        // character in canonical semi-UTF-8: each span must still read its own string.
+        let mut strings = Strings::default();
+        let high = surrogate(0xd83d);
+        let low = surrogate(0xde00);
+        let a = strings.push(&high).expect("small");
+        let b = strings.push(&low).expect("small");
+        assert_eq!(strings.get(a), &*high);
+        assert_eq!(strings.get(b), &*low);
+        assert!(strings.eq(a, &high));
+        assert!(!strings.eq(a, &low));
+        assert_eq!(strings.get(Span::default()), JavaStr::from_str(""));
+    }
+
+    #[test]
+    fn member_references_share_the_strings_of_their_constants() {
+        let mut table = SymbolTable::new();
+        let owner = JavaStr::from_str("java/io/PrintStream");
+        let name = JavaStr::from_str("println");
+        let descriptor = JavaStr::from_str("(Ljava/lang/String;)V");
+        let methodref = *table.add_constant_methodref(owner, name, descriptor, false);
+        let length = table.strings.bytes.len();
+        assert_eq!(length, owner.len() + name.len() + descriptor.len());
+        assert_eq!(table.text(methodref.owner), owner);
+        assert_eq!(table.text(methodref.name), name);
+        assert_eq!(table.text(methodref.value), descriptor);
+        // A field of the same class and type adds only its name; a handle on the method nothing.
+        table.add_constant_fieldref(owner, JavaStr::from_str("out"), descriptor);
+        assert_eq!(table.strings.bytes.len(), length + 3);
+        let handle = *table.add_constant_method_handle(5, owner, name, descriptor, false);
+        assert_eq!(table.strings.bytes.len(), length + 3);
+        assert_eq!(
+            (handle.owner, handle.name, handle.value),
+            (methodref.owner, methodref.name, methodref.value)
+        );
+        // A type of this table's strings shares their span; another string is copied.
+        let class = table.add_constant_class(owner).value;
+        let type_index = table.add_type_of(class);
+        assert_eq!(table.get_type(type_index).value, class);
+        assert_eq!(table.add_type(owner), type_index);
+        table.add_type(JavaStr::from_str("java/lang/Object"));
+        assert_eq!(table.strings.bytes.len(), length + 3 + 16);
+    }
+
+    #[test]
+    fn a_utf8_constant_too_large_keeps_its_string() {
+        let mut table = SymbolTable::new();
+        let name = "n".repeat(65536);
+        let name = JavaStr::from_str(&name);
+        let descriptor = JavaStr::from_str("I");
+        let fieldref = *table.add_constant_fieldref(JavaStr::from_str("A"), name, descriptor);
+        assert!(matches!(table.error(), Some(WriteError::Utf8TooLarge)));
+        assert_eq!(table.text(fieldref.name), name);
+        assert_eq!(table.text(fieldref.value), descriptor);
     }
 }

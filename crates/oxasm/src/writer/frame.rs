@@ -299,8 +299,7 @@ pub(crate) fn input_locals_from_descriptor(
     };
     if access & opcodes::ACC_STATIC == 0 {
         if access & ACC_CONSTRUCTOR == 0 {
-            let class_name = symbol_table.class_name().to_owned();
-            let value = REFERENCE_KIND | symbol_table.add_type(&class_name);
+            let value = REFERENCE_KIND | symbol_table.add_type_of(symbol_table.class_name_span());
             set(&mut input_locals, &mut input_local_index, value)?;
         } else {
             set(
@@ -376,7 +375,7 @@ pub(crate) fn put_abstract_type(
     let type_value_of = |symbol_table: &SymbolTable, type_index: i32| {
         symbol_table
             .try_get_type(type_index)
-            .map(|symbol| (symbol.value().to_owned(), symbol.data))
+            .map(|symbol| (symbol.value, symbol.data))
             .ok_or_else(assertion_error)
     };
     let mut array_dimensions = (abstract_type & DIM_MASK) >> DIM_SHIFT;
@@ -388,7 +387,7 @@ pub(crate) fn put_abstract_type(
             }
             REFERENCE_KIND => {
                 let (value, _) = type_value_of(symbol_table, type_value)?;
-                let index = symbol_table.add_constant_class(&value).index;
+                let index = symbol_table.add_constant_class_of(value);
                 output.put_byte(ITEM_OBJECT).put_short(index);
             }
             UNINITIALIZED_KIND => {
@@ -419,7 +418,7 @@ pub(crate) fn put_abstract_type(
         if abstract_type & KIND_MASK == REFERENCE_KIND {
             let (value, _) = type_value_of(symbol_table, abstract_type & VALUE_MASK)?;
             type_descriptor.push('L');
-            type_descriptor.push_java_str(&value);
+            type_descriptor.push_java_str(symbol_table.text(value));
             type_descriptor.push(';');
         } else {
             type_descriptor.push(match abstract_type & VALUE_MASK {
@@ -501,27 +500,19 @@ fn array_index_out_of_bounds(index: i64, length: usize) -> WriteError {
     WriteError::IndexOutOfBounds(format!("Index {index} out of bounds for length {length}"))
 }
 
-/// The symbol an instruction refers to, for [`Frame::execute`]: a copy of the parts of ASM's
-/// `Symbol` that the frame computation reads.
-#[derive(Clone, Debug)]
-pub(crate) struct SymbolArg {
+/// The symbol an instruction refers to, for [`Frame::execute`]: the parts of ASM's `Symbol`
+/// that the frame computation reads. Its strings are the instruction's own (equal to the
+/// symbol's), so that it does not borrow the symbol table the frame computation adds types to.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SymbolArg<'a> {
     pub(crate) tag: u8,
-    pub(crate) name: Option<crate::jstr::JavaCompactStr>,
-    pub(crate) value: Option<crate::jstr::JavaCompactStr>,
+    pub(crate) name: &'a JavaStr,
+    pub(crate) value: &'a JavaStr,
 }
 
-impl SymbolArg {
-    /// A copy of the given symbol.
-    pub(crate) fn of(symbol: &crate::writer::symbol_table::Symbol) -> SymbolArg {
-        SymbolArg {
-            tag: symbol.tag,
-            name: symbol.name.clone(),
-            value: symbol.value.clone(),
-        }
-    }
-
+impl SymbolArg<'_> {
     fn value(&self) -> &JavaStr {
-        self.value.as_deref().unwrap_or_default()
+        self.value
     }
 }
 
@@ -778,7 +769,7 @@ impl Frame {
         &mut self,
         opcode: u8,
         arg: i32,
-        arg_symbol: Option<&SymbolArg>,
+        arg_symbol: Option<&SymbolArg<'_>>,
         symbol_table: &mut SymbolTable,
     ) -> Result<(), WriteError> {
         use crate::opcodes::*;
@@ -1008,7 +999,7 @@ impl Frame {
                 self.pop_descriptor(symbol.value())?;
                 if opcode != INVOKESTATIC {
                     let abstract_type1 = self.pop();
-                    let name = symbol.name.as_deref().unwrap_or_default();
+                    let name = symbol.name;
                     if opcode == INVOKESPECIAL {
                         match name.as_bytes().first() {
                             Some(b'<') => self.add_initialized_type(abstract_type1),
@@ -1183,7 +1174,7 @@ impl Frame {
         &mut self,
         opcode: u8,
         arg: i32,
-        arg_symbol: Option<&SymbolArg>,
+        arg_symbol: Option<&SymbolArg<'_>>,
         symbol_table: &mut SymbolTable,
     ) -> Result<(), WriteError> {
         self.execute(opcode, arg, arg_symbol, symbol_table)?;
@@ -1293,17 +1284,16 @@ fn get_initialized_type(
             }
             if abstract_type == initialized_type {
                 let internal_name = if abstract_type == UNINITIALIZED_THIS {
-                    symbol_table.class_name().to_owned()
+                    symbol_table.class_name_span()
                 } else {
                     symbol_table
                         .try_get_type(abstract_type & VALUE_MASK)
                         .ok_or_else(|| {
                             WriteError::InvalidArgument("java.lang.AssertionError".to_owned())
                         })?
-                        .value()
-                        .to_owned()
+                        .value
                 };
-                return Ok(REFERENCE_KIND | symbol_table.add_type(&internal_name));
+                return Ok(REFERENCE_KIND | symbol_table.add_type_of(internal_name));
             }
         }
     }

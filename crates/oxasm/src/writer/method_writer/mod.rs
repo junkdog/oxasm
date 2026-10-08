@@ -329,7 +329,7 @@ impl MethodWriterState {
         symbol_table: &mut SymbolTable,
         opcode: u8,
         arg: i32,
-        arg_symbol: Option<&SymbolArg>,
+        arg_symbol: Option<&SymbolArg<'_>>,
     ) {
         let Some(current_basic_block) = self.current_basic_block else {
             return;
@@ -362,9 +362,14 @@ impl MethodWriterState {
         }
     }
 
-    /// A copy of a symbol, if the stack map frames are computed.
-    fn symbol_arg(&self, symbol: &Symbol) -> Option<SymbolArg> {
-        self.computes_frames().then(|| SymbolArg::of(symbol))
+    /// The symbol operand of an instruction for the frame computation: the symbol's tag, and
+    /// its name and value given by the instruction.
+    fn symbol_arg<'a>(symbol: &Symbol, name: &'a JavaStr, value: &'a JavaStr) -> SymbolArg<'a> {
+        SymbolArg {
+            tag: symbol.tag,
+            name,
+            value,
+        }
     }
 
     /// Whether this method has stack map frames.
@@ -634,7 +639,10 @@ impl MethodVisitor for MethodWriter<'_> {
         state.last_bytecode_offset = state.code_length();
         // Add the instruction to the bytecode of the method.
         let type_symbol = self.symbol_table.add_constant_class(type_);
-        let (type_index, type_symbol) = (type_symbol.index, state.symbol_arg(type_symbol));
+        let (type_index, type_symbol) = (
+            type_symbol.index,
+            MethodWriterState::symbol_arg(type_symbol, JavaStr::from_str(""), type_),
+        );
         state.code.put12(i32::from(opcode), type_index);
         // If needed, update the maximum stack size and number of locals, and stack map frames.
         let last_bytecode_offset = state.last_bytecode_offset;
@@ -642,7 +650,7 @@ impl MethodVisitor for MethodWriter<'_> {
             self.symbol_table,
             opcode,
             last_bytecode_offset,
-            type_symbol.as_ref(),
+            Some(&type_symbol),
         );
         if state.tracks_stack_size() && opcode == opcodes::NEW {
             // The stack size delta is 1 for NEW, and 0 for ANEWARRAY, CHECKCAST, or INSTANCEOF.
@@ -663,11 +671,13 @@ impl MethodVisitor for MethodWriter<'_> {
         let fieldref_symbol = self
             .symbol_table
             .add_constant_fieldref(owner, name, descriptor);
-        let (fieldref_index, fieldref_symbol) =
-            (fieldref_symbol.index, state.symbol_arg(fieldref_symbol));
+        let (fieldref_index, fieldref_symbol) = (
+            fieldref_symbol.index,
+            MethodWriterState::symbol_arg(fieldref_symbol, name, descriptor),
+        );
         state.code.put12(i32::from(opcode), fieldref_index);
         // If needed, update the maximum stack size and number of locals, and stack map frames.
-        state.execute(self.symbol_table, opcode, 0, fieldref_symbol.as_ref());
+        state.execute(self.symbol_table, opcode, 0, Some(&fieldref_symbol));
         if state.tracks_stack_size() {
             let Some(&first_desc_char) = descriptor.as_bytes().first() else {
                 // The descriptor's charAt(0).
@@ -720,8 +730,10 @@ impl MethodVisitor for MethodWriter<'_> {
         let methodref_symbol =
             self.symbol_table
                 .add_constant_methodref(owner, name, descriptor, is_interface);
-        let (methodref_index, methodref_symbol) =
-            (methodref_symbol.index, state.symbol_arg(methodref_symbol));
+        let (methodref_index, methodref_symbol) = (
+            methodref_symbol.index,
+            MethodWriterState::symbol_arg(methodref_symbol, name, descriptor),
+        );
         if opcode == opcodes::INVOKEINTERFACE {
             let arguments_and_return_sizes =
                 match Type::try_get_arguments_and_return_sizes_of(descriptor) {
@@ -739,7 +751,7 @@ impl MethodVisitor for MethodWriter<'_> {
             state.code.put12(i32::from(opcode), methodref_index);
         }
         // If needed, update the maximum stack size and number of locals, and stack map frames.
-        state.execute(self.symbol_table, opcode, 0, methodref_symbol.as_ref());
+        state.execute(self.symbol_table, opcode, 0, Some(&methodref_symbol));
         if state.tracks_stack_size() {
             let argument_and_return_sizes =
                 match Type::try_get_arguments_and_return_sizes_of(descriptor) {
@@ -777,7 +789,7 @@ impl MethodVisitor for MethodWriter<'_> {
         );
         let (invoke_dynamic_index, invoke_dynamic_symbol) = (
             invoke_dynamic_symbol.index,
-            state.symbol_arg(invoke_dynamic_symbol),
+            MethodWriterState::symbol_arg(invoke_dynamic_symbol, name, descriptor),
         );
         state
             .code
@@ -788,7 +800,7 @@ impl MethodVisitor for MethodWriter<'_> {
             self.symbol_table,
             opcodes::INVOKEDYNAMIC,
             0,
-            invoke_dynamic_symbol.as_ref(),
+            Some(&invoke_dynamic_symbol),
         );
         if state.tracks_stack_size() {
             let argument_and_return_sizes =
@@ -969,10 +981,15 @@ impl MethodVisitor for MethodWriter<'_> {
         // Add the instruction to the bytecode of the method.
         let constant_symbol = self.symbol_table.add_constant(value);
         let constant_index = constant_symbol.index;
-        let constant_arg = state.symbol_arg(constant_symbol);
-        let is_long_or_double = match constant_symbol.tag {
+        // The strings of the symbol that the frame computation reads: a dynamic constant's.
+        let (name, descriptor) = match value {
+            Constant::Dynamic(d) => (d.get_name(), d.get_descriptor()),
+            _ => (JavaStr::from_str(""), JavaStr::from_str("")),
+        };
+        let constant_arg = MethodWriterState::symbol_arg(constant_symbol, name, descriptor);
+        let is_long_or_double = match constant_arg.tag {
             CONSTANT_LONG_TAG | CONSTANT_DOUBLE_TAG => Ok(true),
-            CONSTANT_DYNAMIC_TAG => match constant_symbol.value().as_bytes().first() {
+            CONSTANT_DYNAMIC_TAG => match descriptor.as_bytes().first() {
                 Some(b'J' | b'D') => Ok(true),
                 Some(_) => Ok(false),
                 // The descriptor's charAt(0).
@@ -994,7 +1011,7 @@ impl MethodVisitor for MethodWriter<'_> {
             state.code.put11(i32::from(opcodes::LDC), constant_index);
         }
         // If needed, update the maximum stack size and number of locals, and stack map frames.
-        state.execute(self.symbol_table, opcodes::LDC, 0, constant_arg.as_ref());
+        state.execute(self.symbol_table, opcodes::LDC, 0, Some(&constant_arg));
         if state.tracks_stack_size() {
             state.update_relative_stack_size(if is_long_or_double { 2 } else { 1 });
         }
@@ -1068,7 +1085,10 @@ impl MethodVisitor for MethodWriter<'_> {
         state.last_bytecode_offset = state.code_length();
         // Add the instruction to the bytecode of the method.
         let desc_symbol = self.symbol_table.add_constant_class(descriptor);
-        let (desc_index, desc_symbol) = (desc_symbol.index, state.symbol_arg(desc_symbol));
+        let (desc_index, desc_symbol) = (
+            desc_symbol.index,
+            MethodWriterState::symbol_arg(desc_symbol, JavaStr::from_str(""), descriptor),
+        );
         state
             .code
             .put12(i32::from(opcodes::MULTIANEWARRAY), desc_index)
@@ -1078,7 +1098,7 @@ impl MethodVisitor for MethodWriter<'_> {
             self.symbol_table,
             opcodes::MULTIANEWARRAY,
             i32::from(num_dimensions),
-            desc_symbol.as_ref(),
+            Some(&desc_symbol),
         );
         if state.tracks_stack_size() {
             // No need to update maxRelativeStackSize (the stack size delta is always negative).
