@@ -6,7 +6,9 @@
 //!   sym`), probed with acquire loads only, so a lookup that finds its string takes no lock.
 //!   Inserts and table growth take the shard's mutex. A grown table replaces the old one, which
 //!   stays allocated until the interner drops, so a reader still probing it stays valid (at worst
-//!   it misses, and retries under the lock).
+//!   it misses, and retries under the lock). A shard's first own table (its first insert copies
+//!   the shared one) is in the shard itself, so that a new interner's first inserts allocate no
+//!   table, nor does its drop free one.
 //! - **64 byte arenas,** one per inserting thread. Strings are stored length-prefixed (a
 //!   little-endian `u16`, then the bytes, at an even offset) in chunks that never move, and a
 //!   string never straddles two of them. Each chunk spans 128 KiB of offsets; an arena's first
@@ -29,6 +31,7 @@
 use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
 use std::cell::UnsafeCell;
 use std::fmt;
+use std::mem::MaybeUninit;
 use std::hash::Hasher;
 use std::num::NonZeroU32;
 use std::ptr;
@@ -469,34 +472,79 @@ fn shared() -> &'static Shared {
 // Shards
 // -------------------------------------------------------------------------------------------------
 
-/// A shard: its table pointer, which every lookup reads, apart from the lock that inserts take.
+/// A shard: its table pointer, which every lookup reads, apart from the lock that inserts take,
+/// and the slots of its first own table, so that a new interner's first inserts allocate no
+/// table.
 struct Shard {
     r: ShardRead,
     w: ShardWrite,
+    first: FirstSlots,
 }
 
 #[repr(align(128))]
 struct ShardRead {
-    /// A leaked `Box<Table>`, replaced (never freed) when the table grows.
+    /// The shared table, `first`, or a leaked `Box<Table>`; replaced (never freed) when the
+    /// table grows.
     table: AtomicPtr<Table>,
+    /// The header of the shard's first own table, whose slots are `FirstSlots`: written once,
+    /// under the shard's lock, before `table` points to it.
+    first: UnsafeCell<MaybeUninit<Table>>,
 }
+
+// SAFETY: `first` is written once, under the shard's lock, before a release store of `table`
+// publishes it, and only read afterwards.
+unsafe impl Sync for ShardRead {}
+// SAFETY: `first` only ever points to the same shard's `FirstSlots`, and is written once the shard
+// is in its interner's boxed slice, which never moves it.
+unsafe impl Send for ShardRead {}
 
 #[repr(align(128))]
 struct ShardWrite {
     writer: Mutex<Writer>,
 }
 
-/// An open-addressing table of `tag << 32 | sym` slots (0 is empty), a power of two long.
+/// The slots of a shard's first own table: initialized under the shard's lock, when its first
+/// insert copies the shared table.
+#[repr(align(128))]
+struct FirstSlots(UnsafeCell<MaybeUninit<[AtomicU64; TABLE0]>>);
+
+// SAFETY: initialized once, under the shard's lock, before a release store of the shard's `table`
+// publishes them; afterwards only accessed atomically.
+unsafe impl Sync for FirstSlots {}
+
+/// An open-addressing table of `tag << 32 | sym` slots (0 is empty), a power of two long. Its
+/// slots are a shard's [`FirstSlots`], or a leaked `Box<[AtomicU64]>` (as are the shared tables',
+/// which are never freed).
 struct Table {
-    slots: Box<[AtomicU64]>,
+    slots: *const AtomicU64,
+    len: usize,
+}
+
+impl Table {
+    #[inline]
+    fn slots(&self) -> &[AtomicU64] {
+        // SAFETY: `len` initialized slots, which live as long as the table (see `Table`).
+        unsafe { std::slice::from_raw_parts(self.slots, self.len) }
+    }
+}
+
+/// Which table a shard's table is.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Own {
+    /// The shared one.
+    Shared,
+    /// The shard's first own table, in the shard.
+    First,
+    /// A leaked `Box<Table>` with leaked slots.
+    Heap,
 }
 
 struct Writer {
     /// The number of strings in the table.
     len: usize,
-    /// Whether the table is this shard's own, rather than the shared one.
-    owns_table: bool,
-    /// The tables of its own that this shard's table replaced, freed when the interner drops.
+    /// Which table the shard's table is.
+    own: Own,
+    /// The heap tables that this shard's table replaced, freed when the interner drops.
     retired: Vec<*mut Table>,
 }
 
@@ -505,18 +553,39 @@ struct Writer {
 unsafe impl Send for Writer {}
 
 fn new_table(len: usize) -> *mut Table {
-    let slots = (0..len).map(|_| AtomicU64::new(0)).collect();
-    Box::into_raw(Box::new(Table { slots }))
+    let slots: Box<[AtomicU64]> = (0..len).map(|_| AtomicU64::new(0)).collect();
+    Box::into_raw(Box::new(Table {
+        slots: Box::into_raw(slots).cast::<AtomicU64>(),
+        len,
+    }))
+}
+
+/// Frees a table of [`new_table`].
+///
+/// # Safety
+///
+/// `table` is from `new_table`, and nothing borrows it any more.
+unsafe fn free_table(table: *mut Table) {
+    // SAFETY: (the caller's) leaked by `new_table`.
+    let table = unsafe { Box::from_raw(table) };
+    // SAFETY: as above.
+    drop(unsafe {
+        Box::from_raw(ptr::slice_from_raw_parts_mut(
+            table.slots.cast_mut(),
+            table.len,
+        ))
+    });
 }
 
 /// Stores a slot in a table that has room. Under the shard's lock.
 fn put(table: &Table, slot: u64) {
-    let mask = table.slots.len() - 1;
+    let slots = table.slots();
+    let mask = slots.len() - 1;
     let mut i = (slot >> 32) as usize & mask;
-    while table.slots[i].load(Relaxed) != 0 {
+    while slots[i].load(Relaxed) != 0 {
         i = (i + 1) & mask;
     }
-    table.slots[i].store(slot, Release);
+    slots[i].store(slot, Release);
 }
 
 impl Shard {
@@ -525,14 +594,16 @@ impl Shard {
         Shard {
             r: ShardRead {
                 table: AtomicPtr::new(shared.0.0),
+                first: UnsafeCell::new(MaybeUninit::uninit()),
             },
             w: ShardWrite {
                 writer: Mutex::new(Writer {
                     len: shared.1,
-                    owns_table: false,
+                    own: Own::Shared,
                     retired: Vec::new(),
                 }),
             },
+            first: FirstSlots(UnsafeCell::new(MaybeUninit::uninit())),
         }
     }
 
@@ -542,14 +613,27 @@ impl Shard {
         unsafe { &*self.r.table.load(Acquire) }
     }
 
+    /// The shard's first own table, its slots zeroed: not yet published. Under the shard's lock,
+    /// once.
+    fn first_table(&self) -> *mut Table {
+        let slots = self.first.0.get().cast::<AtomicU64>();
+        // SAFETY: under the shard's lock, before `table` points to it: no other thread accesses
+        // the first slots yet; an all-zero `AtomicU64` is valid.
+        unsafe { ptr::write_bytes(slots, 0, TABLE0) };
+        let header = self.r.first.get().cast::<Table>();
+        // SAFETY: as above, for the header.
+        unsafe { header.write(Table { slots, len: TABLE0 }) };
+        header
+    }
+
     /// The `Sym` of `bytes` in this shard, and its interned bytes.
     #[inline]
     fn find<'a>(&self, arenas: &'a [Arena], tag: u32, bytes: &[u8]) -> Option<(u32, &'a [u8])> {
-        let table = self.table();
-        let mask = table.slots.len() - 1;
+        let slots = self.table().slots();
+        let mask = slots.len() - 1;
         let mut i = tag as usize & mask;
         loop {
-            let slot = table.slots[i].load(Acquire);
+            let slot = slots[i].load(Acquire);
             if slot == 0 {
                 return None;
             }
@@ -568,18 +652,18 @@ impl Shard {
     /// Publishes `sym` in this shard's table. Under the shard's lock.
     fn insert(&self, writer: &mut Writer, tag: u32, sym: u32) {
         let table = self.table();
-        let full = (writer.len + 1) * 2 > table.slots.len();
-        let table = if full || !writer.owns_table {
+        let full = (writer.len + 1) * 2 > table.len;
+        let table = if full || writer.own == Own::Shared {
             // A larger table, or the shard's own copy of the shared one.
-            let len = if full {
-                table.slots.len() * 2
+            let len = if full { table.len * 2 } else { table.len }.max(TABLE0);
+            let (grown, own) = if len == TABLE0 && writer.own == Own::Shared {
+                (self.first_table(), Own::First)
             } else {
-                table.slots.len()
+                (new_table(len), Own::Heap)
             };
-            let grown = new_table(len.max(TABLE0));
-            // SAFETY: just allocated, and not shared yet.
+            // SAFETY: just made, and not shared yet.
             let grown_ref = unsafe { &*grown };
-            for slot in &table.slots {
+            for slot in table.slots() {
                 let slot = slot.load(Relaxed);
                 if slot != 0 {
                     put(grown_ref, slot);
@@ -588,10 +672,10 @@ impl Shard {
             // Under the shard's lock: a plain load and store, rather than a locked swap.
             let old = self.r.table.load(Relaxed);
             self.r.table.store(grown, Release);
-            if writer.owns_table {
+            if writer.own == Own::Heap {
                 writer.retired.push(old);
             }
-            writer.owns_table = true;
+            writer.own = own;
             grown_ref
         } else {
             table
@@ -608,11 +692,11 @@ impl Drop for Shard {
             .writer
             .get_mut()
             .unwrap_or_else(PoisonError::into_inner);
-        let own = writer.owns_table.then_some(*self.r.table.get_mut());
+        let own = (writer.own == Own::Heap).then_some(*self.r.table.get_mut());
         let tables = own.into_iter().chain(writer.retired.drain(..));
         for table in tables {
-            // SAFETY: each was leaked from a `Box<Table>`; `&mut self`: nothing borrows them.
-            drop(unsafe { Box::from_raw(table) });
+            // SAFETY: each is from `new_table`; `&mut self`: nothing borrows them.
+            unsafe { free_table(table) };
         }
     }
 }
