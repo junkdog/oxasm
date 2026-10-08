@@ -77,10 +77,37 @@ pub struct InvokeDynamicInsn {
     pub bsm_args: Vec<SymConstant>,
 }
 
+/// A `TABLESWITCH` instruction (ASM's `TableSwitchInsnNode`), boxed in [`Insn::TableSwitch`] to
+/// keep [`Insn`] small.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TableSwitchInsn {
+    /// The minimum key value.
+    pub min: i32,
+    /// The maximum key value.
+    pub max: i32,
+    /// The beginning of the default handler block.
+    pub dflt: Label,
+    /// The beginnings of the handler blocks: `labels[i]` is that of the `min + i` key.
+    pub labels: Vec<Label>,
+}
+
+/// A `LOOKUPSWITCH` instruction (ASM's `LookupSwitchInsnNode`), boxed in
+/// [`Insn::LookupSwitch`] to keep [`Insn`] small.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LookupSwitchInsn {
+    /// The beginning of the default handler block.
+    pub dflt: Label,
+    /// The values of the keys.
+    pub keys: Vec<i32>,
+    /// The beginnings of the handler blocks: `labels[i]` is that of `keys[i]`.
+    pub labels: Vec<Label>,
+}
+
 /// A bytecode instruction, or one of the pseudo instructions an instruction list also holds
 /// (labels, stack map frames and line numbers).
 ///
-/// Its strings are [`Sym`]s of the interner of the method that holds it.
+/// Its strings are [`Sym`]s of the interner of the method that holds it. The variants with
+/// vectors are boxed, which keeps an `Insn` at 24 bytes.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Insn {
     /// A zero operand instruction (ASM's `InsnNode`): `NOP`, `ACONST_NULL`, ..., `IADD`, ...,
@@ -162,25 +189,9 @@ pub enum Insn {
         incr: i16,
     },
     /// A `TABLESWITCH` instruction (ASM's `TableSwitchInsnNode`).
-    TableSwitch {
-        /// The minimum key value.
-        min: i32,
-        /// The maximum key value.
-        max: i32,
-        /// The beginning of the default handler block.
-        dflt: Label,
-        /// The beginnings of the handler blocks: `labels[i]` is that of the `min + i` key.
-        labels: Vec<Label>,
-    },
+    TableSwitch(Box<TableSwitchInsn>),
     /// A `LOOKUPSWITCH` instruction (ASM's `LookupSwitchInsnNode`).
-    LookupSwitch {
-        /// The beginning of the default handler block.
-        dflt: Label,
-        /// The values of the keys.
-        keys: Vec<i32>,
-        /// The beginnings of the handler blocks: `labels[i]` is that of `keys[i]`.
-        labels: Vec<Label>,
-    },
+    LookupSwitch(Box<LookupSwitchInsn>),
     /// A `MULTIANEWARRAY` instruction (ASM's `MultiANewArrayInsnNode`).
     MultiANewArray {
         /// An array type descriptor.
@@ -189,7 +200,7 @@ pub enum Insn {
         dims: u8,
     },
     /// A stack map frame (ASM's `FrameNode`).
-    Frame(FrameNode),
+    Frame(Box<FrameNode>),
     /// A line number declaration (ASM's `LineNumberNode`).
     Line {
         /// A line number, which refers to the source file from which the class was compiled.
@@ -247,6 +258,26 @@ impl Insn {
         }))
     }
 
+    /// A `TABLESWITCH` instruction.
+    pub fn table_switch_insn(min: i32, max: i32, dflt: Label, labels: Vec<Label>) -> Insn {
+        Insn::TableSwitch(Box::new(TableSwitchInsn {
+            min,
+            max,
+            dflt,
+            labels,
+        }))
+    }
+
+    /// A `LOOKUPSWITCH` instruction.
+    pub fn lookup_switch_insn(dflt: Label, keys: Vec<i32>, labels: Vec<Label>) -> Insn {
+        Insn::LookupSwitch(Box::new(LookupSwitchInsn { dflt, keys, labels }))
+    }
+
+    /// A stack map frame.
+    pub fn frame(frame: FrameNode) -> Insn {
+        Insn::Frame(Box::new(frame))
+    }
+
     /// A `MULTIANEWARRAY` instruction.
     pub fn multi_a_new_array_insn(desc: Sym, dims: u8) -> Insn {
         Insn::MultiANewArray { desc, dims }
@@ -266,8 +297,8 @@ impl Insn {
             Insn::Label(_) => InsnKind::Label,
             Insn::Ldc(_) => InsnKind::LdcInsn,
             Insn::Iinc { .. } => InsnKind::IincInsn,
-            Insn::TableSwitch { .. } => InsnKind::TableSwitchInsn,
-            Insn::LookupSwitch { .. } => InsnKind::LookupSwitchInsn,
+            Insn::TableSwitch(_) => InsnKind::TableSwitchInsn,
+            Insn::LookupSwitch(_) => InsnKind::LookupSwitchInsn,
             Insn::MultiANewArray { .. } => InsnKind::MultiANewArrayInsn,
             Insn::Frame(_) => InsnKind::Frame,
             Insn::Line { .. } => InsnKind::Line,
@@ -288,8 +319,8 @@ impl Insn {
             Insn::InvokeDynamic(_) => Some(INVOKEDYNAMIC),
             Insn::Ldc(_) => Some(LDC),
             Insn::Iinc { .. } => Some(IINC),
-            Insn::TableSwitch { .. } => Some(TABLESWITCH),
-            Insn::LookupSwitch { .. } => Some(LOOKUPSWITCH),
+            Insn::TableSwitch(_) => Some(TABLESWITCH),
+            Insn::LookupSwitch(_) => Some(LOOKUPSWITCH),
             Insn::MultiANewArray { .. } => Some(MULTIANEWARRAY),
             Insn::Label(_) | Insn::Frame(_) | Insn::Line { .. } => None,
         }
@@ -313,6 +344,16 @@ impl Insn {
             | Insn::Method { opcode, .. }
             | Insn::Jump { opcode, .. } => *opcode = new_opcode,
             insn => panic!("a {:?} instruction has no settable opcode", insn.kind()),
+        }
+    }
+
+    /// The default label and the case labels of this instruction, if it is a `TABLESWITCH` or a
+    /// `LOOKUPSWITCH`.
+    pub fn switch_labels(&self) -> Option<(Label, &[Label])> {
+        match self {
+            Insn::TableSwitch(insn) => Some((insn.dflt, &insn.labels)),
+            Insn::LookupSwitch(insn) => Some((insn.dflt, &insn.labels)),
+            _ => None,
         }
     }
 
@@ -374,14 +415,11 @@ impl Insn {
             Insn::Label(label) => method_visitor.visit_label(*label),
             Insn::Ldc(value) => method_visitor.visit_ldc_insn(&value.resolve(interner)),
             Insn::Iinc { var, incr } => method_visitor.visit_iinc_insn(*var, *incr),
-            Insn::TableSwitch {
-                min,
-                max,
-                dflt,
-                labels,
-            } => method_visitor.visit_table_switch_insn(*min, *max, *dflt, labels),
-            Insn::LookupSwitch { dflt, keys, labels } => {
-                method_visitor.visit_lookup_switch_insn(*dflt, keys, labels);
+            Insn::TableSwitch(insn) => {
+                method_visitor.visit_table_switch_insn(insn.min, insn.max, insn.dflt, &insn.labels);
+            }
+            Insn::LookupSwitch(insn) => {
+                method_visitor.visit_lookup_switch_insn(insn.dflt, &insn.keys, &insn.labels);
             }
             Insn::MultiANewArray { desc, dims } => {
                 method_visitor.visit_multi_a_new_array_insn(resolve(desc), *dims);
@@ -403,22 +441,12 @@ impl Insn {
                 label: clone(label),
             },
             Insn::Label(label) => Insn::Label(clone(label)),
-            Insn::TableSwitch {
-                min,
-                max,
-                dflt,
-                labels,
-            } => Insn::TableSwitch {
-                min: *min,
-                max: *max,
-                dflt: clone(dflt),
-                labels: clones(labels),
-            },
-            Insn::LookupSwitch { dflt, keys, labels } => Insn::LookupSwitch {
-                dflt: clone(dflt),
-                keys: keys.clone(),
-                labels: clones(labels),
-            },
+            Insn::TableSwitch(insn) => {
+                Insn::table_switch_insn(insn.min, insn.max, clone(&insn.dflt), clones(&insn.labels))
+            }
+            Insn::LookupSwitch(insn) => {
+                Insn::lookup_switch_insn(clone(&insn.dflt), insn.keys.clone(), clones(&insn.labels))
+            }
             Insn::Frame(frame) => {
                 let clone_values = |values: &[SymFrameValue]| {
                     values
@@ -431,7 +459,7 @@ impl Insn {
                         })
                         .collect()
                 };
-                Insn::Frame(FrameNode {
+                Insn::frame(FrameNode {
                     kind: frame.kind,
                     local: clone_values(&frame.local),
                     stack: clone_values(&frame.stack),
@@ -448,22 +476,19 @@ impl Insn {
 
 /// An instruction of an [`InsnList`](crate::InsnList): an [`Insn`] and the type annotations of
 /// the instruction (ASM's `AbstractInsnNode`).
+///
+/// The type annotations of an instruction are not in its node: the list holds them (see
+/// [`InsnList::type_annotations`](crate::InsnList::type_annotations)), since instructions rarely
+/// have any. This keeps a node at the size of its [`Insn`], with no drop glue of its own.
 #[derive(Clone, Debug, PartialEq)]
 pub struct InsnNode {
     /// The instruction.
     pub insn: Insn,
-    /// The type annotations of this instruction, or `None` if it has none (ASM's
-    /// `visibleTypeAnnotations` and `invisibleTypeAnnotations`, both `null`). Only used for real
-    /// instructions (not for labels, frames, or line number nodes).
-    ///
-    /// They are boxed because instructions rarely have any: this keeps an instruction node
-    /// small. [`visible_type_annotations`](Self::visible_type_annotations) and
-    /// [`invisible_type_annotations`](Self::invisible_type_annotations) read them, and
-    /// [`type_annotations_mut`](Self::type_annotations_mut) adds some.
-    pub type_annotations: Option<Box<InsnTypeAnnotations>>,
 }
 
-/// The type annotations of an instruction (see [`InsnNode::type_annotations`]).
+/// The type annotations of an instruction (ASM's `visibleTypeAnnotations` and
+/// `invisibleTypeAnnotations`), held by its [`InsnList`](crate::InsnList). Only real
+/// instructions have some (not labels, frames, or line number nodes).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct InsnTypeAnnotations {
     /// The runtime visible type annotations of the instruction.
@@ -472,13 +497,28 @@ pub struct InsnTypeAnnotations {
     pub invisible: Vec<TypeAnnotationNode>,
 }
 
-impl InsnNode {
-    /// An instruction node without type annotations.
-    pub fn new(insn: Insn) -> InsnNode {
-        InsnNode {
-            insn,
-            type_annotations: None,
+impl InsnTypeAnnotations {
+    /// Makes the given visitor visit these type annotations, with the strings of the given
+    /// interner.
+    pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
+        for (annotations, visible) in [(&self.visible, true), (&self.invisible, false)] {
+            for type_annotation in annotations {
+                let av = method_visitor.visit_insn_annotation(
+                    type_annotation.type_ref,
+                    type_annotation.type_path.as_ref(),
+                    interner.resolve(type_annotation.desc()),
+                    visible,
+                );
+                accept_annotation(interner, &type_annotation.annotation, av);
+            }
         }
+    }
+}
+
+impl InsnNode {
+    /// An instruction node.
+    pub fn new(insn: Insn) -> InsnNode {
+        InsnNode { insn }
     }
 
     /// The type of this instruction (ASM's `getType()`).
@@ -492,70 +532,18 @@ impl InsnNode {
         self.insn.opcode()
     }
 
-    /// The runtime visible type annotations of this instruction.
-    pub fn visible_type_annotations(&self) -> &[TypeAnnotationNode] {
-        self.type_annotations
-            .as_deref()
-            .map_or(&[], |annotations| &annotations.visible)
-    }
-
-    /// The runtime invisible type annotations of this instruction.
-    pub fn invisible_type_annotations(&self) -> &[TypeAnnotationNode] {
-        self.type_annotations
-            .as_deref()
-            .map_or(&[], |annotations| &annotations.invisible)
-    }
-
-    /// The type annotations of this instruction, which are created (empty) if it has none.
-    pub fn type_annotations_mut(&mut self) -> &mut InsnTypeAnnotations {
-        self.type_annotations.get_or_insert_default()
-    }
-
-    /// Makes the given visitor visit this instruction, then its type annotations if it is a
-    /// real instruction, with the strings of the given interner.
+    /// Makes the given visitor visit this instruction (without its type annotations, which its
+    /// list holds), with the strings of the given interner.
     pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
         self.insn.accept(interner, method_visitor);
-        if self.type_annotations.is_some()
-            && !matches!(
-                self.insn,
-                Insn::Label(_) | Insn::Frame(_) | Insn::Line { .. }
-            )
-        {
-            self.accept_annotations(interner, method_visitor);
-        }
-    }
-
-    /// Makes the given visitor visit the type annotations of this instruction.
-    fn accept_annotations(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
-        for (annotations, visible) in [
-            (self.visible_type_annotations(), true),
-            (self.invisible_type_annotations(), false),
-        ] {
-            for type_annotation in annotations {
-                let av = method_visitor.visit_insn_annotation(
-                    type_annotation.type_ref,
-                    type_annotation.type_path.as_ref(),
-                    interner.resolve(type_annotation.desc()),
-                    visible,
-                );
-                accept_annotation(interner, &type_annotation.annotation, av);
-            }
-        }
     }
 
     /// A copy of this instruction, whose labels are replaced with their image in the given map
-    /// (ASM's `clone(Map<LabelNode, LabelNode>)`); see [`Insn::clone_with`]. Like in ASM, the
-    /// type annotations of real instructions are copied, and those of labels, frames and line
-    /// numbers are not.
+    /// (ASM's `clone(Map<LabelNode, LabelNode>)`); see [`Insn::clone_with`]. ASM's clone also
+    /// copies the type annotations of real instructions, which here are in the list: see
+    /// [`InsnList::type_annotations`](crate::InsnList::type_annotations).
     pub fn clone_with<S: BuildHasher>(&self, cloned_labels: &HashMap<Label, Label, S>) -> InsnNode {
-        let mut clone = InsnNode::new(self.insn.clone_with(cloned_labels));
-        if !matches!(
-            self.insn,
-            Insn::Label(_) | Insn::Frame(_) | Insn::Line { .. }
-        ) {
-            clone.type_annotations.clone_from(&self.type_annotations);
-        }
-        clone
+        InsnNode::new(self.insn.clone_with(cloned_labels))
     }
 }
 
@@ -567,6 +555,6 @@ impl From<Insn> for InsnNode {
 
 impl From<FrameNode> for InsnNode {
     fn from(frame: FrameNode) -> InsnNode {
-        InsnNode::new(Insn::Frame(frame))
+        InsnNode::new(Insn::frame(frame))
     }
 }

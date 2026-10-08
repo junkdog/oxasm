@@ -10,23 +10,14 @@ fn test_constructor() {
     let keys = vec![1];
     let labels = vec![Label::new()];
 
-    let lookup_switch_insn_node = Insn::LookupSwitch {
-        dflt,
-        keys: keys.clone(),
-        labels: labels.clone(),
-    };
+    let lookup_switch_insn_node = Insn::lookup_switch_insn(dflt, keys.clone(), labels.clone());
 
     assert_eq!(lookup_switch_insn_node.kind(), InsnKind::LookupSwitchInsn);
     assert_eq!(lookup_switch_insn_node.opcode(), Some(LOOKUPSWITCH));
-    let Insn::LookupSwitch {
-        dflt: actual_dflt,
-        keys: actual_keys,
-        labels: actual_labels,
-    } = &lookup_switch_insn_node
-    else {
+    let Insn::LookupSwitch(actual) = &lookup_switch_insn_node else {
         unreachable!()
     };
-    assert_eq!(*actual_dflt, dflt);
-    assert_eq!(*actual_keys, [1]);
-    assert_eq!(*actual_labels, labels);
+    assert_eq!(actual.dflt, dflt);
+    assert_eq!(actual.keys, [1]);
+    assert_eq!(actual.labels, labels);
 }

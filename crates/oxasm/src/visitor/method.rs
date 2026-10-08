@@ -196,6 +196,16 @@ pub trait MethodVisitor {
         }
     }
 
+    /// Visits the length in bytes of the method's bytecode: an oxasm extension, which ASM does
+    /// not have. A class reader calls it after [`visit_code`](Self::visit_code), before the
+    /// first instruction, so that a visitor which stores the instructions can size its storage
+    /// once. It is only a hint: other sources of events need not call it.
+    fn visit_code_length(&mut self, code_length: u32) {
+        if let Some(d) = self.delegate() {
+            d.visit_code_length(code_length);
+        }
+    }
+
     /// Visits the current state of the local variables and operand stack elements. This method
     /// must(*) be called *just before* any instruction **i** that follows an unconditional branch
     /// instruction such as GOTO or THROW, that is the target of a jump instruction, or that starts
@@ -662,6 +672,9 @@ macro_rules! forward_method_visitor {
             }
             fn visit_code(&mut self) {
                 (**self).visit_code();
+            }
+            fn visit_code_length(&mut self, code_length: u32) {
+                (**self).visit_code_length(code_length);
             }
             fn visit_frame(
                 &mut self,

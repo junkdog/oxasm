@@ -31,5 +31,5 @@ fn constructor_keeps_what_the_kind_uses() {
     assert!(frame(FrameKind::Same).local.is_empty() && frame(FrameKind::Same).stack.is_empty());
     assert_eq!(frame(FrameKind::Same1).stack, [SymFrameValue::Integer]);
     assert!(frame(FrameKind::Same1).local.is_empty());
-    assert_eq!(Insn::Frame(frame(FrameKind::Same)).opcode(), None);
+    assert_eq!(Insn::frame(frame(FrameKind::Same)).opcode(), None);
 }

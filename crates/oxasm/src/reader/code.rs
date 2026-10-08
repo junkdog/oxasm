@@ -132,6 +132,7 @@ impl<'b> ClassReader<'b> {
                 ReadErrorKind::InvalidLength(code_length),
             )
         })?;
+        method_visitor.visit_code_length(u32::try_from(code_length).unwrap_or(0));
         context.current_method_labels.clear();
         context.current_method_labels.resize(labels_length, None);
         context.current_method_line_numbers.clear();

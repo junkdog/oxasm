@@ -445,19 +445,19 @@ where
                             )?;
                         }
                     }
-                    Insn::LookupSwitch { dflt, labels, .. } => {
-                        let target_insn_index = check.label_index(*dflt);
+                    Insn::LookupSwitch(insn) => {
+                        let target_insn_index = check.label_index(insn.dflt);
                         self.check_frame(check, target_insn_index, Some(current_frame), true)?;
-                        for label in labels {
+                        for label in &insn.labels {
                             let target_insn_index = check.label_index(*label);
                             self.check_frame(check, target_insn_index, Some(current_frame), true)?;
                         }
                         self.end_control_flow(check, insn_index)?;
                     }
-                    Insn::TableSwitch { dflt, labels, .. } => {
-                        let target_insn_index = check.label_index(*dflt);
+                    Insn::TableSwitch(insn) => {
+                        let target_insn_index = check.label_index(insn.dflt);
                         self.check_frame(check, target_insn_index, Some(current_frame), true)?;
-                        for label in labels {
+                        for label in &insn.labels {
                             let target_insn_index = check.label_index(*label);
                             self.check_frame(check, target_insn_index, Some(current_frame), true)?;
                         }

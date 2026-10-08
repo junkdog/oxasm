@@ -15,7 +15,7 @@ use oxasm::{
     AttributeCodec, CustomAttribute, FrameKind, JavaStr, Label, MapHierarchy, MethodVisitor, jstr,
 };
 use oxasm_testkit::ClassFile;
-use oxasm_tree::{FrameNode, Insn, MethodNode, SymFrameValue};
+use oxasm_tree::{FrameNode, MethodNode, SymFrameValue};
 
 /// ASM's `Comment` test attribute: a class attribute with no content.
 #[derive(Clone, Debug)]
@@ -218,11 +218,11 @@ impl MethodNodeBuilder {
                 .map(|v| SymFrameValue::intern(v, &interner))
                 .collect()
         };
-        self.method_node.instructions.add(Insn::Frame(FrameNode {
+        self.method_node.instructions.add(FrameNode {
             kind,
             local: intern(local),
             stack: intern(stack),
-        }));
+        });
         self
     }
 

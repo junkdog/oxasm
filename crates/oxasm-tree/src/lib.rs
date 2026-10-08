@@ -43,7 +43,10 @@ pub use annotation_node::{
 pub use class_node::ClassNode;
 pub use field_node::{FieldNode, RecordComponentNode};
 pub use frame_node::FrameNode;
-pub use insn::{Insn, InsnKind, InsnNode, InsnTypeAnnotations, InvokeDynamicInsn};
+pub use insn::{
+    Insn, InsnKind, InsnNode, InsnTypeAnnotations, InvokeDynamicInsn, LookupSwitchInsn,
+    TableSwitchInsn,
+};
 pub use insn_list::{Ids, InsnCursor, InsnId, InsnList, Iter};
 pub use method_node::MethodNode;
 pub use module_node::{

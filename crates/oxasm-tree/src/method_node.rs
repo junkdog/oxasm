@@ -15,7 +15,7 @@ use crate::annotation_node::{
 };
 use crate::field_node::{accept_annotations, add_annotation, add_type_annotation};
 use crate::frame_node::FrameNode;
-use crate::insn::{Insn, InsnNode, InvokeDynamicInsn};
+use crate::insn::{Insn, InvokeDynamicInsn};
 use crate::insn_list::InsnList;
 use crate::nodes::{LocalVariableNode, ParameterNode, TryCatchBlockNode, try_catch_type_ref};
 use crate::strings::{Strings, resolve_all};
@@ -545,9 +545,8 @@ impl MethodNode {
         {
             current_insn = self.instructions.previous(id);
         }
-        let insn: &mut InsnNode = &mut self.instructions[current_insn?];
         // Add the annotation to this instruction.
-        let annotations = insn.type_annotations_mut();
+        let annotations = self.instructions.type_annotations_mut(current_insn?);
         add_type_annotation(
             &mut annotations.visible,
             &mut annotations.invisible,
@@ -671,6 +670,14 @@ impl MethodVisitor for MethodNode {
         // Nothing to do.
     }
 
+    fn visit_code_length(&mut self, code_length: u32) {
+        // A method has about 0.7 nodes (instructions, labels, frames and line numbers) per
+        // byte of bytecode, small methods up to about 1: one node per byte, and a few for the
+        // smallest, leaves most lists without a single reallocation.
+        self.instructions
+            .reserve(usize::try_from(code_length).map_or(0, |n| n.saturating_add(4)));
+    }
+
     fn visit_frame(
         &mut self,
         kind: FrameKind,
@@ -759,20 +766,20 @@ impl MethodVisitor for MethodNode {
     }
 
     fn visit_table_switch_insn(&mut self, min: i32, max: i32, dflt: Label, labels: &[Label]) {
-        self.instructions.add(Insn::TableSwitch {
+        self.instructions.add(Insn::table_switch_insn(
             min,
             max,
-            dflt: plain(dflt),
-            labels: labels.iter().copied().map(plain).collect(),
-        });
+            plain(dflt),
+            labels.iter().copied().map(plain).collect(),
+        ));
     }
 
     fn visit_lookup_switch_insn(&mut self, dflt: Label, keys: &[i32], labels: &[Label]) {
-        self.instructions.add(Insn::LookupSwitch {
-            dflt: plain(dflt),
-            keys: keys.to_vec(),
-            labels: labels.iter().copied().map(plain).collect(),
-        });
+        self.instructions.add(Insn::lookup_switch_insn(
+            plain(dflt),
+            keys.to_vec(),
+            labels.iter().copied().map(plain).collect(),
+        ));
     }
 
     fn visit_multi_a_new_array_insn(&mut self, descriptor: &JavaStr, num_dimensions: u8) {

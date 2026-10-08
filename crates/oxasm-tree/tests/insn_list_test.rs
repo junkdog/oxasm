@@ -868,6 +868,59 @@ fn cursor_edits_while_walking() {
     assert_eq!(opcodes(&insn_list), [101, 103, 105, 107, 109]);
 }
 
+/// oxasm-specific: a list holds the type annotations of its instructions (`InsnNode` has no
+/// field for them).
+fn annotate(insn_list: &mut InsnList, id: InsnId, interner: &Interner, descriptor: &str) {
+    let type_ref = oxasm::TypeReference::new_type_reference(oxasm::TypeReference::NEW);
+    let descriptor = interner.intern(oxasm::JavaStr::from_str(descriptor));
+    insn_list
+        .type_annotations_mut(id)
+        .visible
+        .push(oxasm_tree::TypeAnnotationNode::new(type_ref, None, descriptor));
+}
+
+fn annotation_count(insn_list: &InsnList, id: InsnId) -> usize {
+    insn_list
+        .type_annotations(id)
+        .map_or(0, |annotations| annotations.visible.len())
+}
+
+#[test]
+fn type_annotations_follow_their_instruction() {
+    let interner = Interner::new();
+    let (mut insn_list, insn1, insn2) = new_insn_list_2();
+    annotate(&mut insn_list, insn2, &interner, "LA;");
+    assert_eq!(annotation_count(&insn_list, insn1), 0);
+    assert_eq!(annotation_count(&insn_list, insn2), 1);
+
+    // Moving a list into another keeps them.
+    let mut other = new_insn_list();
+    other.add(new_insn(7));
+    let (first, last) = other.add_list(&mut insn_list).unwrap();
+    assert_eq!(annotation_count(&other, first), 0);
+    assert_eq!(annotation_count(&other, last), 1);
+    assert!(insn_list.type_annotations(insn2).is_none());
+
+    // Removing or replacing an instruction drops them, and its recycled slot starts without.
+    other.remove(last);
+    let reused = other.add(new_insn(8));
+    assert_eq!(annotation_count(&other, reused), 0);
+    annotate(&mut other, reused, &interner, "LB;");
+    let (replaced, _) = other.set(reused, new_insn(9));
+    assert_eq!(annotation_count(&other, replaced), 0);
+}
+
+#[test]
+fn equal_lists_have_equal_type_annotations() {
+    let interner = Interner::new();
+    let (mut insn_list, _, insn2) = new_insn_list_2();
+    let (other, _, _) = new_insn_list_2();
+    assert_eq!(insn_list, other);
+    annotate(&mut insn_list, insn2, &interner, "LA;");
+    assert_ne!(insn_list, other);
+    assert_eq!(insn_list.clone(), insn_list);
+}
+
 #[test]
 fn insn_list_is_send_and_sync() {
     fn assert_send_sync<T: Send + Sync>() {}

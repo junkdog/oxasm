@@ -329,9 +329,9 @@ impl<'n> Inliner<'n> {
                 match current_insn_node {
                     // Don't follow JSR instructions in the control flow graph.
                     Insn::Jump { opcode, label } if *opcode != JSR => targets.push(*label),
-                    Insn::TableSwitch { dflt, labels, .. }
-                    | Insn::LookupSwitch { dflt, labels, .. } => {
-                        targets.push(*dflt);
+                    insn @ (Insn::TableSwitch(_) | Insn::LookupSwitch(_)) => {
+                        let (dflt, labels) = insn.switch_labels().expect("a switch");
+                        targets.push(dflt);
                         targets.extend_from_slice(labels);
                     }
                     _ => {}
@@ -472,7 +472,16 @@ impl<'n> Inliner<'n> {
                     }
                     _ => {
                         let cloned_labels = self.cloned_labels_for(instantiation, &insn_node.insn);
-                        new_instructions.add(insn_node.clone_with(&cloned_labels));
+                        let clone = new_instructions.add(insn_node.clone_with(&cloned_labels));
+                        // ASM's clone also copies the type annotations of a real instruction.
+                        if insn_node.opcode().is_some()
+                            && let Some(annotations) = self
+                                .instructions
+                                .id_at(i)
+                                .and_then(|id| self.instructions.type_annotations(id))
+                        {
+                            *new_instructions.type_annotations_mut(clone) = annotations.clone();
+                        }
                     }
                 }
             }
@@ -633,8 +642,9 @@ impl<'n> Inliner<'n> {
         };
         match insn {
             Insn::Jump { label, .. } => add(*label),
-            Insn::TableSwitch { dflt, labels, .. } | Insn::LookupSwitch { dflt, labels, .. } => {
-                add(*dflt);
+            Insn::TableSwitch(_) | Insn::LookupSwitch(_) => {
+                let (dflt, labels) = insn.switch_labels().expect("a switch");
+                add(dflt);
                 labels.iter().for_each(|&label| add(label));
             }
             Insn::Frame(frame) => {

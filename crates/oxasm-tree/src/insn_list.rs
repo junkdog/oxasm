@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use oxasm::{Interner, Label, MethodVisitor};
 use rustc_hash::FxHashMap;
 
-use crate::insn::InsnNode;
+use crate::insn::{InsnNode, InsnTypeAnnotations};
 
 /// The "no slot" value of the slot links.
 const NIL: u32 = u32::MAX;
@@ -86,6 +86,9 @@ pub struct InsnList {
     len: usize,
     positions: OnceLock<Positions>,
     labels: OnceLock<FxHashMap<Label, InsnId>>,
+    /// The type annotations of the instructions that have some, by slot. Few instructions have
+    /// any, so they are not in the nodes.
+    annotations: FxHashMap<u32, InsnTypeAnnotations>,
 }
 
 impl InsnList {
@@ -100,7 +103,14 @@ impl InsnList {
             len: 0,
             positions: OnceLock::new(),
             labels: OnceLock::new(),
+            annotations: FxHashMap::default(),
         }
+    }
+
+    /// Reserves capacity for at least `additional` more instructions (an oxasm extension, as
+    /// for a `Vec`).
+    pub fn reserve(&mut self, additional: usize) {
+        self.slots.reserve(additional);
     }
 
     /// The number of instructions in this list (ASM's `size()`).
@@ -229,9 +239,38 @@ impl InsnList {
     /// Makes the given visitor visit all the instructions in this list, with the strings of the
     /// given interner (that of the method that holds the list).
     pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
-        for node in self {
+        let mut current = self.first;
+        while current != NIL {
+            let slot = &self.slots[current as usize];
+            let node = slot.node.as_ref().expect("a linked slot holds a node");
             node.accept(interner, method_visitor);
+            if !self.annotations.is_empty()
+                && node.opcode().is_some()
+                && let Some(annotations) = self.annotations.get(&current)
+            {
+                annotations.accept(interner, method_visitor);
+            }
+            current = slot.next;
         }
+    }
+
+    /// The type annotations of the given instruction, if it has some (ASM's
+    /// `visibleTypeAnnotations` and `invisibleTypeAnnotations` of the node).
+    pub fn type_annotations(&self, id: InsnId) -> Option<&InsnTypeAnnotations> {
+        let slot = self.slot_of(id)?;
+        self.annotations.get(&slot)
+    }
+
+    /// The type annotations of the given instruction, which are created (empty) if it has none.
+    /// They are dropped with the instruction, when it is removed or replaced; moving a list into
+    /// another keeps them.
+    ///
+    /// # Panics
+    ///
+    /// If `id` is not an instruction of this list.
+    pub fn type_annotations_mut(&mut self, id: InsnId) -> &mut InsnTypeAnnotations {
+        let slot = self.expect_slot(id);
+        self.annotations.entry(slot).or_default()
     }
 
     /// Replaces an instruction of this list with another instruction. Returns the handle of the
@@ -452,6 +491,9 @@ impl InsnList {
 
     /// Frees the given (unlinked) slot, and returns its node.
     fn free(&mut self, slot: u32) -> InsnNode {
+        if !self.annotations.is_empty() {
+            self.annotations.remove(&slot);
+        }
         let entry = &mut self.slots[slot as usize];
         entry.generation = entry.generation.wrapping_add(1);
         self.free.push(slot);
@@ -512,10 +554,14 @@ impl InsnList {
         let mut current = other.first;
         while current != NIL {
             let entry = &mut other.slots[current as usize];
+            let other_slot = current;
             current = entry.next;
             let node = entry.node.take().expect("a linked slot holds a node");
             let slot = self.alloc(node);
             self.link(slot, previous, next);
+            if let Some(annotations) = other.annotations.remove(&other_slot) {
+                self.annotations.insert(slot, annotations);
+            }
             if first == NIL {
                 first = slot;
             }
@@ -577,14 +623,20 @@ impl Clone for InsnList {
             len: self.len,
             positions: self.positions.clone(),
             labels: OnceLock::new(),
+            annotations: self.annotations.clone(),
         }
     }
 }
 
-/// Lists are equal if they hold equal instructions, in the same order.
+/// Lists are equal if they hold equal instructions, with equal type annotations, in the same
+/// order.
 impl PartialEq for InsnList {
     fn eq(&self, other: &InsnList) -> bool {
-        self.len == other.len && self.iter().eq(other.iter())
+        self.len == other.len
+            && self.ids().zip(other.ids()).all(|(id, other_id)| {
+                self[id] == other[other_id]
+                    && self.type_annotations(id) == other.type_annotations(other_id)
+            })
     }
 }
 

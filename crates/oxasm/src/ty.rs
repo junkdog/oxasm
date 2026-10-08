@@ -208,7 +208,16 @@ impl Type {
     ///
     /// If the descriptor does not start with a type character.
     pub fn try_get_type(type_descriptor: impl AsRef<JavaStr>) -> Result<Type, InvalidDescriptor> {
-        let buf = shared(type_descriptor.as_ref());
+        let type_descriptor = type_descriptor.as_ref();
+        // A primitive type needs no copy of the descriptor.
+        if let Some(primitive) = type_descriptor
+            .as_bytes()
+            .first()
+            .and_then(|&c| primitive_of(c))
+        {
+            return Ok(primitive);
+        }
+        let buf = shared(type_descriptor);
         let end = buf.bytes().len();
         get_type_internal(&buf, 0, end)
     }
@@ -365,7 +374,21 @@ impl Type {
     pub fn try_get_return_type_of(
         method_descriptor: impl AsRef<JavaStr>,
     ) -> Result<Type, InvalidDescriptor> {
-        return_type(&shared(method_descriptor.as_ref()))
+        let method_descriptor = method_descriptor.as_ref();
+        // A primitive return type needs no copy of the descriptor.
+        let offset = Type::get_return_type_offset(method_descriptor)?;
+        if let Some(primitive) = method_descriptor
+            .as_bytes()
+            .get(offset)
+            .and_then(|&c| primitive_of(c))
+        {
+            return Ok(primitive);
+        }
+        get_type_internal(
+            &shared(method_descriptor),
+            offset,
+            method_descriptor.as_bytes().len(),
+        )
     }
 
     /// Returns the start index of the return type of the given method descriptor.
@@ -815,6 +838,23 @@ fn argument_types(buf: &TypeBuf, base: usize) -> Result<Vec<Type>, InvalidDescri
 fn return_type(buf: &TypeBuf) -> Result<Type, InvalidDescriptor> {
     let offset = Type::get_return_type_offset(buf.as_java_str())?;
     get_type_internal(buf, offset, buf.bytes().len())
+}
+
+/// The primitive type of the given descriptor character, if it is one.
+#[inline]
+fn primitive_of(c: u8) -> Option<Type> {
+    match c {
+        b'V' => Some(Type::VOID),
+        b'Z' => Some(Type::BOOLEAN),
+        b'C' => Some(Type::CHAR),
+        b'B' => Some(Type::BYTE),
+        b'S' => Some(Type::SHORT),
+        b'I' => Some(Type::INT),
+        b'F' => Some(Type::FLOAT),
+        b'J' => Some(Type::LONG),
+        b'D' => Some(Type::DOUBLE),
+        _ => None,
+    }
 }
 
 /// Returns the type corresponding to the descriptor in `buf[begin..end]`.

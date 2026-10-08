@@ -464,14 +464,14 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                         self.hooks
                             .new_control_flow_edge(insn_index, jump_insn_index);
                     }
-                    Insn::LookupSwitch { dflt, labels, .. } => {
-                        let target_insn_index = self.label_index(*dflt)?;
+                    Insn::LookupSwitch(insn) => {
+                        let target_insn_index = self.label_index(insn.dflt)?;
                         self.hooks
-                            .init_jump_target(current_frame, opcode, Some(*dflt));
+                            .init_jump_target(current_frame, opcode, Some(insn.dflt));
                         self.merge(target_insn_index, current_frame, subroutine.as_ref())?;
                         self.hooks
                             .new_control_flow_edge(insn_index, target_insn_index);
-                        for label in labels {
+                        for label in &insn.labels {
                             let target_insn_index = self.label_index(*label)?;
                             self.hooks
                                 .init_jump_target(current_frame, opcode, Some(*label));
@@ -480,14 +480,14 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                                 .new_control_flow_edge(insn_index, target_insn_index);
                         }
                     }
-                    Insn::TableSwitch { dflt, labels, .. } => {
-                        let target_insn_index = self.label_index(*dflt)?;
+                    Insn::TableSwitch(insn) => {
+                        let target_insn_index = self.label_index(insn.dflt)?;
                         self.hooks
-                            .init_jump_target(current_frame, opcode, Some(*dflt));
+                            .init_jump_target(current_frame, opcode, Some(insn.dflt));
                         self.merge(target_insn_index, current_frame, subroutine.as_ref())?;
                         self.hooks
                             .new_control_flow_edge(insn_index, target_insn_index);
-                        for label in labels {
+                        for label in &insn.labels {
                             self.hooks
                                 .init_jump_target(current_frame, opcode, Some(*label));
                             let target_insn_index = self.label_index(*label)?;
@@ -779,11 +779,11 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                         instruction_indices_to_process.push(index_of(*label));
                     }
                 }
-                Insn::TableSwitch { dflt, labels, .. }
-                | Insn::LookupSwitch { dflt, labels, .. } => {
+                Insn::TableSwitch(_) | Insn::LookupSwitch(_) => {
+                    let (dflt, labels) = current_insn.insn.switch_labels().expect("a switch");
                     // ASM recurses here, and pushes the labels after the recursive call returns;
                     // pushing them first is the same, since the call has its own work list.
-                    default_target = Some(index_of(*dflt));
+                    default_target = Some(index_of(dflt));
                     for label in labels.iter().rev() {
                         instruction_indices_to_process.push(index_of(*label));
                     }

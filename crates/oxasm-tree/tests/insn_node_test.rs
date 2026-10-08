@@ -39,8 +39,9 @@ fn insn_kinds_have_asm_values() {
     }
 }
 
-/// oxasm-specific: an instruction stays small, since a method holds thousands of them.
+/// oxasm-specific: an instruction stays small, since a method holds thousands of them (the
+/// variants with vectors are boxed).
 #[test]
 fn insn_is_small() {
-    assert!(size_of::<Insn>() <= 96, "{}", size_of::<Insn>());
+    assert_eq!(size_of::<Insn>(), 24);
 }

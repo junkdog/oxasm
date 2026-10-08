@@ -155,7 +155,15 @@ fn clone_instructions(method_node: &mut MethodNode) {
     let ids: Vec<InsnId> = method_node.instructions.ids().collect();
     for insn in ids {
         let clone = method_node.instructions[insn].clone_with(&label_clone_map);
-        method_node.instructions.set(insn, clone);
+        // ASM's clone copies the type annotations of a real instruction; here the list holds
+        // them, and `set` drops those of the replaced instruction.
+        let annotations = method_node.instructions.type_annotations(insn).cloned();
+        let (clone, _) = method_node.instructions.set(insn, clone);
+        if let Some(annotations) = annotations
+            && method_node.instructions[clone].opcode().is_some()
+        {
+            *method_node.instructions.type_annotations_mut(clone) = annotations;
+        }
     }
 }
 

@@ -9,6 +9,10 @@ use rustc_hash::FxHashMap;
 use super::{Interner, Sym};
 use crate::jstr::JavaStr;
 
+/// The capacity a memo reserves on its first string: enough for most classes, so that the
+/// table rarely grows while a class is visited.
+const INITIAL_CAPACITY: usize = 256;
+
 /// An [`Interner`] with a cache keyed by the address and length of the strings it interns.
 ///
 /// A class reader passes the same `&JavaStr` for every reference to a constant pool entry, so
@@ -16,7 +20,8 @@ use crate::jstr::JavaStr;
 /// the memo finds those without hashing them. A hit is checked against the content (the address
 /// of a temporary string can be reused within a class), using the address of the interned bytes,
 /// which the memo keeps, so a hit doesn't touch the interner at all. [`clear`](Self::clear) the
-/// memo between classes, to keep it small.
+/// memo between classes, to keep it small: it frees the table, which the next class's first
+/// string allocates again at its initial capacity.
 pub struct InternMemo {
     interner: Arc<Interner>,
     /// `(address, length)` of a visited string → its symbol, and its interned bytes.
@@ -57,6 +62,9 @@ impl InternMemo {
     #[inline]
     pub fn intern(&mut self, s: &JavaStr) -> Sym {
         let bytes = s.as_bytes();
+        if self.memo.capacity() == 0 {
+            self.memo.reserve(INITIAL_CAPACITY);
+        }
         match self.memo.entry((bytes.as_ptr() as usize, bytes.len())) {
             Entry::Occupied(mut entry) => {
                 let (sym, interned) = *entry.get();
