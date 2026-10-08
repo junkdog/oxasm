@@ -23,7 +23,7 @@ fn analyze_all<I: Interpreter>(classes: &[ClassNode], interpreter: impl Fn() -> 
     for class_node in classes {
         for method in &class_node.methods {
             let mut analyzer = Analyzer::new(interpreter());
-            if let Ok(result) = analyzer.analyze(&class_node.name, method) {
+            if let Ok(result) = analyzer.analyze(class_node.resolve(class_node.name), method) {
                 frames += result.iter().flatten().count();
             }
         }
@@ -37,10 +37,12 @@ fn main() {
     let interpreter = args.next().unwrap_or_else(|| "basic".to_owned());
     let mut files = Vec::new();
     walk(std::path::Path::new(&dir), &mut files);
+    // One interner for all the classes, as sift shares one for a classpath.
+    let interner = std::sync::Arc::new(oxasm::Interner::new());
     let classes: Vec<ClassNode> = files
         .iter()
         .map(|class| {
-            let mut class_node = ClassNode::new();
+            let mut class_node = ClassNode::with_interner(interner.clone());
             ClassReader::new(class)
                 .and_then(|r| r.accept(&mut class_node, ParsingOptions::empty()))
                 .unwrap();

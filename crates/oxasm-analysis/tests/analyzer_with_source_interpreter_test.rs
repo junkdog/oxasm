@@ -34,10 +34,11 @@ fn test_analyze_source_interpreter() {
         let mut analyzer = Analyzer::new(SourceInterpreter::new());
 
         for method_node in &class_node.methods {
-            if let Err(e) = analyzer.analyze(&class_node.name, method_node) {
+            if let Err(e) = analyzer.analyze(class_node.resolve(class_node.name), method_node) {
                 panic!(
                     "{class_parameter} {}{}: {e}",
-                    method_node.name, method_node.desc
+                    method_node.resolve(method_node.name),
+                    method_node.resolve(method_node.desc)
                 );
             }
         }

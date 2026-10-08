@@ -1,18 +1,23 @@
 //! [`FieldNode`] and [`RecordComponentNode`]: ASM's `FieldNode` and `RecordComponentNode`.
 
+use std::sync::Arc;
+
 use oxasm::constant::Constant;
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassVisitor, FieldVisitor, JavaCompactStr, JavaStr,
-    RecordComponentVisitor, TypePath, TypeReference,
+    AnnotationVisitor, Attribute, ClassVisitor, FieldVisitor, Interner, JavaStr,
+    RecordComponentVisitor, Sym, TypePath, TypeReference,
 };
 
-use crate::annotation_node::{AnnotationNode, TypeAnnotationNode};
+use crate::annotation_node::{AnnotationNode, AnnotationNodeVisitor, TypeAnnotationNode};
+use crate::strings::Strings;
+use crate::value::SymConstant;
 
 /// Adds an annotation node to the visible or invisible list, and returns it (the
 /// `visitAnnotation` of the member nodes).
 pub(crate) fn add_annotation<'a>(
     visible_annotations: &'a mut Vec<AnnotationNode>,
     invisible_annotations: &'a mut Vec<AnnotationNode>,
+    mut strings: Strings<'a>,
     descriptor: &JavaStr,
     visible: bool,
 ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
@@ -21,15 +26,18 @@ pub(crate) fn add_annotation<'a>(
     } else {
         invisible_annotations
     };
-    annotations.push(AnnotationNode::new(descriptor));
-    Some(Box::new(annotations.last_mut().expect("just added")))
+    annotations.push(AnnotationNode::new(strings.get(descriptor)));
+    let annotation = annotations.last_mut().expect("just added");
+    Some(Box::new(AnnotationNodeVisitor::new(annotation, strings)))
 }
 
 /// Adds a type annotation node to the visible or invisible list, and returns it (the
 /// `visitTypeAnnotation` of the member nodes).
+#[allow(clippy::too_many_arguments)] // ASM's, and where to store the annotation
 pub(crate) fn add_type_annotation<'a>(
     visible_type_annotations: &'a mut Vec<TypeAnnotationNode>,
     invisible_type_annotations: &'a mut Vec<TypeAnnotationNode>,
+    mut strings: Strings<'a>,
     type_ref: TypeReference,
     type_path: Option<&TypePath>,
     descriptor: &JavaStr,
@@ -43,63 +51,73 @@ pub(crate) fn add_type_annotation<'a>(
     type_annotations.push(TypeAnnotationNode::new(
         type_ref,
         type_path.cloned(),
-        descriptor,
+        strings.get(descriptor),
     ));
     let type_annotation = type_annotations.last_mut().expect("just added");
-    Some(Box::new(&mut type_annotation.annotation))
+    Some(Box::new(AnnotationNodeVisitor::new(
+        &mut type_annotation.annotation,
+        strings,
+    )))
 }
 
 /// Makes the given member visitor visit the annotations and type annotations of a field, record
 /// component, class or method node (the part of their `accept` methods common to all of them).
 macro_rules! accept_annotations {
-    ($node:expr, $visitor:expr) => {{
+    ($interner:expr, $node:expr, $visitor:expr) => {{
+        let interner: &oxasm::Interner = $interner;
         let node = $node;
         let visitor = $visitor;
-        for annotation in &node.visible_annotations {
-            let av = visitor.visit_annotation(&annotation.desc, true);
-            $crate::annotation_node::accept_annotation(annotation, av);
+        for (annotations, visible) in [
+            (&node.visible_annotations, true),
+            (&node.invisible_annotations, false),
+        ] {
+            for annotation in annotations {
+                let av = visitor.visit_annotation(interner.resolve(annotation.desc), visible);
+                $crate::annotation_node::accept_annotation(interner, annotation, av);
+            }
         }
-        for annotation in &node.invisible_annotations {
-            let av = visitor.visit_annotation(&annotation.desc, false);
-            $crate::annotation_node::accept_annotation(annotation, av);
-        }
-        for type_annotation in &node.visible_type_annotations {
-            let av = visitor.visit_type_annotation(
-                type_annotation.type_ref,
-                type_annotation.type_path.as_ref(),
-                type_annotation.desc(),
-                true,
-            );
-            $crate::annotation_node::accept_annotation(&type_annotation.annotation, av);
-        }
-        for type_annotation in &node.invisible_type_annotations {
-            let av = visitor.visit_type_annotation(
-                type_annotation.type_ref,
-                type_annotation.type_path.as_ref(),
-                type_annotation.desc(),
-                false,
-            );
-            $crate::annotation_node::accept_annotation(&type_annotation.annotation, av);
+        for (type_annotations, visible) in [
+            (&node.visible_type_annotations, true),
+            (&node.invisible_type_annotations, false),
+        ] {
+            for type_annotation in type_annotations {
+                let av = visitor.visit_type_annotation(
+                    type_annotation.type_ref,
+                    type_annotation.type_path.as_ref(),
+                    interner.resolve(type_annotation.desc()),
+                    visible,
+                );
+                $crate::annotation_node::accept_annotation(
+                    interner,
+                    &type_annotation.annotation,
+                    av,
+                );
+            }
         }
     }};
 }
 pub(crate) use accept_annotations;
 
 /// A node that represents a field.
+///
+/// Its strings are [`Sym`]s of its interner, which [`resolve`](Self::resolve) turns back into
+/// strings. `FieldNode::default()` makes a new interner.
 #[derive(Clone, Debug, Default)]
 pub struct FieldNode {
+    /// The interner of this node's strings.
+    interner: Arc<Interner>,
     /// The field's access flags (see [`oxasm::opcodes`]). This field also indicates if the
     /// field is synthetic and/or deprecated.
     pub access: u32,
     /// The field's name.
-    pub name: JavaCompactStr,
+    pub name: Sym,
     /// The field's descriptor.
-    pub desc: JavaCompactStr,
+    pub desc: Sym,
     /// The field's signature, or `None`.
-    pub signature: Option<JavaCompactStr>,
+    pub signature: Option<Sym>,
     /// The field's initial value: an `Integer`, a `Float`, a `Long`, a `Double` or a `String`
     /// constant, or `None`.
-    pub value: Option<Constant<'static>>,
+    pub value: Option<SymConstant>,
     /// The runtime visible annotations of this field.
     pub visible_annotations: Vec<AnnotationNode>,
     /// The runtime invisible annotations of this field.
@@ -113,40 +131,72 @@ pub struct FieldNode {
 }
 
 impl FieldNode {
-    /// Constructs a new field node, with no annotations nor attributes.
+    /// Constructs a new field node, with no annotations nor attributes, whose strings are
+    /// symbols of the given interner.
     pub fn new(
+        interner: Arc<Interner>,
         access: u32,
-        name: impl Into<JavaCompactStr>,
-        descriptor: impl Into<JavaCompactStr>,
-        signature: Option<JavaCompactStr>,
-        value: Option<Constant<'static>>,
+        name: Sym,
+        descriptor: Sym,
+        signature: Option<Sym>,
+        value: Option<SymConstant>,
     ) -> FieldNode {
         FieldNode {
+            interner,
             access,
-            name: name.into(),
-            desc: descriptor.into(),
+            name,
+            desc: descriptor,
             signature,
             value,
-            ..FieldNode::default()
+            visible_annotations: Vec::new(),
+            invisible_annotations: Vec::new(),
+            visible_type_annotations: Vec::new(),
+            invisible_type_annotations: Vec::new(),
+            attrs: Vec::new(),
         }
+    }
+
+    /// The interner of this node's strings.
+    pub fn interner(&self) -> &Arc<Interner> {
+        &self.interner
+    }
+
+    /// The string of the given symbol of this node.
+    pub fn resolve(&self, sym: Sym) -> &JavaStr {
+        self.interner.resolve(sym)
+    }
+
+    /// The symbol of the given string in this node's interner.
+    pub fn intern(&self, s: &(impl AsRef<JavaStr> + ?Sized)) -> Sym {
+        self.interner.intern(s)
     }
 
     /// Makes the given class visitor visit this field.
     pub fn accept(&self, class_visitor: &mut dyn ClassVisitor) {
+        let interner = &*self.interner;
+        let value = self.value.as_ref().map(|value| value.resolve(interner));
         let Some(mut field_visitor) = class_visitor.visit_field(
             self.access,
-            &self.name,
-            &self.desc,
-            self.signature.as_deref(),
-            self.value.as_ref(),
+            interner.resolve(self.name),
+            interner.resolve(self.desc),
+            self.signature.map(|s| interner.resolve(s)),
+            value.as_ref(),
         ) else {
             return;
         };
-        accept_annotations!(self, &mut *field_visitor);
+        accept_annotations!(interner, self, &mut *field_visitor);
         for attribute in &self.attrs {
             field_visitor.visit_attribute(attribute);
         }
         field_visitor.visit_end();
+    }
+
+    /// The initial value of a visited field.
+    pub(crate) fn value_of(
+        value: Option<&Constant<'_>>,
+        strings: &mut Strings<'_>,
+    ) -> Option<SymConstant> {
+        value.map(|value| SymConstant::from_visited(value, strings))
     }
 }
 
@@ -159,6 +209,7 @@ impl FieldVisitor for FieldNode {
         add_annotation(
             &mut self.visible_annotations,
             &mut self.invisible_annotations,
+            Strings::Direct(&self.interner),
             descriptor,
             visible,
         )
@@ -174,6 +225,7 @@ impl FieldVisitor for FieldNode {
         add_type_annotation(
             &mut self.visible_type_annotations,
             &mut self.invisible_type_annotations,
+            Strings::Direct(&self.interner),
             type_ref,
             type_path,
             descriptor,
@@ -191,14 +243,19 @@ impl FieldVisitor for FieldNode {
 }
 
 /// A node that represents a record component.
+///
+/// Its strings are [`Sym`]s of its interner. `RecordComponentNode::default()` makes a new
+/// interner.
 #[derive(Clone, Debug, Default)]
 pub struct RecordComponentNode {
+    /// The interner of this node's strings.
+    interner: Arc<Interner>,
     /// The record component name.
-    pub name: JavaCompactStr,
+    pub name: Sym,
     /// The record component descriptor.
-    pub descriptor: JavaCompactStr,
+    pub descriptor: Sym,
     /// The record component signature, or `None`.
-    pub signature: Option<JavaCompactStr>,
+    pub signature: Option<Sym>,
     /// The runtime visible annotations of this record component.
     pub visible_annotations: Vec<AnnotationNode>,
     /// The runtime invisible annotations of this record component.
@@ -212,30 +269,53 @@ pub struct RecordComponentNode {
 }
 
 impl RecordComponentNode {
-    /// Constructs a new record component node, with no annotations nor attributes.
+    /// Constructs a new record component node, with no annotations nor attributes, whose strings
+    /// are symbols of the given interner.
     pub fn new(
-        name: impl Into<JavaCompactStr>,
-        descriptor: impl Into<JavaCompactStr>,
-        signature: Option<JavaCompactStr>,
+        interner: Arc<Interner>,
+        name: Sym,
+        descriptor: Sym,
+        signature: Option<Sym>,
     ) -> RecordComponentNode {
         RecordComponentNode {
-            name: name.into(),
-            descriptor: descriptor.into(),
+            interner,
+            name,
+            descriptor,
             signature,
-            ..RecordComponentNode::default()
+            visible_annotations: Vec::new(),
+            invisible_annotations: Vec::new(),
+            visible_type_annotations: Vec::new(),
+            invisible_type_annotations: Vec::new(),
+            attrs: Vec::new(),
         }
+    }
+
+    /// The interner of this node's strings.
+    pub fn interner(&self) -> &Arc<Interner> {
+        &self.interner
+    }
+
+    /// The string of the given symbol of this node.
+    pub fn resolve(&self, sym: Sym) -> &JavaStr {
+        self.interner.resolve(sym)
+    }
+
+    /// The symbol of the given string in this node's interner.
+    pub fn intern(&self, s: &(impl AsRef<JavaStr> + ?Sized)) -> Sym {
+        self.interner.intern(s)
     }
 
     /// Makes the given class visitor visit this record component.
     pub fn accept(&self, class_visitor: &mut dyn ClassVisitor) {
+        let interner = &*self.interner;
         let Some(mut record_component_visitor) = class_visitor.visit_record_component(
-            &self.name,
-            &self.descriptor,
-            self.signature.as_deref(),
+            interner.resolve(self.name),
+            interner.resolve(self.descriptor),
+            self.signature.map(|s| interner.resolve(s)),
         ) else {
             return;
         };
-        accept_annotations!(self, &mut *record_component_visitor);
+        accept_annotations!(interner, self, &mut *record_component_visitor);
         for attribute in &self.attrs {
             record_component_visitor.visit_attribute(attribute);
         }
@@ -252,6 +332,7 @@ impl RecordComponentVisitor for RecordComponentNode {
         add_annotation(
             &mut self.visible_annotations,
             &mut self.invisible_annotations,
+            Strings::Direct(&self.interner),
             descriptor,
             visible,
         )
@@ -267,6 +348,7 @@ impl RecordComponentVisitor for RecordComponentNode {
         add_type_annotation(
             &mut self.visible_type_annotations,
             &mut self.invisible_type_annotations,
+            Strings::Direct(&self.interner),
             type_ref,
             type_path,
             descriptor,

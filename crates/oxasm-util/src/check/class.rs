@@ -2,13 +2,14 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::sync::Arc;
 
 use oxasm::constant::Constant;
 use oxasm::opcodes::*;
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassHierarchy, ClassReader, ClassVisitor, FieldVisitor, JavaStr,
-    JavaString, Label, MethodVisitor, ModuleVisitor, ParsingOptions, RecordComponentVisitor, Type,
-    TypePath, TypeReference,
+    AnnotationVisitor, Attribute, ClassHierarchy, ClassReader, ClassVisitor, FieldVisitor,
+    Interner, JavaStr, JavaString, Label, MethodVisitor, ModuleVisitor, ParsingOptions,
+    RecordComponentVisitor, Type, TypePath, TypeReference,
 };
 use oxasm_analysis::{Analyzer, SimpleVerifier};
 use oxasm_tree::ClassNode;
@@ -67,6 +68,9 @@ pub struct CheckClassAdapter<V> {
     visit_end_called: bool,
     /// The index of the instruction designated by each visited label so far.
     label_insn_indices: HashMap<Label, usize>,
+    /// The interner of the method nodes that the data flow checks store, shared by the methods
+    /// of the class (made by the first one).
+    interner: Option<Arc<Interner>>,
 }
 
 impl<V: ClassVisitor> CheckClassAdapter<V> {
@@ -91,6 +95,7 @@ impl<V: ClassVisitor> CheckClassAdapter<V> {
             nest_member_package_name: None,
             visit_end_called: false,
             label_insn_indices: HashMap::new(),
+            interner: None,
         }
     }
 
@@ -432,8 +437,14 @@ impl<V: ClassVisitor> ClassVisitor for CheckClassAdapter<V> {
             .cv
             .visit_method(access, name, descriptor, signature, exceptions);
         let check_method_adapter = if self.check_data_flow {
-            let adapter =
-                CheckMethodAdapter::with_data_flow(access, name, descriptor, method_visitor);
+            let interner = self.interner.get_or_insert_default().clone();
+            let adapter = CheckMethodAdapter::with_data_flow_in(
+                interner,
+                access,
+                name,
+                descriptor,
+                method_visitor,
+            );
             match class_writer_flags {
                 Some(flags) => adapter.with_method_writer(MethodWriterWrapper { version, flags }),
                 None => adapter,
@@ -526,25 +537,28 @@ pub fn verify(
         )
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    let super_type = class_node.super_name.as_deref().map(Type::get_object_type);
+    let super_type = class_node
+        .super_name
+        .map(|super_name| Type::get_object_type(class_node.resolve(super_name)));
     let interfaces: Vec<Type> = class_node
         .interfaces
         .iter()
-        .map(|interface| Type::get_object_type(&**interface))
+        .map(|&interface| Type::get_object_type(class_node.resolve(interface)))
         .collect();
+    let class_name = class_node.resolve(class_node.name);
     let is_interface = class_node.access & ACC_INTERFACE != 0;
 
     let mut text = JavaString::new();
     for method in &class_node.methods {
         let verifier = SimpleVerifier::for_class(
-            Type::get_object_type(&*class_node.name),
+            Type::get_object_type(class_name),
             super_type.clone(),
             interfaces.clone(),
             is_interface,
             hierarchy,
         );
         let mut analyzer = Analyzer::new(verifier);
-        if let Err(e) = analyzer.analyze(&class_node.name, method) {
+        if let Err(e) = analyzer.analyze(class_name, method) {
             text.push_str("org.objectweb.asm.tree.analysis.AnalyzerException: ");
             text.push_java_str(&e.message);
             text.push('\n');

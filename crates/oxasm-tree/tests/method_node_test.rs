@@ -7,10 +7,12 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use oxasm::opcodes::NOP;
 use oxasm::{
-    ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, JavaStr, Label, MethodVisitor,
-    ParsingOptions,
+    ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, Interner, JavaStr, Label,
+    MethodVisitor, ParsingOptions,
 };
 use oxasm_testkit::PrecompiledClass;
 use oxasm_testkit::golden::{self, Golden, ReaderOptions};
@@ -20,11 +22,19 @@ use common::{assert_same_class_file, attributes, textify_node};
 
 #[test]
 fn test_constructor() {
-    let method_node = MethodNode::new(123, "method", "()V", None, Vec::new());
+    let interner = Arc::new(Interner::new());
+    let method_node = MethodNode::new(
+        interner.clone(),
+        123,
+        interner.intern("method"),
+        interner.intern("()V"),
+        None,
+        Vec::new(),
+    );
 
     assert_eq!(method_node.access, 123);
-    assert_eq!(method_node.name, "method");
-    assert_eq!(method_node.desc, "()V");
+    assert_eq!(method_node.resolve(method_node.name), "method");
+    assert_eq!(method_node.resolve(method_node.desc), "()V");
 }
 
 /// A class node whose `visit_method` creates "uninitialized" method nodes.
@@ -33,7 +43,6 @@ impl ClassVisitor for UninitializedMethods {
     fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
         Some(&mut self.0)
     }
-    #[allow(clippy::field_reassign_with_default)] // the point of ASM's test
     fn visit_method<'a>(
         &'a mut self,
         access: u32,
@@ -42,12 +51,13 @@ impl ClassVisitor for UninitializedMethods {
         signature: Option<&JavaStr>,
         exceptions: &[&JavaStr],
     ) -> Option<Box<dyn MethodVisitor + 'a>> {
-        let mut method = MethodNode::default();
+        let interner = self.0.interner().clone();
+        let mut method = MethodNode::with_interner(interner.clone());
         method.access = access;
-        method.name = name.into();
-        method.desc = descriptor.into();
-        method.signature = signature.map(Into::into);
-        method.exceptions = exceptions.iter().map(|&e| e.into()).collect();
+        method.name = interner.intern(name);
+        method.desc = interner.intern(descriptor);
+        method.signature = signature.map(|s| interner.intern(s));
+        method.exceptions = exceptions.iter().map(|&e| interner.intern(e)).collect();
         self.0.methods.push(method);
         Some(Box::new(self.0.methods.last_mut().unwrap()))
     }
@@ -72,7 +82,7 @@ fn test_visit_and_accept_with_uninitialized_method_node() {
 }
 
 /// The Textifier form of `test_visit_and_accept_with_uninitialized_method_node` (P3): a class
-/// node whose method nodes are created with `MethodNode::default()` and then filled in prints like
+/// node whose method nodes are created with `MethodNode::with_interner` and then filled in prints like
 /// ASM's tree path.
 #[test]
 fn test_visit_and_accept_with_uninitialized_method_node_textify() {
@@ -126,7 +136,7 @@ fn try_catch_annotations_follow_the_block_index() {
     block.visible_type_annotations.push(TypeAnnotationNode::new(
         TypeReference::new_try_catch_reference(7),
         None,
-        "LA;",
+        method_node.intern("LA;"),
     ));
     method_node.try_catch_blocks.push(block.clone());
     method_node.try_catch_blocks.insert(0, block);
@@ -189,7 +199,11 @@ fn stored_labels_are_not_debug_only() {
 fn malformed_events_do_not_panic() {
     use oxasm::{TypeReference, jstr};
 
-    let mut method_node = MethodNode::new(0, "m", "(I)V", None, Vec::new());
+    let interner = Arc::new(Interner::new());
+    let new_method = |desc: &str| {
+        MethodNode::from_strings(interner.clone(), 0, jstr!("m"), desc.as_ref(), None, &[])
+    };
+    let mut method_node = new_method("(I)V");
     // A parameter index past the descriptor's parameters (ASM: ArrayIndexOutOfBoundsException).
     assert!(
         method_node
@@ -197,9 +211,12 @@ fn malformed_events_do_not_panic() {
             .is_some()
     );
     assert_eq!(method_node.visible_parameter_annotations.len(), 4);
-    assert_eq!(method_node.visible_parameter_annotations[3][0].desc, "LA;");
+    assert_eq!(
+        interner.resolve(method_node.visible_parameter_annotations[3][0].desc),
+        "LA;"
+    );
     // A malformed descriptor (ASM: StringIndexOutOfBoundsException).
-    let mut malformed = MethodNode::new(0, "m", "(", None, Vec::new());
+    let mut malformed = new_method("(");
     assert!(
         malformed
             .visit_parameter_annotation(0, jstr!("LA;"), false)

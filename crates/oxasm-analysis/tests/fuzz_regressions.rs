@@ -13,7 +13,7 @@ const STACK_SIZE: usize = 1024 * 1024;
 
 fn analyze_all<I: Interpreter>(class_node: &ClassNode, interpreter: impl Fn() -> I) {
     for method in &class_node.methods {
-        let _ = Analyzer::new(interpreter()).analyze(&class_node.name, method);
+        let _ = Analyzer::new(interpreter()).analyze(class_node.resolve(class_node.name), method);
     }
 }
 
@@ -35,14 +35,11 @@ fn analyze_regressions() {
                 analyze_all(&class_node, || BasicVerifier);
                 analyze_all(&class_node, || SourceInterpreter);
                 analyze_all(&class_node, || {
+                    let resolve = |sym| Type::get_object_type(class_node.resolve(sym));
                     SimpleVerifier::for_class(
-                        Type::get_object_type(&class_node.name),
-                        class_node.super_name.as_ref().map(Type::get_object_type),
-                        class_node
-                            .interfaces
-                            .iter()
-                            .map(Type::get_object_type)
-                            .collect(),
+                        resolve(class_node.name),
+                        class_node.super_name.map(resolve),
+                        class_node.interfaces.iter().copied().map(resolve).collect(),
                         class_node.access & ACC_INTERFACE != 0,
                         ObjectHierarchy,
                     )

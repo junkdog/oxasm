@@ -178,8 +178,8 @@ fn assert_lambda_remapped(func: fn(&mut dyn MethodVisitor)) {
         else {
             panic!("an invokedynamic instruction");
         };
-        assert_eq!(&*invoke_dynamic.desc, "()Lme/MyRunnable;");
-        assert_eq!(&*invoke_dynamic.name, "call");
+        assert_eq!(class_node.resolve(invoke_dynamic.desc), "()Lme/MyRunnable;");
+        assert_eq!(class_node.resolve(invoke_dynamic.name), "call");
     }
 }
 

@@ -381,18 +381,21 @@ fn test_analyze_simple_verifier() {
         }
         // ASM's SimpleVerifier(Type, Type, boolean) constructor, which has no interfaces.
         let mut analyzer = Analyzer::new(SimpleVerifier::for_class(
-            Type::get_object_type(&class_node.name),
-            class_node.super_name.as_ref().map(Type::get_object_type),
+            Type::get_object_type(class_node.resolve(class_node.name)),
+            class_node
+                .super_name
+                .map(|s| Type::get_object_type(class_node.resolve(s))),
             Vec::new(),
             class_node.access & ACC_INTERFACE != 0,
             jdk_hierarchy(),
         ));
 
         for method_node in &class_node.methods {
-            if let Err(e) = analyzer.analyze(&class_node.name, method_node) {
+            if let Err(e) = analyzer.analyze(class_node.resolve(class_node.name), method_node) {
                 panic!(
                     "{class_parameter} {}{}: {e}",
-                    method_node.name, method_node.desc
+                    method_node.resolve(method_node.name),
+                    method_node.resolve(method_node.desc)
                 );
             }
         }

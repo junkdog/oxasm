@@ -1,7 +1,7 @@
 //! The plain member nodes: [`InnerClassNode`], [`ParameterNode`], [`LocalVariableNode`] and
 //! [`TryCatchBlockNode`] (ASM's classes of the same names).
 
-use oxasm::{ClassVisitor, JavaCompactStr, Label, MethodVisitor, TypeReference};
+use oxasm::{ClassVisitor, Interner, Label, MethodVisitor, Sym, TypeReference};
 
 use crate::annotation_node::{TypeAnnotationNode, accept_annotation};
 
@@ -10,16 +10,16 @@ use crate::annotation_node::{TypeAnnotationNode, accept_annotation};
 /// interface C which is referenced by a class and which is not a package member must be
 /// represented with an `InnerClassNode`. The class must reference its nested class or interface
 /// members, and its enclosing class, if any. See the JVMS 4.7.6 section for more details.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct InnerClassNode {
     /// The internal name of an inner class.
-    pub name: JavaCompactStr,
+    pub name: Sym,
     /// The internal name of the class to which the inner class belongs. `None` if the inner
     /// class is not the member of a class or interface (e.g. for local or anonymous classes).
-    pub outer_name: Option<JavaCompactStr>,
+    pub outer_name: Option<Sym>,
     /// The (simple) name of the inner class inside its enclosing class. `None` for anonymous
     /// inner classes.
-    pub inner_name: Option<JavaCompactStr>,
+    pub inner_name: Option<Sym>,
     /// The access flags of the inner class as originally declared in the enclosing class.
     pub access: u32,
 }
@@ -27,13 +27,13 @@ pub struct InnerClassNode {
 impl InnerClassNode {
     /// Constructs a new inner class node.
     pub fn new(
-        name: impl Into<JavaCompactStr>,
-        outer_name: Option<JavaCompactStr>,
-        inner_name: Option<JavaCompactStr>,
+        name: Sym,
+        outer_name: Option<Sym>,
+        inner_name: Option<Sym>,
         access: u32,
     ) -> InnerClassNode {
         InnerClassNode {
-            name: name.into(),
+            name,
             outer_name,
             inner_name,
             access,
@@ -41,21 +41,21 @@ impl InnerClassNode {
     }
 
     /// Makes the given class visitor visit this inner class.
-    pub fn accept(&self, class_visitor: &mut dyn ClassVisitor) {
+    pub fn accept(&self, interner: &Interner, class_visitor: &mut dyn ClassVisitor) {
         class_visitor.visit_inner_class(
-            &self.name,
-            self.outer_name.as_deref(),
-            self.inner_name.as_deref(),
+            interner.resolve(self.name),
+            self.outer_name.map(|s| interner.resolve(s)),
+            self.inner_name.map(|s| interner.resolve(s)),
             self.access,
         );
     }
 }
 
 /// A node that represents a parameter of a method.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ParameterNode {
     /// The parameter's name, or `None` if none is provided.
-    pub name: Option<JavaCompactStr>,
+    pub name: Option<Sym>,
     /// The parameter's access flags (see [`oxasm::opcodes`]). Valid values are `ACC_FINAL`,
     /// `ACC_SYNTHETIC` and `ACC_MANDATED`.
     pub access: u32,
@@ -63,25 +63,25 @@ pub struct ParameterNode {
 
 impl ParameterNode {
     /// Constructs a new parameter node.
-    pub fn new(name: Option<JavaCompactStr>, access: u32) -> ParameterNode {
+    pub fn new(name: Option<Sym>, access: u32) -> ParameterNode {
         ParameterNode { name, access }
     }
 
     /// Makes the given visitor visit this parameter declaration.
-    pub fn accept(&self, method_visitor: &mut dyn MethodVisitor) {
-        method_visitor.visit_parameter(self.name.as_deref(), self.access);
+    pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
+        method_visitor.visit_parameter(self.name.map(|s| interner.resolve(s)), self.access);
     }
 }
 
 /// A node that represents a local variable declaration.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct LocalVariableNode {
     /// The name of a local variable.
-    pub name: JavaCompactStr,
+    pub name: Sym,
     /// The type descriptor of this local variable.
-    pub desc: JavaCompactStr,
+    pub desc: Sym,
     /// The signature of this local variable, or `None`.
-    pub signature: Option<JavaCompactStr>,
+    pub signature: Option<Sym>,
     /// The first instruction corresponding to the scope of this local variable (inclusive).
     pub start: Label,
     /// The last instruction corresponding to the scope of this local variable (exclusive).
@@ -93,16 +93,16 @@ pub struct LocalVariableNode {
 impl LocalVariableNode {
     /// Constructs a new local variable node.
     pub fn new(
-        name: impl Into<JavaCompactStr>,
-        descriptor: impl Into<JavaCompactStr>,
-        signature: Option<JavaCompactStr>,
+        name: Sym,
+        descriptor: Sym,
+        signature: Option<Sym>,
         start: Label,
         end: Label,
         index: u16,
     ) -> LocalVariableNode {
         LocalVariableNode {
-            name: name.into(),
-            desc: descriptor.into(),
+            name,
+            desc: descriptor,
             signature,
             start,
             end,
@@ -111,11 +111,11 @@ impl LocalVariableNode {
     }
 
     /// Makes the given visitor visit this local variable declaration.
-    pub fn accept(&self, method_visitor: &mut dyn MethodVisitor) {
+    pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
         method_visitor.visit_local_variable(
-            &self.name,
-            &self.desc,
-            self.signature.as_deref(),
+            interner.resolve(self.name),
+            interner.resolve(self.desc),
+            self.signature.map(|s| interner.resolve(s)),
             self.start,
             self.end,
             self.index,
@@ -134,7 +134,7 @@ pub struct TryCatchBlockNode {
     pub handler: Label,
     /// The internal name of the type of exceptions handled by the handler. `None` to catch any
     /// exceptions (for "finally" blocks).
-    pub type_: Option<JavaCompactStr>,
+    pub type_: Option<Sym>,
     /// The runtime visible type annotations on the exception handler type.
     pub visible_type_annotations: Vec<TypeAnnotationNode>,
     /// The runtime invisible type annotations on the exception handler type.
@@ -143,12 +143,7 @@ pub struct TryCatchBlockNode {
 
 impl TryCatchBlockNode {
     /// Constructs a new try catch block node, without type annotations.
-    pub fn new(
-        start: Label,
-        end: Label,
-        handler: Label,
-        type_: Option<JavaCompactStr>,
-    ) -> TryCatchBlockNode {
+    pub fn new(start: Label, end: Label, handler: Label, type_: Option<Sym>) -> TryCatchBlockNode {
         TryCatchBlockNode {
             start,
             end,
@@ -174,8 +169,8 @@ impl TryCatchBlockNode {
     }
 
     /// Makes the given visitor visit this try catch block.
-    pub fn accept(&self, method_visitor: &mut dyn MethodVisitor) {
-        self.accept_with(method_visitor, None);
+    pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
+        self.accept_with(interner, method_visitor, None);
     }
 
     /// Makes the given visitor visit this try catch block, with the type references of its
@@ -183,6 +178,7 @@ impl TryCatchBlockNode {
     /// `updateIndex` (which mutates the node, unlike `MethodNode::accept` here).
     pub(crate) fn accept_with(
         &self,
+        interner: &Interner,
         method_visitor: &mut dyn MethodVisitor,
         type_ref: Option<TypeReference>,
     ) {
@@ -190,7 +186,7 @@ impl TryCatchBlockNode {
             self.start,
             self.end,
             self.handler,
-            self.type_.as_deref(),
+            self.type_.map(|s| interner.resolve(s)),
         );
         for (annotations, visible) in [
             (&self.visible_type_annotations, true),
@@ -200,10 +196,10 @@ impl TryCatchBlockNode {
                 let av = method_visitor.visit_try_catch_annotation(
                     type_ref.unwrap_or(type_annotation.type_ref),
                     type_annotation.type_path.as_ref(),
-                    type_annotation.desc(),
+                    interner.resolve(type_annotation.desc()),
                     visible,
                 );
-                accept_annotation(&type_annotation.annotation, av);
+                accept_annotation(interner, &type_annotation.annotation, av);
             }
         }
     }

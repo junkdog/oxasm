@@ -1,9 +1,8 @@
 //! [`SourceInterpreter`]: ASM's `SourceInterpreter`.
 
-use oxasm::constant::Constant;
 use oxasm::opcodes::*;
-use oxasm::{JavaStr, Type, TypeSort};
-use oxasm_tree::Insn;
+use oxasm::{Type, TypeSort};
+use oxasm_tree::{Insn, SymConstant};
 
 use crate::basic_interpreter::{assertion_error, get_type, return_type};
 use crate::error::AnalyzerError;
@@ -61,15 +60,15 @@ impl SourceInterpreter {
                 };
                 match value {
                     // two words guaranteed
-                    Constant::Long(_) | Constant::Double(_) => 2,
+                    SymConstant::Long(_) | SymConstant::Double(_) => 2,
                     // might yield two words
-                    Constant::Dynamic(constant_dynamic) => {
-                        if constant_dynamic.get_descriptor().is_empty() {
+                    SymConstant::Dynamic(constant_dynamic) => {
+                        if insn.resolve(constant_dynamic.desc).is_empty() {
                             return Err(AnalyzerError::runtime(
                                 "Index 0 out of bounds for length 0",
                             ));
                         }
-                        constant_dynamic.get_size()
+                        constant_dynamic.get_size(insn.interner)
                     }
                     // one word guaranteed
                     _ => 1,
@@ -143,8 +142,10 @@ impl SourceInterpreter {
     ) -> Result<SourceValue<P>, AnalyzerError> {
         let size = match &insn.insn {
             Insn::MultiANewArray { .. } => 1,
-            Insn::InvokeDynamic(invoke_dynamic) => size(&return_type(&invoke_dynamic.desc)?)?,
-            Insn::Method { desc, .. } => size(&return_type(desc)?)?,
+            Insn::InvokeDynamic(invoke_dynamic) => {
+                size(&return_type(insn.resolve(invoke_dynamic.desc))?)?
+            }
+            Insn::Method { desc, .. } => size(&return_type(insn.resolve(*desc))?)?,
             _ => return Err(cast_error(insn, "MethodInsnNode")),
         };
         Ok(SourceValue::of(size, insn.id.into()))
@@ -255,6 +256,5 @@ fn field_size(insn: InsnRef<'_>) -> Result<usize, AnalyzerError> {
     let Insn::Field { desc, .. } = &insn.insn else {
         return Err(cast_error(insn, "FieldInsnNode"));
     };
-    let desc: &JavaStr = desc;
-    size(&get_type(desc)?)
+    size(&get_type(insn.resolve(*desc))?)
 }

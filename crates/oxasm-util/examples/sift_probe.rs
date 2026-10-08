@@ -26,9 +26,10 @@
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use oxasm::opcodes::CHECKCAST;
-use oxasm::{ClassReader, JavaStr, JavaString, ParsingOptions, Type};
+use oxasm::{ClassReader, Interner, JavaStr, JavaString, ParsingOptions, Type};
 use oxasm_analysis::{
     Analyzer, AnalyzerError, InsnRef, Interpreter, SourceInterpreter, SourceValue,
 };
@@ -480,7 +481,7 @@ mod textifier_lines {
 // -------------------------------------------------------------------------------------------------
 
 /// The probe's payload for a class: see `siftProbe` in `oracle/Oracle.java`.
-fn probe(class_file: &[u8]) -> Result<Vec<u8>, String> {
+fn probe(interner: &Arc<Interner>, class_file: &[u8]) -> Result<Vec<u8>, String> {
     let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
     let mut textified = Vec::new();
     reader
@@ -497,13 +498,14 @@ fn probe(class_file: &[u8]) -> Result<Vec<u8>, String> {
     }
 
     out.extend_from_slice(b"#frames\n");
-    let mut class_node = ClassNode::new();
+    // One interner for every class, as sift shares one across a classpath.
+    let mut class_node = ClassNode::with_interner(interner.clone());
     reader
         .accept(&mut class_node, ParsingOptions::empty())
         .map_err(|e| e.to_string())?;
     for method in &class_node.methods {
-        out.extend_from_slice(method.name.as_bytes());
-        out.extend_from_slice(method.desc.as_bytes());
+        out.extend_from_slice(method.resolve(method.name).as_bytes());
+        out.extend_from_slice(method.resolve(method.desc).as_bytes());
         out.push(b'\n');
         analyze_method(&class_node, method, &mut out)?;
     }
@@ -610,7 +612,7 @@ fn analyze_method(
     out: &mut Vec<u8>,
 ) -> Result<(), String> {
     let mut analyzer = Analyzer::new(OriginSourceInterpreter);
-    let frames = match analyzer.analyze(&class_node.name, method) {
+    let frames = match analyzer.analyze(class_node.resolve(class_node.name), method) {
         Ok(frames) => frames,
         Err(e) => {
             let index = e
@@ -627,7 +629,7 @@ fn analyze_method(
     let mut trace_method_visitor = TraceMethodVisitor::new(&mut textifier);
     for (i, insn) in method.instructions.iter().enumerate() {
         let start = trace_method_visitor.p.get_text().len();
-        insn.accept(&mut trace_method_visitor);
+        insn.accept(method.interner(), &mut trace_method_visitor);
         let insn_text = text_to_java_string(&trace_method_visitor.p.get_text()[start..]);
         write!(out, "{i} ").expect("writing to a vector");
         match frames.get(i).and_then(Option::as_ref) {
@@ -738,9 +740,10 @@ fn main() {
     );
     let stdout = std::io::stdout();
     let mut out = std::io::BufWriter::new(stdout.lock());
+    let interner = Arc::new(Interner::new());
     for (id, path) in inputs(&args) {
         let class_file = std::fs::read(&path).expect("a readable class file");
-        let (status, payload) = match probe(&class_file) {
+        let (status, payload) = match probe(&interner, &class_file) {
             Ok(payload) => ("ok", payload),
             Err(message) => ("err", message.into_bytes()),
         };

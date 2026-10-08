@@ -6,7 +6,7 @@ library: same capabilities, same output (byte for byte), with a Rust-shaped API.
 **Status: P8 (commons) done: every ASM module is ported.** `oxasm` reads class files (`ClassReader`, with
 ASM's options and leniencies) into the visitor traits and writes them back (`ClassWriter`, computing the maximum
 stack sizes and the stack map frames on request, through a pluggable `ClassHierarchy`), `oxasm-tree` holds them as
-`ClassNode`s (an arena-backed `InsnList` with generational handles), `oxasm-analysis` computes their frames
+`ClassNode`s (an arena-backed `InsnList` with generational handles, strings interned as 4-byte `Sym`s), `oxasm-analysis` computes their frames
 (`Analyzer` with ASM's four stock interpreters), `oxasm-util` prints them (ASM's `Textifier` and `ASMifier`)
 and checks them (ASM's `Check*` adapters, which panic with ASM's exception messages), and `oxasm-commons`
 transforms them (remapping, `GeneratorAdapter`/`AdviceAdapter`, `LocalVariablesSorter`, `InstructionAdapter`,
@@ -16,7 +16,10 @@ back (with a new or a copied constant pool, with expanded frames, with `COMPUTE_
 directly or through a `ClassNode`), byte for byte, the check adapters' verdicts, and the output of the commons
 adapters. M1's acceptance holds: ports of sift's `TextifierLines` and `OriginSourceInterpreter`
 (`crates/oxasm-util/examples/sift_probe.rs`) give sift's own output on every class sift compiles. P9
-(hardening, performance, API review) is under way: the reader's string cache is 21% faster (ADR-04).
+(hardening, performance, API review) is under way: the reader's string cache is 21% faster, and the tree stores
+interned `Sym`s from a caller-owned `Interner` (ADR-04). Share one interner between the class nodes of a classpath
+(`ClassNode::with_interner`): reading `java.base` is then 3–4% faster than before, while a new interner per class
+(`ClassNode::new()`) costs 8% more.
 
 | Crate | Ports |
 |---|---|
@@ -35,6 +38,7 @@ cargo xtask golden --check        # goldens == a fresh ASM 9.10.1 oracle run == 
 MIRIFLAGS=-Zmiri-disable-isolation PROPTEST_CASES=16 \
   cargo +nightly miri test -p oxasm --lib jstr   # the unsafe in jstr, under Miri (ADR-18)
 MIRIFLAGS=-Zmiri-disable-isolation cargo +nightly miri test -p oxasm --lib reader   # the reader's string cache
+MIRIFLAGS=-Zmiri-disable-isolation cargo +nightly miri test -p oxasm --lib sym      # the Sym interner
 cargo xtask oracle textify corpus/t0/jdk8/AllFrames.class
 cargo xtask corpus t1             # extract $JAVA_HOME's runtime image (about 32k classes)
 cargo xtask parity --tier t1      # Textifier, analysis and class writer parity vs ASM (target/parity/)

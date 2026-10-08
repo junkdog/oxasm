@@ -183,7 +183,14 @@ impl MethodNodeBuilder {
         max_stack: u16,
         max_locals: u16,
     ) -> MethodNodeBuilder {
-        let mut method_node = MethodNode::new(ACC_PUBLIC, name, descriptor, None, Vec::new());
+        let mut method_node = MethodNode::from_strings(
+            Arc::default(),
+            ACC_PUBLIC,
+            jstr!(name),
+            jstr!(descriptor),
+            None,
+            &[],
+        );
         method_node.max_stack = max_stack;
         method_node.max_locals = max_locals;
         method_node.visit_code();

@@ -79,7 +79,14 @@ impl MethodNodeBuilder {
 
     /// A method with the given descriptor, maximum stack size and number of locals.
     pub fn with_descriptor(descriptor: &str, max_stack: u16, max_locals: u16) -> MethodNodeBuilder {
-        let mut method_node = MethodNode::new(ACC_PUBLIC, "m", descriptor, None, Vec::new());
+        let mut method_node = MethodNode::from_strings(
+            std::sync::Arc::default(),
+            ACC_PUBLIC,
+            jstr!("m"),
+            jstr!(descriptor),
+            None,
+            &[],
+        );
         method_node.max_stack = max_stack;
         method_node.max_locals = max_locals;
         method_node.visit_code();

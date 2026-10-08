@@ -2,7 +2,7 @@
 
 use std::ops::Deref;
 
-use oxasm::Type;
+use oxasm::{Interner, JavaStr, Sym, Type};
 use oxasm_tree::{InsnId, InsnList, InsnNode, TryCatchBlockNode};
 
 use crate::error::AnalyzerError;
@@ -13,10 +13,13 @@ use crate::value::Value;
 /// `AbstractInsnNode`, which knows its list and its identity.
 ///
 /// It dereferences to the [`InsnNode`]. Its [`id`](Self::id) is the identity of the instruction
-/// (what a `SourceValue` records), and [`list`](Self::list) its instruction list (for ASM's
-/// `getNext()`, `getPrevious()`, ...).
+/// (what a `SourceValue` records), [`list`](Self::list) its instruction list (for ASM's
+/// `getNext()`, `getPrevious()`, ...), and [`interner`](Self::interner) that of its method's
+/// strings, which [`resolve`](Self::resolve) uses.
 #[derive(Clone, Copy, Debug)]
 pub struct InsnRef<'a> {
+    /// The interner of the method's strings.
+    pub interner: &'a Interner,
     /// The instruction list of the method.
     pub list: &'a InsnList,
     /// The handle of the instruction in [`list`](Self::list).
@@ -30,8 +33,9 @@ pub struct InsnRef<'a> {
 impl<'a> InsnRef<'a> {
     /// The instruction designated by `id` in `list`, or `None` if it is not an instruction of
     /// this list.
-    pub fn new(list: &'a InsnList, id: InsnId) -> Option<InsnRef<'a>> {
+    pub fn new(interner: &'a Interner, list: &'a InsnList, id: InsnId) -> Option<InsnRef<'a>> {
         Some(InsnRef {
+            interner,
             list,
             id,
             index: list.index_of(id)?,
@@ -40,14 +44,23 @@ impl<'a> InsnRef<'a> {
     }
 
     /// The instruction at `index` in `list`, or `None` if `index >= list.len()`.
-    pub fn at(list: &'a InsnList, index: usize) -> Option<InsnRef<'a>> {
+    pub fn at(interner: &'a Interner, list: &'a InsnList, index: usize) -> Option<InsnRef<'a>> {
         let id = list.id_at(index)?;
         Some(InsnRef {
+            interner,
             list,
             id,
             index,
             node: &list[id],
         })
+    }
+}
+
+impl<'a> InsnRef<'a> {
+    /// The string of a symbol of this instruction.
+    #[inline]
+    pub fn resolve(&self, sym: Sym) -> &'a JavaStr {
+        self.interner.resolve(sym)
     }
 }
 

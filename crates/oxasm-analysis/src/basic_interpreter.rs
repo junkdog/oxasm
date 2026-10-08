@@ -1,9 +1,8 @@
 //! [`BasicInterpreter`]: ASM's `BasicInterpreter`.
 
-use oxasm::constant::Constant;
 use oxasm::opcodes::*;
 use oxasm::{JavaStr, Type, TypeSort};
-use oxasm_tree::Insn;
+use oxasm_tree::{Insn, SymConstant};
 
 use crate::basic_value::BasicValue;
 use crate::error::AnalyzerError;
@@ -87,32 +86,38 @@ impl BasicInterpreter {
                     return Err(cast_error(insn, "LdcInsnNode"));
                 };
                 match value {
-                    Constant::Integer(_) => BasicValue::INT_VALUE,
-                    Constant::Float(_) => BasicValue::FLOAT_VALUE,
-                    Constant::Long(_) => BasicValue::LONG_VALUE,
-                    Constant::Double(_) => BasicValue::DOUBLE_VALUE,
-                    Constant::String(_) => {
+                    SymConstant::Integer(_) => BasicValue::INT_VALUE,
+                    SymConstant::Float(_) => BasicValue::FLOAT_VALUE,
+                    SymConstant::Long(_) => BasicValue::LONG_VALUE,
+                    SymConstant::Double(_) => BasicValue::DOUBLE_VALUE,
+                    SymConstant::String(_) => {
                         return this.new_value(Some(&object_type("java/lang/String")));
                     }
-                    Constant::Type(ty) => match ty.get_sort() {
-                        TypeSort::Object | TypeSort::Array => {
-                            return this.new_value(Some(&object_type("java/lang/Class")));
+                    SymConstant::Type(descriptor) => {
+                        match get_type(insn.resolve(*descriptor))?.get_sort() {
+                            TypeSort::Object | TypeSort::Array => {
+                                return this.new_value(Some(&object_type("java/lang/Class")));
+                            }
+                            TypeSort::Method => {
+                                return this
+                                    .new_value(Some(&object_type("java/lang/invoke/MethodType")));
+                            }
+                            _ => {
+                                let mut message = oxasm::JavaString::from("Illegal LDC value ");
+                                message.push_java_str(insn.resolve(*descriptor));
+                                return Err(AnalyzerError::new(Some(insn.id), message));
+                            }
                         }
-                        TypeSort::Method => {
-                            return this
-                                .new_value(Some(&object_type("java/lang/invoke/MethodType")));
-                        }
-                        _ => {
-                            let mut message = oxasm::JavaString::from("Illegal LDC value ");
-                            message.push_java_str(&ty.get_descriptor());
-                            return Err(AnalyzerError::new(Some(insn.id), message));
-                        }
-                    },
-                    Constant::Handle(_) => {
+                    }
+                    SymConstant::MethodType(_) => {
+                        return this.new_value(Some(&object_type("java/lang/invoke/MethodType")));
+                    }
+                    SymConstant::Handle(_) => {
                         return this.new_value(Some(&object_type("java/lang/invoke/MethodHandle")));
                     }
-                    Constant::Dynamic(constant_dynamic) => {
-                        return this.new_value(Some(&get_type(constant_dynamic.get_descriptor())?));
+                    SymConstant::Dynamic(constant_dynamic) => {
+                        return this
+                            .new_value(Some(&get_type(insn.resolve(constant_dynamic.desc))?));
                     }
                 }
             }
@@ -121,13 +126,13 @@ impl BasicInterpreter {
                 let Insn::Field { desc, .. } = &insn.insn else {
                     return Err(cast_error(insn, "FieldInsnNode"));
                 };
-                return this.new_value(Some(&get_type(desc)?));
+                return this.new_value(Some(&get_type(insn.resolve(*desc))?));
             }
             NEW => {
                 let Insn::Type { desc, .. } = &insn.insn else {
                     return Err(cast_error(insn, "TypeInsnNode"));
                 };
-                return this.new_value(Some(&checked_object_type(desc)?));
+                return this.new_value(Some(&checked_object_type(insn.resolve(*desc))?));
             }
             _ => return Err(assertion_error()),
         }))
@@ -163,7 +168,7 @@ impl BasicInterpreter {
                 let Insn::Field { desc, .. } = &insn.insn else {
                     return Err(cast_error(insn, "FieldInsnNode"));
                 };
-                return this.new_value(Some(&get_type(desc)?));
+                return this.new_value(Some(&get_type(insn.resolve(*desc))?));
             }
             NEWARRAY => {
                 let Insn::Int { operand, .. } = insn.insn else {
@@ -187,7 +192,7 @@ impl BasicInterpreter {
                     return Err(cast_error(insn, "TypeInsnNode"));
                 };
                 let mut descriptor = oxasm::JavaString::from("[");
-                checked_object_type(desc)?.append_descriptor(&mut descriptor);
+                checked_object_type(insn.resolve(*desc))?.append_descriptor(&mut descriptor);
                 return this.new_value(Some(&get_type(&descriptor)?));
             }
             ARRAYLENGTH => BasicValue::INT_VALUE,
@@ -196,7 +201,7 @@ impl BasicInterpreter {
                 let Insn::Type { desc, .. } = &insn.insn else {
                     return Err(cast_error(insn, "TypeInsnNode"));
                 };
-                return this.new_value(Some(&checked_object_type(desc)?));
+                return this.new_value(Some(&checked_object_type(insn.resolve(*desc))?));
             }
             INSTANCEOF => BasicValue::INT_VALUE,
             MONITORENTER | MONITOREXIT | IFNULL | IFNONNULL => return Ok(None),
@@ -250,9 +255,9 @@ impl BasicInterpreter {
         I: Interpreter<V = BasicValue> + ?Sized,
     {
         let ty = match &insn.insn {
-            Insn::MultiANewArray { desc, .. } => get_type(desc)?,
-            Insn::InvokeDynamic(invoke_dynamic) => return_type(&invoke_dynamic.desc)?,
-            Insn::Method { desc, .. } => return_type(desc)?,
+            Insn::MultiANewArray { desc, .. } => get_type(insn.resolve(*desc))?,
+            Insn::InvokeDynamic(invoke_dynamic) => return_type(insn.resolve(invoke_dynamic.desc))?,
+            Insn::Method { desc, .. } => return_type(insn.resolve(*desc))?,
             _ => return Err(cast_error(insn, "MethodInsnNode")),
         };
         this.new_value(Some(&ty))

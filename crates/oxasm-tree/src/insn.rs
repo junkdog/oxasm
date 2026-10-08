@@ -9,15 +9,14 @@
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
-use oxasm::constant::Constant;
-use oxasm::constant::FrameValue;
 use oxasm::opcodes::{
     IINC, INVOKEDYNAMIC, INVOKEINTERFACE, LDC, LOOKUPSWITCH, MULTIANEWARRAY, TABLESWITCH,
 };
-use oxasm::{Handle, JavaCompactStr, Label, MethodVisitor};
+use oxasm::{Interner, Label, MethodVisitor, Sym};
 
 use crate::annotation_node::{TypeAnnotationNode, accept_annotation};
 use crate::frame_node::FrameNode;
+use crate::value::{SymConstant, SymFrameValue, SymHandle};
 
 /// The type of an instruction node (ASM's `AbstractInsnNode.getType()` constants, which
 /// [`InsnKind::to_i32`] returns).
@@ -69,17 +68,19 @@ impl InsnKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InvokeDynamicInsn {
     /// The method's name.
-    pub name: JavaCompactStr,
+    pub name: Sym,
     /// The method's descriptor.
-    pub desc: JavaCompactStr,
+    pub desc: Sym,
     /// The bootstrap method.
-    pub bsm: Handle,
+    pub bsm: SymHandle,
     /// The bootstrap method constant arguments.
-    pub bsm_args: Vec<Constant<'static>>,
+    pub bsm_args: Vec<SymConstant>,
 }
 
 /// A bytecode instruction, or one of the pseudo instructions an instruction list also holds
 /// (labels, stack map frames and line numbers).
+///
+/// Its strings are [`Sym`]s of the interner of the method that holds it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Insn {
     /// A zero operand instruction (ASM's `InsnNode`): `NOP`, `ACONST_NULL`, ..., `IADD`, ...,
@@ -110,7 +111,7 @@ pub enum Insn {
         /// The opcode.
         opcode: u8,
         /// The operand: an internal name or, for arrays, a type descriptor.
-        desc: JavaCompactStr,
+        desc: Sym,
     },
     /// A field instruction (ASM's `FieldInsnNode`): `GETSTATIC`, `PUTSTATIC`, `GETFIELD` or
     /// `PUTFIELD`.
@@ -118,11 +119,11 @@ pub enum Insn {
         /// The opcode.
         opcode: u8,
         /// The internal name of the field's owner class.
-        owner: JavaCompactStr,
+        owner: Sym,
         /// The field's name.
-        name: JavaCompactStr,
+        name: Sym,
         /// The field's descriptor.
-        desc: JavaCompactStr,
+        desc: Sym,
     },
     /// A method instruction (ASM's `MethodInsnNode`): `INVOKEVIRTUAL`, `INVOKESPECIAL`,
     /// `INVOKESTATIC` or `INVOKEINTERFACE`.
@@ -130,11 +131,11 @@ pub enum Insn {
         /// The opcode.
         opcode: u8,
         /// The internal name of the method's owner class.
-        owner: JavaCompactStr,
+        owner: Sym,
         /// The method's name.
-        name: JavaCompactStr,
+        name: Sym,
         /// The method's descriptor.
-        desc: JavaCompactStr,
+        desc: Sym,
         /// Whether the method's owner class is an interface (ASM's `itf`).
         is_interface: bool,
     },
@@ -152,7 +153,7 @@ pub enum Insn {
     /// frames, line numbers, try catch blocks and local variables refer to.
     Label(Label),
     /// An `LDC` instruction (ASM's `LdcInsnNode`), with the constant it loads.
-    Ldc(Constant<'static>),
+    Ldc(SymConstant),
     /// An `IINC` instruction (ASM's `IincInsnNode`).
     Iinc {
         /// The index of the local variable to be incremented.
@@ -183,7 +184,7 @@ pub enum Insn {
     /// A `MULTIANEWARRAY` instruction (ASM's `MultiANewArrayInsnNode`).
     MultiANewArray {
         /// An array type descriptor.
-        desc: JavaCompactStr,
+        desc: Sym,
         /// The number of dimensions of the array to allocate.
         dims: u8,
     },
@@ -200,77 +201,55 @@ pub enum Insn {
 
 impl Insn {
     /// A type instruction (`NEW`, `ANEWARRAY`, `CHECKCAST` or `INSTANCEOF`).
-    pub fn type_insn(opcode: u8, desc: impl Into<JavaCompactStr>) -> Insn {
-        Insn::Type {
-            opcode,
-            desc: desc.into(),
-        }
+    pub fn type_insn(opcode: u8, desc: Sym) -> Insn {
+        Insn::Type { opcode, desc }
     }
 
     /// A field instruction.
-    pub fn field_insn(
-        opcode: u8,
-        owner: impl Into<JavaCompactStr>,
-        name: impl Into<JavaCompactStr>,
-        desc: impl Into<JavaCompactStr>,
-    ) -> Insn {
+    pub fn field_insn(opcode: u8, owner: Sym, name: Sym, desc: Sym) -> Insn {
         Insn::Field {
             opcode,
-            owner: owner.into(),
-            name: name.into(),
-            desc: desc.into(),
+            owner,
+            name,
+            desc,
         }
     }
 
     /// A method instruction.
-    pub fn method_insn(
-        opcode: u8,
-        owner: impl Into<JavaCompactStr>,
-        name: impl Into<JavaCompactStr>,
-        desc: impl Into<JavaCompactStr>,
-        is_interface: bool,
-    ) -> Insn {
+    pub fn method_insn(opcode: u8, owner: Sym, name: Sym, desc: Sym, is_interface: bool) -> Insn {
         Insn::Method {
             opcode,
-            owner: owner.into(),
-            name: name.into(),
-            desc: desc.into(),
+            owner,
+            name,
+            desc,
             is_interface,
         }
     }
 
     /// A method instruction whose owner is an interface iff the opcode is `INVOKEINTERFACE`
     /// (ASM's deprecated 4-argument `MethodInsnNode` constructor).
-    pub fn method_insn_of(
-        opcode: u8,
-        owner: impl Into<JavaCompactStr>,
-        name: impl Into<JavaCompactStr>,
-        desc: impl Into<JavaCompactStr>,
-    ) -> Insn {
+    pub fn method_insn_of(opcode: u8, owner: Sym, name: Sym, desc: Sym) -> Insn {
         Insn::method_insn(opcode, owner, name, desc, opcode == INVOKEINTERFACE)
     }
 
     /// An `INVOKEDYNAMIC` instruction.
     pub fn invoke_dynamic_insn(
-        name: impl Into<JavaCompactStr>,
-        desc: impl Into<JavaCompactStr>,
-        bsm: Handle,
-        bsm_args: Vec<Constant<'static>>,
+        name: Sym,
+        desc: Sym,
+        bsm: SymHandle,
+        bsm_args: Vec<SymConstant>,
     ) -> Insn {
         Insn::InvokeDynamic(Box::new(InvokeDynamicInsn {
-            name: name.into(),
-            desc: desc.into(),
+            name,
+            desc,
             bsm,
             bsm_args,
         }))
     }
 
     /// A `MULTIANEWARRAY` instruction.
-    pub fn multi_a_new_array_insn(desc: impl Into<JavaCompactStr>, dims: u8) -> Insn {
-        Insn::MultiANewArray {
-            desc: desc.into(),
-            dims,
-        }
+    pub fn multi_a_new_array_insn(desc: Sym, dims: u8) -> Insn {
+        Insn::MultiANewArray { desc, dims }
     }
 
     /// The type of this instruction (ASM's `getType()`).
@@ -345,37 +324,55 @@ impl Insn {
         }
     }
 
-    /// Makes the given visitor visit this instruction (without its type annotations).
-    pub fn accept(&self, method_visitor: &mut dyn MethodVisitor) {
+    /// Makes the given visitor visit this instruction (without its type annotations), with
+    /// the strings of the given interner.
+    pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
+        let resolve = |sym: &Sym| interner.resolve(*sym);
         match self {
             Insn::Simple { opcode } => method_visitor.visit_insn(*opcode),
             Insn::Int { opcode, operand } => method_visitor.visit_int_insn(*opcode, *operand),
             Insn::Var { opcode, var } => method_visitor.visit_var_insn(*opcode, *var),
-            Insn::Type { opcode, desc } => method_visitor.visit_type_insn(*opcode, desc),
+            Insn::Type { opcode, desc } => method_visitor.visit_type_insn(*opcode, resolve(desc)),
             Insn::Field {
                 opcode,
                 owner,
                 name,
                 desc,
-            } => method_visitor.visit_field_insn(*opcode, owner, name, desc),
+            } => method_visitor.visit_field_insn(
+                *opcode,
+                resolve(owner),
+                resolve(name),
+                resolve(desc),
+            ),
             Insn::Method {
                 opcode,
                 owner,
                 name,
                 desc,
                 is_interface,
-            } => method_visitor.visit_method_insn(*opcode, owner, name, desc, *is_interface),
+            } => method_visitor.visit_method_insn(
+                *opcode,
+                resolve(owner),
+                resolve(name),
+                resolve(desc),
+                *is_interface,
+            ),
             Insn::InvokeDynamic(insn) => {
+                let bsm_args: Vec<_> = insn
+                    .bsm_args
+                    .iter()
+                    .map(|arg| arg.resolve(interner))
+                    .collect();
                 method_visitor.visit_invoke_dynamic_insn(
-                    &insn.name,
-                    &insn.desc,
-                    &insn.bsm,
-                    &insn.bsm_args,
+                    resolve(&insn.name),
+                    resolve(&insn.desc),
+                    &insn.bsm.resolve(interner),
+                    &bsm_args,
                 );
             }
             Insn::Jump { opcode, label } => method_visitor.visit_jump_insn(*opcode, *label),
             Insn::Label(label) => method_visitor.visit_label(*label),
-            Insn::Ldc(value) => method_visitor.visit_ldc_insn(value),
+            Insn::Ldc(value) => method_visitor.visit_ldc_insn(&value.resolve(interner)),
             Insn::Iinc { var, incr } => method_visitor.visit_iinc_insn(*var, *incr),
             Insn::TableSwitch {
                 min,
@@ -387,9 +384,9 @@ impl Insn {
                 method_visitor.visit_lookup_switch_insn(*dflt, keys, labels);
             }
             Insn::MultiANewArray { desc, dims } => {
-                method_visitor.visit_multi_a_new_array_insn(desc, *dims);
+                method_visitor.visit_multi_a_new_array_insn(resolve(desc), *dims);
             }
-            Insn::Frame(frame) => frame.accept(method_visitor),
+            Insn::Frame(frame) => frame.accept(interner, method_visitor),
             Insn::Line { line, start } => method_visitor.visit_line_number(*line, *start),
         }
     }
@@ -423,14 +420,14 @@ impl Insn {
                 labels: clones(labels),
             },
             Insn::Frame(frame) => {
-                let clone_values = |values: &[FrameValue<'static>]| {
+                let clone_values = |values: &[SymFrameValue]| {
                     values
                         .iter()
                         .map(|value| match value {
-                            FrameValue::Uninitialized(label) => {
-                                FrameValue::Uninitialized(clone(label))
+                            SymFrameValue::Uninitialized(label) => {
+                                SymFrameValue::Uninitialized(clone(label))
                             }
-                            value => value.clone(),
+                            value => *value,
                         })
                         .collect()
                 };
@@ -515,19 +512,21 @@ impl InsnNode {
     }
 
     /// Makes the given visitor visit this instruction, then its type annotations if it is a
-    /// real instruction.
-    pub fn accept(&self, method_visitor: &mut dyn MethodVisitor) {
-        self.insn.accept(method_visitor);
-        if !matches!(
-            self.insn,
-            Insn::Label(_) | Insn::Frame(_) | Insn::Line { .. }
-        ) {
-            self.accept_annotations(method_visitor);
+    /// real instruction, with the strings of the given interner.
+    pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
+        self.insn.accept(interner, method_visitor);
+        if self.type_annotations.is_some()
+            && !matches!(
+                self.insn,
+                Insn::Label(_) | Insn::Frame(_) | Insn::Line { .. }
+            )
+        {
+            self.accept_annotations(interner, method_visitor);
         }
     }
 
     /// Makes the given visitor visit the type annotations of this instruction.
-    fn accept_annotations(&self, method_visitor: &mut dyn MethodVisitor) {
+    fn accept_annotations(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
         for (annotations, visible) in [
             (self.visible_type_annotations(), true),
             (self.invisible_type_annotations(), false),
@@ -536,10 +535,10 @@ impl InsnNode {
                 let av = method_visitor.visit_insn_annotation(
                     type_annotation.type_ref,
                     type_annotation.type_path.as_ref(),
-                    type_annotation.desc(),
+                    interner.resolve(type_annotation.desc()),
                     visible,
                 );
-                accept_annotation(&type_annotation.annotation, av);
+                accept_annotation(interner, &type_annotation.annotation, av);
             }
         }
     }

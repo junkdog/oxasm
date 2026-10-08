@@ -1,14 +1,15 @@
 //! Port of ASM's `FrameNodeTest`. `testConstructor_illegalArgument` (an unknown frame type) is
 //! dropped: `FrameKind` cannot represent one (ADR-09).
 
-use oxasm::FrameKind;
-use oxasm::constant::FrameValue;
-use oxasm_tree::{FrameNode, Insn, InsnKind, InsnNode};
+use oxasm::{FrameKind, Interner};
+use oxasm_tree::{FrameNode, Insn, InsnKind, InsnNode, SymFrameValue};
 
 #[test]
 fn test_constructor() {
-    let locals = [FrameValue::from("l")];
-    let stack = [FrameValue::from("s"), FrameValue::from("t")];
+    let interner = Interner::new();
+    let object = |s: &str| SymFrameValue::Object(interner.intern(s));
+    let locals = [object("l")];
+    let stack = [object("s"), object("t")];
 
     let frame_node = FrameNode::new(FrameKind::Full, &locals, &stack);
 
@@ -22,13 +23,13 @@ fn test_constructor() {
 /// replays it.
 #[test]
 fn constructor_keeps_what_the_kind_uses() {
-    let values = [FrameValue::Integer, FrameValue::Float];
+    let values = [SymFrameValue::Integer, SymFrameValue::Float];
     let frame = |kind| FrameNode::new(kind, &values, &values);
     assert_eq!(frame(FrameKind::Append).local, values);
     assert!(frame(FrameKind::Append).stack.is_empty());
     assert!(frame(FrameKind::Chop(2)).local.is_empty());
     assert!(frame(FrameKind::Same).local.is_empty() && frame(FrameKind::Same).stack.is_empty());
-    assert_eq!(frame(FrameKind::Same1).stack, [FrameValue::Integer]);
+    assert_eq!(frame(FrameKind::Same1).stack, [SymFrameValue::Integer]);
     assert!(frame(FrameKind::Same1).local.is_empty());
     assert_eq!(Insn::Frame(frame(FrameKind::Same)).opcode(), None);
 }

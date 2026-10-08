@@ -15,7 +15,7 @@ use oxasm::{
     AttributeCodec, CustomAttribute, FrameKind, JavaStr, Label, MapHierarchy, MethodVisitor, jstr,
 };
 use oxasm_testkit::ClassFile;
-use oxasm_tree::{FrameNode, Insn, MethodNode};
+use oxasm_tree::{FrameNode, Insn, MethodNode, SymFrameValue};
 
 /// ASM's `Comment` test attribute: a class attribute with no content.
 #[derive(Clone, Debug)]
@@ -129,7 +129,14 @@ impl MethodNodeBuilder {
 
     /// A method with the given descriptor, maximum stack size and number of locals.
     pub fn with_descriptor(descriptor: &str, max_stack: u16, max_locals: u16) -> MethodNodeBuilder {
-        let mut method_node = MethodNode::new(ACC_PUBLIC, "m", descriptor, None, Vec::new());
+        let mut method_node = MethodNode::from_strings(
+            Arc::default(),
+            ACC_PUBLIC,
+            "m".as_ref(),
+            descriptor.as_ref(),
+            None,
+            &[],
+        );
         method_node.max_stack = max_stack;
         method_node.max_locals = max_locals;
         method_node.visit_code();
@@ -204,10 +211,17 @@ impl MethodNodeBuilder {
         local: &[FrameValue<'static>],
         stack: &[FrameValue<'static>],
     ) -> Self {
+        let interner = self.method_node.interner().clone();
+        let intern = |values: &[FrameValue<'static>]| {
+            values
+                .iter()
+                .map(|v| SymFrameValue::intern(v, &interner))
+                .collect()
+        };
         self.method_node.instructions.add(Insn::Frame(FrameNode {
             kind,
-            local: local.to_vec(),
-            stack: stack.to_vec(),
+            local: intern(local),
+            stack: intern(stack),
         }));
         self
     }

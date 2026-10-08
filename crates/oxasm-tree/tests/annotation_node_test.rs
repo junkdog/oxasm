@@ -1,47 +1,51 @@
 //! Port of ASM's `AnnotationNodeTest`. `testConstructor_illegalState` (subclasses must use the
 //! constructor with an `api`) is dropped: there is no subclassing, nor `api` (ADR-09).
+//!
+//! An annotation node holds symbols of an interner; ASM's `AnnotationNode` visitor is
+//! [`AnnotationNode::visitor`].
 
 use oxasm::constant::AnnotationValue;
-use oxasm::{AnnotationVisitor, JavaStr, jstr};
-use oxasm_tree::{AnnotationNode, AnnotationNodeValue};
-
-fn value(value: AnnotationValue<'static>) -> AnnotationNodeValue {
-    AnnotationNodeValue::Value(value)
-}
-
-fn array(values: Vec<AnnotationValue<'static>>) -> AnnotationNodeValue {
-    AnnotationNodeValue::Array(values.into_iter().map(value).collect())
-}
+use oxasm::{AnnotationVisitor, Interner, JavaStr, jstr};
+use oxasm_tree::{AnnotationNode, AnnotationNodeValue, AnnotationNodeVisitor};
 
 #[test]
 fn test_constructor() {
-    let annotation_node = AnnotationNode::new("LI;");
+    let interner = Interner::new();
+    let annotation_node = AnnotationNode::new(interner.intern("LI;"));
 
-    assert_eq!(annotation_node.desc, "LI;");
+    assert_eq!(interner.resolve(annotation_node.desc), "LI;");
 }
 
 #[test]
 fn test_visit() {
+    use AnnotationNodeValue as N;
     use AnnotationValue as V;
-    let mut annotation_node = AnnotationNode::new("LI;");
+    let interner = Interner::new();
+    let mut annotation_node = AnnotationNode::new(interner.intern("LI;"));
 
     let name = |s: &'static str| Some(jstr!(s));
-    annotation_node.visit(name("bytes"), &V::ByteArray(vec![0, 1].into()));
-    annotation_node.visit(name("booleans"), &V::BooleanArray(vec![false, true].into()));
-    annotation_node.visit(name("shorts"), &V::ShortArray(vec![0, 1].into()));
-    annotation_node.visit(
-        name("chars"),
-        &V::CharArray(vec![u16::from(b'0'), u16::from(b'1')].into()),
-    );
-    annotation_node.visit(name("ints"), &V::IntArray(vec![0, 1].into()));
-    annotation_node.visit(name("longs"), &V::LongArray(vec![0, 1].into()));
-    annotation_node.visit(name("floats"), &V::FloatArray(vec![0.0, 1.0].into()));
-    annotation_node.visit(name("doubles"), &V::DoubleArray(vec![0.0, 1.0].into()));
-    annotation_node.visit(name("string"), &"value".into());
-    annotation_node.visit_annotation(name("annotation"), jstr!("Lpkg/Annotation;"));
+    {
+        let mut visitor = annotation_node.visitor(&interner);
+        visitor.visit(name("bytes"), &V::ByteArray(vec![0, 1].into()));
+        visitor.visit(name("booleans"), &V::BooleanArray(vec![false, true].into()));
+        visitor.visit(name("shorts"), &V::ShortArray(vec![0, 1].into()));
+        visitor.visit(
+            name("chars"),
+            &V::CharArray(vec![u16::from(b'0'), u16::from(b'1')].into()),
+        );
+        visitor.visit(name("ints"), &V::IntArray(vec![0, 1].into()));
+        visitor.visit(name("longs"), &V::LongArray(vec![0, 1].into()));
+        visitor.visit(name("floats"), &V::FloatArray(vec![0.0, 1.0].into()));
+        visitor.visit(name("doubles"), &V::DoubleArray(vec![0.0, 1.0].into()));
+        visitor.visit(name("string"), &"value".into());
+        visitor.visit_annotation(name("annotation"), jstr!("Lpkg/Annotation;"));
+    }
 
     let values = &annotation_node.values;
-    let names: Vec<&JavaStr> = values.iter().map(|(n, _)| n.as_deref().unwrap()).collect();
+    let names: Vec<&JavaStr> = values
+        .iter()
+        .map(|(n, _)| interner.resolve(n.unwrap()))
+        .collect();
     assert_eq!(
         names,
         [
@@ -57,33 +61,33 @@ fn test_visit() {
             "annotation"
         ]
     );
-    assert_eq!(values[0].1, array(vec![V::Byte(0), V::Byte(1)]));
+    assert_eq!(values[0].1, N::Array(vec![N::Byte(0), N::Byte(1)]));
     assert_eq!(
         values[1].1,
-        array(vec![V::Boolean(false), V::Boolean(true)])
+        N::Array(vec![N::Boolean(false), N::Boolean(true)])
     );
-    assert_eq!(values[2].1, array(vec![V::Short(0), V::Short(1)]));
+    assert_eq!(values[2].1, N::Array(vec![N::Short(0), N::Short(1)]));
     assert_eq!(
         values[3].1,
-        array(vec![V::Char(u16::from(b'0')), V::Char(u16::from(b'1'))])
+        N::Array(vec![N::Char(u16::from(b'0')), N::Char(u16::from(b'1'))])
     );
-    assert_eq!(values[4].1, array(vec![V::Int(0), V::Int(1)]));
-    assert_eq!(values[5].1, array(vec![V::Long(0), V::Long(1)]));
-    assert_eq!(values[6].1, array(vec![V::Float(0.0), V::Float(1.0)]));
-    assert_eq!(values[7].1, array(vec![V::Double(0.0), V::Double(1.0)]));
-    assert_eq!(values[8].1, value("value".into()));
-    let AnnotationNodeValue::Annotation(annotation) = &values[9].1 else {
+    assert_eq!(values[4].1, N::Array(vec![N::Int(0), N::Int(1)]));
+    assert_eq!(values[5].1, N::Array(vec![N::Long(0), N::Long(1)]));
+    assert_eq!(values[6].1, N::Array(vec![N::Float(0.0), N::Float(1.0)]));
+    assert_eq!(values[7].1, N::Array(vec![N::Double(0.0), N::Double(1.0)]));
+    assert_eq!(values[8].1, N::String(interner.intern("value")));
+    let N::Annotation(annotation) = &values[9].1 else {
         panic!("not an annotation: {:?}", values[9].1);
     };
-    assert_eq!(annotation.desc, "Lpkg/Annotation;");
+    assert_eq!(interner.resolve(annotation.desc), "Lpkg/Annotation;");
 }
 
 #[test]
 fn test_annotation_node_accept_skip_nested_annotations() {
-    struct SkipNestedAnnotationsVisitor<'a>(&'a mut AnnotationNode);
+    struct SkipNestedAnnotationsVisitor<'a>(AnnotationNodeVisitor<'a>);
     impl AnnotationVisitor for SkipNestedAnnotationsVisitor<'_> {
         fn delegate(&mut self) -> Option<&mut dyn AnnotationVisitor> {
-            Some(self.0)
+            Some(&mut self.0)
         }
         fn visit_annotation<'a>(
             &'a mut self,
@@ -99,15 +103,22 @@ fn test_annotation_node_accept_skip_nested_annotations() {
             None
         }
     }
-    let mut annotation_node = AnnotationNode::new("LI;");
-    annotation_node.visit(
-        Some(jstr!("bytes")),
-        &AnnotationValue::ByteArray(vec![0, 1].into()),
-    );
-    annotation_node.visit_annotation(Some(jstr!("annotation")), jstr!("Lpkg/Annotation;"));
-    let mut dst_annotation_node = AnnotationNode::new("LJ;");
+    let interner = Interner::new();
+    let mut annotation_node = AnnotationNode::new(interner.intern("LI;"));
+    {
+        let mut visitor = annotation_node.visitor(&interner);
+        visitor.visit(
+            Some(jstr!("bytes")),
+            &AnnotationValue::ByteArray(vec![0, 1].into()),
+        );
+        visitor.visit_annotation(Some(jstr!("annotation")), jstr!("Lpkg/Annotation;"));
+    }
+    let mut dst_annotation_node = AnnotationNode::new(interner.intern("LJ;"));
 
-    annotation_node.accept(&mut SkipNestedAnnotationsVisitor(&mut dst_annotation_node));
+    annotation_node.accept(
+        &interner,
+        &mut SkipNestedAnnotationsVisitor(dst_annotation_node.visitor(&interner)),
+    );
 
     assert!(dst_annotation_node.values.is_empty());
 }
@@ -115,10 +126,12 @@ fn test_annotation_node_accept_skip_nested_annotations() {
 /// oxasm-specific: enum values, nested arrays and annotations survive a visit and an accept.
 #[test]
 fn accept_replays_every_kind_of_value() {
-    let mut annotation_node = AnnotationNode::new("LI;");
-    annotation_node.visit_enum(Some(jstr!("e")), jstr!("LE;"), jstr!("A"));
+    let interner = Interner::new();
+    let mut annotation_node = AnnotationNode::new(interner.intern("LI;"));
     {
-        let mut array = annotation_node.visit_array(Some(jstr!("a"))).unwrap();
+        let mut visitor = annotation_node.visitor(&interner);
+        visitor.visit_enum(Some(jstr!("e")), jstr!("LE;"), jstr!("A"));
+        let mut array = visitor.visit_array(Some(jstr!("a"))).unwrap();
         array.visit(None, &AnnotationValue::Int(1));
         {
             let mut nested = array.visit_array(None).unwrap();
@@ -132,23 +145,22 @@ fn accept_replays_every_kind_of_value() {
         }
         array.visit_end();
     }
-    let mut copy = AnnotationNode::new("LI;");
+    let mut copy = AnnotationNode::new(interner.intern("LI;"));
 
-    annotation_node.accept(&mut copy);
+    annotation_node.accept(&interner, &mut copy.visitor(&interner));
 
     assert_eq!(copy, annotation_node);
-    let mut nested = AnnotationNode::new("LN;");
-    nested.values.push((
-        Some("x".into()),
-        AnnotationNodeValue::Value(AnnotationValue::Long(2)),
-    ));
+    let mut nested = AnnotationNode::new(interner.intern("LN;"));
+    nested
+        .values
+        .push((Some(interner.intern("x")), AnnotationNodeValue::Long(2)));
     assert_eq!(
         copy.values[1].1,
         AnnotationNodeValue::Array(vec![
-            AnnotationNodeValue::Value(AnnotationValue::Int(1)),
+            AnnotationNodeValue::Int(1),
             AnnotationNodeValue::Array(vec![AnnotationNodeValue::Enum {
-                descriptor: "LE;".into(),
-                value: "B".into()
+                descriptor: interner.intern("LE;"),
+                value: interner.intern("B")
             }]),
             AnnotationNodeValue::Annotation(nested),
         ])

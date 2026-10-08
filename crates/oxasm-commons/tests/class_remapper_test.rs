@@ -20,7 +20,7 @@ use oxasm::{
 use oxasm_commons::remapper::defaults;
 use oxasm_commons::{ClassRemapper, ModuleHashesAttribute, Remapper, SimpleRemapper};
 use oxasm_testkit::PrecompiledClass;
-use oxasm_tree::{ClassNode, Insn};
+use oxasm_tree::{ClassNode, Insn, SymConstant};
 use oxasm_util::check::CheckMethodAdapter;
 
 use common::{CodeComment, assert_precompiled_new_instance, assert_same_class_file};
@@ -43,7 +43,7 @@ fn test_visit() {
     );
 
     drop(class_remapper);
-    assert_eq!(&*class_node.name, "new/pkg/C");
+    assert_eq!(class_node.resolve(class_node.name), "new/pkg/C");
 }
 
 #[test]
@@ -82,7 +82,9 @@ fn test_visit_annotation() {
     drop(remapper);
 
     assert_eq!(
-        class_node.visible_annotations[0].values[0].0.as_deref(),
+        class_node.visible_annotations[0].values[0]
+            .0
+            .map(|name| class_node.resolve(name)),
         Some(jstr!("new.attribute"))
     );
 }
@@ -139,9 +141,15 @@ fn test_visit_inner_class() {
     );
 
     let inner_class = &class_node.inner_classes[0];
-    assert_eq!(&*inner_class.name, "a$b");
-    assert_eq!(inner_class.outer_name.as_deref(), Some(jstr!("a")));
-    assert_eq!(inner_class.inner_name.as_deref(), Some(jstr!("b")));
+    assert_eq!(class_node.resolve(inner_class.name), "a$b");
+    assert_eq!(
+        inner_class.outer_name.map(|s| class_node.resolve(s)),
+        Some(jstr!("a"))
+    );
+    assert_eq!(
+        inner_class.inner_name.map(|s| class_node.resolve(s)),
+        Some(jstr!("b"))
+    );
 }
 
 #[test]
@@ -154,9 +162,15 @@ fn test_visit_inner_class_local_inner_class() {
     );
 
     let inner_class = &class_node.inner_classes[0];
-    assert_eq!(&*inner_class.name, "a$1b");
-    assert_eq!(inner_class.outer_name.as_deref(), Some(jstr!("a")));
-    assert_eq!(inner_class.inner_name.as_deref(), Some(jstr!("b")));
+    assert_eq!(class_node.resolve(inner_class.name), "a$1b");
+    assert_eq!(
+        inner_class.outer_name.map(|s| class_node.resolve(s)),
+        Some(jstr!("a"))
+    );
+    assert_eq!(
+        inner_class.inner_name.map(|s| class_node.resolve(s)),
+        Some(jstr!("b"))
+    );
 }
 
 #[test]
@@ -169,9 +183,15 @@ fn test_visit_inner_class_special_remap() {
     );
 
     let inner_class = &class_node.inner_classes[0];
-    assert_eq!(&*inner_class.name, "pkg2/C$$a");
-    assert_eq!(inner_class.outer_name.as_deref(), Some(jstr!("pkg2/C")));
-    assert_eq!(inner_class.inner_name.as_deref(), Some(jstr!("$a")));
+    assert_eq!(class_node.resolve(inner_class.name), "pkg2/C$$a");
+    assert_eq!(
+        inner_class.outer_name.map(|s| class_node.resolve(s)),
+        Some(jstr!("pkg2/C"))
+    );
+    assert_eq!(
+        inner_class.inner_name.map(|s| class_node.resolve(s)),
+        Some(jstr!("$a"))
+    );
 }
 
 #[test]
@@ -202,7 +222,7 @@ fn test_visit_attribute_module_hashes() {
     ))));
 
     drop(class_remapper);
-    assert_eq!(&*class_node.name, "C");
+    assert_eq!(class_node.resolve(class_node.name), "C");
     let Attribute::Custom(attribute) = &class_node.attrs[0] else {
         panic!("a custom attribute");
     };
@@ -266,15 +286,18 @@ fn test_visit_ldc_insn_constant_dynamic() {
     drop(method_visitor);
     drop(class_remapper);
 
-    let Insn::Ldc(Constant::Dynamic(constant_dynamic)) =
+    let Insn::Ldc(SymConstant::Dynamic(constant_dynamic)) =
         &class_node.methods[0].instructions.get(0).unwrap().insn
     else {
         panic!("an LDC of a constant dynamic");
     };
-    assert_eq!(constant_dynamic.get_name(), "new.foo");
-    assert_eq!(constant_dynamic.get_descriptor(), "Ljava/lang/Integer;");
+    assert_eq!(class_node.resolve(constant_dynamic.name), "new.foo");
     assert_eq!(
-        constant_dynamic.get_bootstrap_method().get_desc(),
+        class_node.resolve(constant_dynamic.desc),
+        "Ljava/lang/Integer;"
+    );
+    assert_eq!(
+        class_node.resolve(constant_dynamic.bsm.desc),
         "()Ljava/lang/Integer;"
     );
 }
@@ -342,8 +365,8 @@ fn test_invoke_dynamic_insn_field() {
     else {
         panic!("an invokedynamic instruction");
     };
-    assert_eq!(&*invoke_dynamic.name, "new.foo");
-    assert_eq!(invoke_dynamic.bsm.get_name(), "demo");
+    assert_eq!(class_node.resolve(invoke_dynamic.name), "new.foo");
+    assert_eq!(class_node.resolve(invoke_dynamic.bsm.name), "demo");
 }
 
 /// Tests that classes transformed with an empty ClassRemapper are unchanged.

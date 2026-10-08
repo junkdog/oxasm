@@ -13,6 +13,8 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use oxasm::opcodes::*;
 use oxasm::{
     ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, Constant, JavaStr, Label,
@@ -65,7 +67,14 @@ impl<M: MethodVisitor> Advice<M> for BasicAdvice {
 
 /// `inputMethod.accept(new BasicAdviceAdapter(outputMethod))`, with an `<init>(I)V` output.
 fn instrument(input_method: &MethodNode) -> MethodNode {
-    let mut output_method = MethodNode::new(ACC_PUBLIC, "<init>", "(I)V", None, Vec::new());
+    let mut output_method = MethodNode::from_strings(
+        Arc::default(),
+        ACC_PUBLIC,
+        jstr!("<init>"),
+        jstr!("(I)V"),
+        None,
+        &[],
+    );
     input_method.accept_method_visitor(&mut AdviceAdapter::new(
         &mut output_method,
         ACC_PUBLIC,
@@ -84,9 +93,10 @@ fn expected_method(
     after_advice_at: &[usize],
 ) -> MethodNode {
     let mut output_method = MethodNode::new(
+        input_method.interner().clone(),
         input_method.access,
-        input_method.name.clone(),
-        input_method.desc.clone(),
+        input_method.name,
+        input_method.desc,
         None,
         Vec::new(),
     );
@@ -100,7 +110,8 @@ fn expected_method(
         .collect();
     advices.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
     for (insn_index, is_after_advice) in advices {
-        let mut advice = MethodNode::default();
+        // The advice's instructions move to the output method: they share its interner.
+        let mut advice = MethodNode::with_interner(output_method.interner().clone());
         emit_basic_advice(&mut advice, is_after_advice);
         let next = output_method.instructions.id_at(insn_index).unwrap();
         output_method
@@ -801,7 +812,14 @@ impl<M: MethodVisitor> Advice<M> for MixedVisitorsAdvice {
 
 #[test]
 fn test_on_method_enter_mixed_visitors() {
-    let mut output_method = MethodNode::new(ACC_PUBLIC, "<init>", "(I)V", None, Vec::new());
+    let mut output_method = MethodNode::from_strings(
+        Arc::default(),
+        ACC_PUBLIC,
+        jstr!("<init>"),
+        jstr!("(I)V"),
+        None,
+        &[],
+    );
     {
         let mut advice_adapter = AdviceAdapter::new(
             &mut output_method,
@@ -846,7 +864,14 @@ fn test_hooks_are_not_reentrant() {
             adapter.pop();
         }
     }
-    let mut output_method = MethodNode::new(ACC_PUBLIC, "m", "()V", None, Vec::new());
+    let mut output_method = MethodNode::from_strings(
+        Arc::default(),
+        ACC_PUBLIC,
+        jstr!("m"),
+        jstr!("()V"),
+        None,
+        &[],
+    );
     let mut advice_adapter = AdviceAdapter::new(
         &mut output_method,
         ACC_PUBLIC,

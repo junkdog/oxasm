@@ -1,71 +1,45 @@
-//! The sharing of the strings a node stores.
+//! Where the strings a node visits are interned.
 //!
 //! A class reader visits the same owners, names and descriptors many times, from its cache of
-//! constant pool strings; ASM's nodes keep references to these `String`s, so each one is
-//! allocated once per class. The visitor traits pass borrowed strings instead. A [`JavaCompactStr`]
-//! of up to 23 bytes is stored inline, and costs no allocation; a [`ClassNode`](crate::ClassNode)
-//! shares the longer ones itself, through a [`StringPool`], so that each is allocated once per
-//! visited class.
+//! constant pool strings. A [`ClassNode`](crate::ClassNode) interns them through an
+//! [`InternMemo`], which finds a string seen before at the same address without hashing it; a
+//! member node visited on its own interns them directly.
 
-use std::fmt;
+use oxasm::sym::InternMemo;
+use oxasm::{Interner, JavaStr, Sym};
 
-use oxasm::{JavaCompactStr, JavaStr};
-use rustc_hash::FxHashSet;
+/// Interns visited strings: directly, or through the memo of the class being visited.
+pub(crate) enum Strings<'a> {
+    Direct(&'a Interner),
+    Memo(&'a mut InternMemo),
+}
 
-/// Turns visited strings into the strings a node stores.
-pub(crate) trait Strings {
-    /// The string to store for the given visited string.
-    fn get(&mut self, s: &JavaStr) -> JavaCompactStr;
+impl Strings<'_> {
+    /// The symbol of a visited string.
+    #[inline]
+    pub(crate) fn get(&mut self, s: &JavaStr) -> Sym {
+        match self {
+            Strings::Direct(interner) => interner.intern(s),
+            Strings::Memo(memo) => memo.intern(s),
+        }
+    }
 
-    /// The string to store for the given optional visited string.
-    fn get_opt(&mut self, s: Option<&JavaStr>) -> Option<JavaCompactStr> {
+    /// The symbol of an optional visited string.
+    #[inline]
+    pub(crate) fn get_opt(&mut self, s: Option<&JavaStr>) -> Option<Sym> {
         s.map(|s| self.get(s))
     }
-}
 
-/// The strings of a node that visits without a pool (a member node visited on its own): each
-/// visited string longer than 23 bytes is a new allocation.
-pub(crate) struct Unshared;
-
-impl Strings for Unshared {
-    fn get(&mut self, s: &JavaStr) -> JavaCompactStr {
-        JavaCompactStr::from(s)
-    }
-}
-
-/// The distinct long (not inline) strings visited so far: a visited string equal to one of them
-/// is stored as another reference to it.
-#[derive(Clone, Default)]
-pub(crate) struct StringPool {
-    strings: FxHashSet<JavaCompactStr>,
-}
-
-impl Strings for StringPool {
-    #[inline]
-    fn get(&mut self, s: &JavaStr) -> JavaCompactStr {
-        if JavaCompactStr::fits_inline(s) {
-            return JavaCompactStr::new(s);
+    /// The same strings, for a shorter borrow (a sub-visitor's).
+    pub(crate) fn reborrow(&mut self) -> Strings<'_> {
+        match self {
+            Strings::Direct(interner) => Strings::Direct(interner),
+            Strings::Memo(memo) => Strings::Memo(memo),
         }
-        self.get_shared(s)
     }
 }
 
-impl StringPool {
-    /// The pooled string equal to the given long string, which is pooled if there is none.
-    fn get_shared(&mut self, s: &JavaStr) -> JavaCompactStr {
-        if let Some(shared) = self.strings.get(s) {
-            return shared.clone();
-        }
-        let shared = JavaCompactStr::new(s);
-        self.strings.insert(shared.clone());
-        shared
-    }
-}
-
-impl fmt::Debug for StringPool {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("StringPool")
-            .field("len", &self.strings.len())
-            .finish()
-    }
+/// The strings of the given symbols, as the `&[&JavaStr]` a visitor takes.
+pub(crate) fn resolve_all<'i>(interner: &'i Interner, syms: &[Sym]) -> Vec<&'i JavaStr> {
+    syms.iter().map(|&s| interner.resolve(s)).collect()
 }

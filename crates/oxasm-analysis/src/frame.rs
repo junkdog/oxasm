@@ -464,13 +464,13 @@ impl<V: Value> Frame<V> {
                 let Insn::Method { desc, .. } = &insn.insn else {
                     return Err(cast_error(insn, "MethodInsnNode"));
                 };
-                self.execute_invoke_insn(insn, desc, interpreter)?;
+                self.execute_invoke_insn(insn, insn.resolve(*desc), interpreter)?;
             }
             INVOKEDYNAMIC => {
                 let Insn::InvokeDynamic(invoke_dynamic) = &insn.insn else {
                     return Err(cast_error(insn, "InvokeDynamicInsnNode"));
                 };
-                self.execute_invoke_insn(insn, &invoke_dynamic.desc, interpreter)?;
+                self.execute_invoke_insn(insn, insn.resolve(invoke_dynamic.desc), interpreter)?;
             }
             MULTIANEWARRAY => {
                 let Insn::MultiANewArray { dims, .. } = insn.insn else {

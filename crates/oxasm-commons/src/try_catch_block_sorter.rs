@@ -1,8 +1,9 @@
 //! [`TryCatchBlockSorter`]: ASM's `TryCatchBlockSorter`.
 
 use std::fmt;
+use std::sync::Arc;
 
-use oxasm::{JavaCompactStr, JavaStr, MethodVisitor};
+use oxasm::{JavaStr, MethodVisitor};
 use oxasm_tree::{MethodNode, TryCatchBlockNode};
 
 /// A [`MethodVisitor`] adapter to sort the exception handlers. The handlers are sorted in a
@@ -45,15 +46,13 @@ impl<'a> TryCatchBlockSorter<'a> {
         exceptions: &[&JavaStr],
     ) -> Self {
         TryCatchBlockSorter {
-            method_node: MethodNode::new(
+            method_node: MethodNode::from_strings(
+                Arc::default(),
                 access,
                 name,
                 descriptor,
-                signature.map(JavaCompactStr::from),
-                exceptions
-                    .iter()
-                    .map(|&e| JavaCompactStr::from(e))
-                    .collect(),
+                signature,
+                exceptions,
             ),
             mv: method_visitor,
         }

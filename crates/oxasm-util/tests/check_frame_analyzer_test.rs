@@ -302,15 +302,15 @@ fn test_analyze_basic_verifier() {
         let mut analyzer = new_analyzer();
 
         for method_node in &class_node.methods {
+            let method_name = method_node.resolve(method_node.name);
             let frames = analyzer
-                .analyze(&class_node.name, method_node)
-                .unwrap_or_else(|e| panic!("{class_parameter} {}: {e}", method_node.name));
+                .analyze(class_node.resolve(class_node.name), method_node)
+                .unwrap_or_else(|e| panic!("{class_parameter} {method_name}: {e}"));
             let last = last_jvm_insn_index(method_node).unwrap_or(0);
             for (j, frame) in frames.iter().enumerate().take(last) {
                 assert!(
                     frame.is_some(),
-                    "{class_parameter} {}: no frame at {j}",
-                    method_node.name
+                    "{class_parameter} {method_name}: no frame at {j}"
                 );
             }
         }
@@ -339,13 +339,14 @@ fn test_analyze_and_compute_maxs_basic_verifier() {
             .collect();
         let mut analyzer = new_analyzer();
 
-        let name = class_node.name.clone();
+        let name = class_node.resolve(class_node.name).to_owned();
         for (method_node, &(max_stack, max_locals)) in
             class_node.methods.iter_mut().zip(&method_maxs)
         {
+            let method_name = method_node.resolve(method_node.name).to_owned();
             analyzer
                 .analyze_and_compute_maxs(&name, method_node)
-                .unwrap_or_else(|e| panic!("{class_parameter} {}: {e}", method_node.name));
+                .unwrap_or_else(|e| panic!("{class_parameter} {method_name}: {e}"));
             assert!(method_node.max_locals >= max_locals, "{class_parameter}");
             assert!(method_node.max_stack >= max_stack, "{class_parameter}");
         }

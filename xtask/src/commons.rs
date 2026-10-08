@@ -17,7 +17,6 @@ use oxasm_commons::{
     LocalVariablesSorter, SerialVersionUidAdder, SimpleRemapper, StaticInitMerger,
     TryCatchBlockSorter,
 };
-use oxasm_tree::ClassNode;
 
 /// The adapter of a commons mode (the oracle's `commons --mode`, see `Oracle.commons`).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -105,7 +104,7 @@ pub fn run(
         }
         Commons::StaticInitMerger => {
             // Through a ClassNode, as the oracle (which moves ASM's merged <clinit> there).
-            let mut class_node = ClassNode::default();
+            let mut class_node = crate::parity::class_node();
             reader
                 .accept(
                     &mut StaticInitMerger::new(jstr!("clinit$"), &mut class_node),

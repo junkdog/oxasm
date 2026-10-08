@@ -143,9 +143,13 @@ fn test_constructor_with_class_visitor_and_exceptions() {
     drop(generator_adapter);
     let method_node = &class_node.methods[0];
     assert_eq!(method_node.access, ACC_PUBLIC);
-    assert_eq!(&*method_node.name, "name");
-    assert_eq!(&*method_node.desc, "()V");
-    let exceptions: Vec<&JavaStr> = method_node.exceptions.iter().map(|e| &**e).collect();
+    assert_eq!(method_node.resolve(method_node.name), "name");
+    assert_eq!(method_node.resolve(method_node.desc), "()V");
+    let exceptions: Vec<&JavaStr> = method_node
+        .exceptions
+        .iter()
+        .map(|&e| method_node.resolve(e))
+        .collect();
     assert_eq!(exceptions, ["java/lang/Exception"]);
 }
 
@@ -169,8 +173,8 @@ fn test_constructor_with_class_visitor_and_no_exceptions() {
     drop(generator_adapter);
     let method_node = &class_node.methods[0];
     assert_eq!(method_node.access, ACC_PUBLIC);
-    assert_eq!(&*method_node.name, "name");
-    assert_eq!(&*method_node.desc, "()V");
+    assert_eq!(method_node.resolve(method_node.name), "name");
+    assert_eq!(method_node.resolve(method_node.desc), "()V");
     assert!(method_node.exceptions.is_empty());
 }
 

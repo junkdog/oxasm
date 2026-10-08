@@ -1,12 +1,13 @@
 //! [`CheckMethodAdapter`]: ASM's `CheckMethodAdapter` (and its `MethodWriterWrapper`).
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use oxasm::constant::{Constant, FrameValue};
 use oxasm::opcodes::*;
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassWriterFlags, FrameKind, Handle, HandleKind, JavaStr,
-    JavaString, Label, MethodVisitor, TypePath, TypeReference, TypeSort,
+    AnnotationVisitor, Attribute, ClassWriterFlags, FrameKind, Handle, HandleKind, Interner,
+    JavaStr, JavaString, Label, MethodVisitor, TypePath, TypeReference, TypeSort,
 };
 use oxasm_analysis::{Analyzer, AnalyzerHooks, BasicValue, BasicVerifier, Frame};
 use oxasm_tree::MethodNode;
@@ -200,11 +201,11 @@ pub(crate) fn print_analyzer_result(
 ) {
     let mut trace_method_visitor = TraceMethodVisitor::new(Textifier::new());
 
-    out.push_java_str(&method.name);
-    out.push_java_str(&method.desc);
+    out.push_java_str(method.resolve(method.name));
+    out.push_java_str(method.resolve(method.desc));
     out.push('\n');
     for (i, insn) in method.instructions.iter().enumerate() {
-        insn.accept(&mut trace_method_visitor);
+        insn.accept(method.interner(), &mut trace_method_visitor);
 
         let mut string_builder = JavaString::new();
         match frames.get(i).and_then(Option::as_ref) {
@@ -235,7 +236,7 @@ pub(crate) fn print_analyzer_result(
         push_last_text(out, &trace_method_visitor.p);
     }
     for try_catch_block in &method.try_catch_blocks {
-        try_catch_block.accept(&mut trace_method_visitor);
+        try_catch_block.accept(method.interner(), &mut trace_method_visitor);
         out.push(' ');
         push_last_text(out, &trace_method_visitor.p);
     }
@@ -361,10 +362,33 @@ impl<'a> CheckMethodAdapter<'a> {
         descriptor: &JavaStr,
         method_visitor: Option<Box<dyn MethodVisitor + 'a>>,
     ) -> Self {
+        CheckMethodAdapter::with_data_flow_in(
+            Arc::default(),
+            access,
+            name,
+            descriptor,
+            method_visitor,
+        )
+    }
+
+    /// As [`with_data_flow`](Self::with_data_flow), storing the method in a node whose strings
+    /// are symbols of the given interner (which a [`CheckClassAdapter`] shares between the
+    /// methods of a class).
+    ///
+    /// [`CheckClassAdapter`]: crate::check::CheckClassAdapter
+    pub fn with_data_flow_in(
+        interner: Arc<Interner>,
+        access: u32,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        method_visitor: Option<Box<dyn MethodVisitor + 'a>>,
+    ) -> Self {
+        let name = interner.intern(name);
+        let descriptor = interner.intern(descriptor);
         CheckMethodAdapter::with_downstream(
             access,
             Downstream::DataFlow(Box::new(DataFlow {
-                node: MethodNode::new(access, name, descriptor, None, Vec::new()),
+                node: MethodNode::new(interner, access, name, descriptor, None, Vec::new()),
                 next: method_visitor,
                 method_writer: None,
             })),

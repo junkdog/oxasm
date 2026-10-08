@@ -7,20 +7,19 @@
 //!   what `FrameNode::new` does for a same locals 1 stack item frame.
 
 use oxasm::FrameKind;
-use oxasm::constant::FrameValue;
-use oxasm_tree::FrameNode;
+use oxasm_tree::{FrameNode, SymFrameValue};
 
 #[test]
 fn test_as_array_list_with_length_and_array() {
     let stack = [
-        FrameValue::Integer,
-        FrameValue::Float,
-        FrameValue::Long,
-        FrameValue::Double,
-        FrameValue::Null,
+        SymFrameValue::Integer,
+        SymFrameValue::Float,
+        SymFrameValue::Long,
+        SymFrameValue::Double,
+        SymFrameValue::Null,
     ];
 
     let frame_node = FrameNode::new(FrameKind::Same1, &[], &stack);
 
-    assert_eq!(frame_node.stack, [FrameValue::Integer]);
+    assert_eq!(frame_node.stack, [SymFrameValue::Integer]);
 }

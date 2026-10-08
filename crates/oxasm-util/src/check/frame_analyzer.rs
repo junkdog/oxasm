@@ -4,9 +4,11 @@
 use std::fmt::Display;
 
 use oxasm::opcodes::*;
-use oxasm::{FrameKind, FrameValue, JavaStr, Type};
+use oxasm::{FrameKind, Interner, JavaStr, Type};
 use oxasm_analysis::{Analyzer, AnalyzerError, AnalyzerHooks, Frame, InsnRef, Interpreter, Value};
-use oxasm_tree::{FrameNode, Insn, InsnId, InsnKind, InsnList, InsnNode, MethodNode};
+use oxasm_tree::{
+    FrameNode, Insn, InsnId, InsnKind, InsnList, InsnNode, MethodNode, SymFrameValue,
+};
 
 /// The internal name of `java.lang.Throwable`, the type a `finally` handler catches.
 const THROWABLE: &JavaStr = oxasm::jstr!("java/lang/Throwable");
@@ -147,6 +149,7 @@ where
                 current_frame = self
                     .expand_frame(
                         owner,
+                        check.method.interner(),
                         &check.method.instructions,
                         &current_frame,
                         frame_node,
@@ -175,6 +178,7 @@ where
     fn expand_frame(
         &mut self,
         owner: &JavaStr,
+        interner: &Interner,
         insn_list: &InsnList,
         previous_frame: &Frame<I::V>,
         frame_node: &FrameNode,
@@ -187,7 +191,7 @@ where
                     current_local = 0;
                 }
                 for ty in &frame_node.local {
-                    let value = self.new_frame_value(owner, insn_list, ty)?;
+                    let value = self.new_frame_value(owner, interner, insn_list, ty)?;
                     let size = value.get_size();
                     if current_local + size > frame.get_locals() {
                         return Err(AnalyzerError::new(
@@ -237,7 +241,7 @@ where
 
         frame.clear_stack();
         for ty in &frame_node.stack {
-            let value = self.new_frame_value(owner, insn_list, ty)?;
+            let value = self.new_frame_value(owner, interner, insn_list, ty)?;
             frame.try_push(value)?;
         }
         Ok(frame)
@@ -247,26 +251,28 @@ where
     fn new_frame_value(
         &mut self,
         owner: &JavaStr,
+        interner: &Interner,
         insn_list: &InsnList,
-        ty: &FrameValue<'_>,
+        ty: &SymFrameValue,
     ) -> Result<I::V, AnalyzerError> {
         let value = match ty {
-            FrameValue::Top => self.interpreter.new_value(None)?,
-            FrameValue::Integer => self.interpreter.new_value(Some(&Type::INT))?,
-            FrameValue::Float => self.interpreter.new_value(Some(&Type::FLOAT))?,
-            FrameValue::Long => self.interpreter.new_value(Some(&Type::LONG))?,
-            FrameValue::Double => self.interpreter.new_value(Some(&Type::DOUBLE))?,
-            FrameValue::Null => {
-                let insn = InsnRef::at(&self.aconst_null, 0).expect("an ACONST_NULL instruction");
+            SymFrameValue::Top => self.interpreter.new_value(None)?,
+            SymFrameValue::Integer => self.interpreter.new_value(Some(&Type::INT))?,
+            SymFrameValue::Float => self.interpreter.new_value(Some(&Type::FLOAT))?,
+            SymFrameValue::Long => self.interpreter.new_value(Some(&Type::LONG))?,
+            SymFrameValue::Double => self.interpreter.new_value(Some(&Type::DOUBLE))?,
+            SymFrameValue::Null => {
+                let insn = InsnRef::at(interner, &self.aconst_null, 0)
+                    .expect("an ACONST_NULL instruction");
                 self.interpreter.new_operation(insn)?
             }
-            FrameValue::UninitializedThis => self
+            SymFrameValue::UninitializedThis => self
                 .interpreter
                 .new_value(Some(&Type::get_object_type(owner)))?,
-            FrameValue::Object(internal_name) => self
-                .interpreter
-                .new_value(Some(&Type::get_object_type(&**internal_name)))?,
-            FrameValue::Uninitialized(label) => {
+            SymFrameValue::Object(internal_name) => self.interpreter.new_value(Some(
+                &Type::get_object_type(interner.resolve(*internal_name)),
+            ))?,
+            SymFrameValue::Uninitialized(label) => {
                 let new_insn = insn_list.label_index(*label).and_then(|index| {
                     insn_list
                         .iter()
@@ -276,7 +282,7 @@ where
                 match new_insn.map(|insn| &insn.insn) {
                     Some(Insn::Type { opcode: NEW, desc }) => self
                         .interpreter
-                        .new_value(Some(&Type::get_object_type(&**desc)))?,
+                        .new_value(Some(&Type::get_object_type(interner.resolve(*desc))))?,
                     _ => {
                         return Err(AnalyzerError::new(
                             None,
@@ -408,6 +414,7 @@ where
                     )
                 })?;
                 let insn_ref = InsnRef {
+                    interner: check.method.interner(),
                     list: &check.method.instructions,
                     id,
                     index: insn_index,
@@ -474,8 +481,11 @@ where
 
         for &try_catch_block_index in &handlers[insn_index] {
             let try_catch_block = &check.method.try_catch_blocks[try_catch_block_index];
-            let catch_type =
-                Type::get_object_type(try_catch_block.type_.as_deref().unwrap_or(THROWABLE));
+            let catch_type = Type::get_object_type(
+                try_catch_block
+                    .type_
+                    .map_or(THROWABLE, |t| check.method.resolve(t)),
+            );
             let mut handler = old_frame.clone().ok_or_else(null_frame)?;
             handler.clear_stack();
             let exception =
@@ -509,9 +519,10 @@ where
         handlers: &[Vec<usize>],
     ) -> Result<(), AnalyzerError> {
         // The descriptor is valid: the analyzer parsed it to compute the first frame.
-        let arguments_size =
-            usize::try_from(Type::get_arguments_and_return_sizes_of(&*method.desc) >> 2)
-                .expect("a u32 fits in a usize");
+        let arguments_size = usize::try_from(
+            Type::get_arguments_and_return_sizes_of(method.resolve(method.desc)) >> 2,
+        )
+        .expect("a u32 fits in a usize");
         self.current_locals = if method.access & ACC_STATIC != 0 {
             arguments_size - 1
         } else {

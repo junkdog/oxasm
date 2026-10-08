@@ -133,7 +133,7 @@ impl BasicVerifier {
                 let Insn::Field { owner, .. } = &insn.insn else {
                     return Err(cast_error(insn, "FieldInsnNode"));
                 };
-                this.new_value(Some(&checked_object_type(owner)?))?
+                this.new_value(Some(&checked_object_type(insn.resolve(*owner))?))?
             }
             ARRAYLENGTH => {
                 if !this.is_array_value(value) {
@@ -162,7 +162,7 @@ impl BasicVerifier {
                 let Insn::Field { desc, .. } = &insn.insn else {
                     return Err(cast_error(insn, "FieldInsnNode"));
                 };
-                this.new_value(Some(&get_type(desc)?))?
+                this.new_value(Some(&get_type(insn.resolve(*desc))?))?
             }
             _ => return Err(assertion_error()),
         };
@@ -230,8 +230,8 @@ impl BasicVerifier {
                     return Err(cast_error(insn, "FieldInsnNode"));
                 };
                 (
-                    this.new_value(Some(&checked_object_type(owner)?))?,
-                    this.new_value(Some(&get_type(desc)?))?,
+                    this.new_value(Some(&checked_object_type(insn.resolve(*owner))?))?,
+                    this.new_value(Some(&get_type(insn.resolve(*desc))?))?,
                 )
             }
             _ => return Err(assertion_error()),
@@ -346,11 +346,12 @@ impl BasicVerifier {
             let mut i = 0;
             let method_descriptor: &JavaStr = match &insn.insn {
                 Insn::InvokeDynamic(invoke_dynamic) if opcode == INVOKEDYNAMIC => {
-                    &invoke_dynamic.desc
+                    insn.resolve(invoke_dynamic.desc)
                 }
                 Insn::Method { owner, desc, .. } => {
                     if opcode != INVOKESTATIC {
-                        let owner = this.new_value(Some(&checked_object_type(owner)?))?;
+                        let owner =
+                            this.new_value(Some(&checked_object_type(insn.resolve(*owner))?))?;
                         let value = values.first().ok_or_else(|| index_out_of_range(0))?;
                         i += 1;
                         if !is_sub_type_of(this, value, owner.as_ref())? {
@@ -362,7 +363,7 @@ impl BasicVerifier {
                             ));
                         }
                     }
-                    desc
+                    insn.resolve(*desc)
                 }
                 _ => return Err(cast_error(insn, "MethodInsnNode")),
             };

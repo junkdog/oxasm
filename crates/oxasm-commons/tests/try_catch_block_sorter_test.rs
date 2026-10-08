@@ -118,11 +118,11 @@ fn test_sort_order() {
     sorter.visit_maxs(1, 1);
     sorter.visit_end();
 
-    let types: Vec<String> = sorter
-        .method_node()
+    let method_node = sorter.method_node();
+    let types: Vec<String> = method_node
         .try_catch_blocks
         .iter()
-        .map(|b| b.type_.as_deref().unwrap().to_string())
+        .map(|b| method_node.resolve(b.type_.unwrap()).to_string())
         .collect();
     assert_eq!(types, ["B", "C", "A"]);
 }

@@ -4,12 +4,10 @@
 mod common;
 
 use oxasm::opcodes::*;
-use oxasm::{
-    ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, Constant, ParsingOptions, jstr,
-};
+use oxasm::{ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, ParsingOptions, jstr};
 use oxasm_commons::SerialVersionUidAdder;
 use oxasm_testkit::{ClassFile, PrecompiledClass, t0_resource};
-use oxasm_tree::ClassNode;
+use oxasm_tree::{ClassNode, SymConstant};
 
 /// ASM's `null` class visitor.
 struct NoDelegate;
@@ -106,9 +104,12 @@ fn test_added_field_value() {
         .unwrap();
     assert!(!svuid_adder.has_svuid());
     let field = class_node.fields.last().unwrap();
-    assert_eq!(&*field.name, "serialVersionUID");
+    assert_eq!(field.resolve(field.name), "serialVersionUID");
     assert_eq!(field.access, ACC_FINAL + ACC_STATIC);
-    assert_eq!(field.value, Some(Constant::Long(4_654_798_559_887_898_126)));
+    assert_eq!(
+        field.value,
+        Some(SymConstant::Long(4_654_798_559_887_898_126))
+    );
 
     // Visiting the result again finds the field.
     let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());

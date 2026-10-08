@@ -33,7 +33,7 @@ fn test_all_methods_multiple_static_init_blocks() {
     let method_names: Vec<String> = class_node
         .methods
         .iter()
-        .map(|m| format!("{} {:#x}", m.name, m.access))
+        .map(|m| format!("{} {:#x}", m.resolve(m.name), m.access))
         .collect();
     // The merged <clinit> is the last method here, and the second one in ASM (see the
     // StaticInitMerger docs).

@@ -1,21 +1,25 @@
 //! [`MethodNode`]: ASM's `MethodNode`.
 
+use std::sync::Arc;
+
 use oxasm::constant::{Constant, FrameValue};
+use oxasm::sym::InternMemo;
 use oxasm::{
-    AnnotationVisitor, Attribute, ClassVisitor, FrameKind, Handle, JavaCompactStr, JavaStr, Label,
-    MethodVisitor, Type, TypePath, TypeReference,
+    AnnotationVisitor, Attribute, ClassVisitor, FrameKind, Handle, Interner, JavaStr, Label,
+    MethodVisitor, Sym, Type, TypePath, TypeReference,
 };
 
 use crate::annotation_node::{
-    AnnotationNode, AnnotationNodeValue, LocalVariableAnnotationNode, TypeAnnotationNode,
-    ValuesVisitor, accept_annotation,
+    AnnotationNode, AnnotationNodeValue, AnnotationNodeVisitor, LocalVariableAnnotationNode,
+    TypeAnnotationNode, Values, ValuesVisitor, accept_annotation,
 };
 use crate::field_node::{accept_annotations, add_annotation, add_type_annotation};
 use crate::frame_node::FrameNode;
-use crate::insn::{Insn, InsnNode};
+use crate::insn::{Insn, InsnNode, InvokeDynamicInsn};
 use crate::insn_list::InsnList;
 use crate::nodes::{LocalVariableNode, ParameterNode, TryCatchBlockNode, try_catch_type_ref};
-use crate::strings::{StringPool, Strings, Unshared};
+use crate::strings::{Strings, resolve_all};
+use crate::value::{SymConstant, SymFrameValue, SymHandle};
 
 /// The label a method node stores for a visited label.
 ///
@@ -32,19 +36,26 @@ fn plain(label: Label) -> Label {
 /// Unlike ASM, which hands out fresh labels each time a method node is visited (`resetLabels`),
 /// the labels of a method node are always the same: accepting a method node twice into the
 /// same method visitor gives it the same labels twice.
+///
+/// Its strings, and those of its instructions, local variables and the like, are [`Sym`]s of its
+/// interner, which [`resolve`](Self::resolve) turns back into strings. `MethodNode::default()`
+/// makes a new interner. Instructions moved from one method node to another keep their symbols,
+/// so both nodes must share an interner (see [`with_interner`](Self::with_interner)).
 #[derive(Clone, Debug, Default)]
 pub struct MethodNode {
+    /// The interner of this node's strings.
+    interner: Arc<Interner>,
     /// The method's access flags (see [`oxasm::opcodes`]). This field also indicates if the
     /// method is synthetic and/or deprecated.
     pub access: u32,
     /// The method's name.
-    pub name: JavaCompactStr,
+    pub name: Sym,
     /// The method's descriptor.
-    pub desc: JavaCompactStr,
+    pub desc: Sym,
     /// The method's signature, or `None`.
-    pub signature: Option<JavaCompactStr>,
+    pub signature: Option<Sym>,
     /// The internal names of the method's exception classes.
-    pub exceptions: Vec<JavaCompactStr>,
+    pub exceptions: Vec<Sym>,
     /// The method parameter info (access flags and name).
     pub parameters: Vec<ParameterNode>,
     /// The runtime visible annotations of this method.
@@ -92,22 +103,87 @@ pub struct MethodNode {
 }
 
 impl MethodNode {
-    /// Constructs a new method node, with no content.
+    /// Constructs a new method node, with no content, whose strings are symbols of the given
+    /// interner.
     pub fn new(
+        interner: Arc<Interner>,
         access: u32,
-        name: impl Into<JavaCompactStr>,
-        descriptor: impl Into<JavaCompactStr>,
-        signature: Option<JavaCompactStr>,
-        exceptions: Vec<JavaCompactStr>,
+        name: Sym,
+        descriptor: Sym,
+        signature: Option<Sym>,
+        exceptions: Vec<Sym>,
     ) -> MethodNode {
         MethodNode {
+            interner,
             access,
-            name: name.into(),
-            desc: descriptor.into(),
+            name,
+            desc: descriptor,
             signature,
             exceptions,
-            ..MethodNode::default()
+            parameters: Vec::new(),
+            visible_annotations: Vec::new(),
+            invisible_annotations: Vec::new(),
+            visible_type_annotations: Vec::new(),
+            invisible_type_annotations: Vec::new(),
+            attrs: Vec::new(),
+            annotation_default: None,
+            visible_annotable_parameter_count: 0,
+            visible_parameter_annotations: Vec::new(),
+            invisible_annotable_parameter_count: 0,
+            invisible_parameter_annotations: Vec::new(),
+            instructions: InsnList::new(),
+            try_catch_blocks: Vec::new(),
+            max_stack: 0,
+            max_locals: 0,
+            local_variables: Vec::new(),
+            visible_local_variable_annotations: Vec::new(),
+            invisible_local_variable_annotations: Vec::new(),
         }
+    }
+
+    /// Constructs a new method node, with no content, whose strings are interned in the given
+    /// interner (ASM's `MethodNode(access, name, descriptor, signature, exceptions)`).
+    pub fn from_strings(
+        interner: Arc<Interner>,
+        access: u32,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        signature: Option<&JavaStr>,
+        exceptions: &[&JavaStr],
+    ) -> MethodNode {
+        let name = interner.intern(name);
+        let descriptor = interner.intern(descriptor);
+        let signature = signature.map(|s| interner.intern(s));
+        let exceptions = exceptions.iter().map(|&e| interner.intern(e)).collect();
+        MethodNode::new(interner, access, name, descriptor, signature, exceptions)
+    }
+
+    /// Constructs a method node with no content, not even a name (ASM's `MethodNode()`), whose
+    /// strings are symbols of the given interner: a method visitor that stores what it visits.
+    pub fn with_interner(interner: Arc<Interner>) -> MethodNode {
+        MethodNode::new(
+            interner,
+            0,
+            Sym::default(),
+            Sym::default(),
+            None,
+            Vec::new(),
+        )
+    }
+
+    /// The interner of this node's strings.
+    pub fn interner(&self) -> &Arc<Interner> {
+        &self.interner
+    }
+
+    /// The string of the given symbol of this node.
+    pub fn resolve(&self, sym: Sym) -> &JavaStr {
+        self.interner.resolve(sym)
+    }
+
+    /// The symbol of the given string in this node's interner.
+    pub fn intern(&self, s: &(impl AsRef<JavaStr> + ?Sized)) -> Sym {
+        self.interner.intern(s)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -116,13 +192,13 @@ impl MethodNode {
 
     /// Makes the given class visitor visit this method.
     pub fn accept(&self, class_visitor: &mut dyn ClassVisitor) {
-        let exceptions: Vec<&JavaStr> = self.exceptions.iter().map(|e| &**e).collect();
+        let interner = &*self.interner;
         if let Some(mut method_visitor) = class_visitor.visit_method(
             self.access,
-            &self.name,
-            &self.desc,
-            self.signature.as_deref(),
-            &exceptions,
+            interner.resolve(self.name),
+            interner.resolve(self.desc),
+            self.signature.map(|s| interner.resolve(s)),
+            &resolve_all(interner, &self.exceptions),
         ) {
             self.accept_method_visitor(&mut *method_visitor);
         }
@@ -134,18 +210,19 @@ impl MethodNode {
     /// their block's current index, as ASM's `updateIndex` sets them (without changing the
     /// nodes, see [`TryCatchBlockNode::update_index`]).
     pub fn accept_method_visitor(&self, method_visitor: &mut dyn MethodVisitor) {
+        let interner = &*self.interner;
         // Visit the parameters.
         for parameter in &self.parameters {
-            parameter.accept(method_visitor);
+            parameter.accept(interner, method_visitor);
         }
         // Visit the annotations.
         if let Some(annotation_default) = &self.annotation_default
             && let Some(mut annotation_visitor) = method_visitor.visit_annotation_default()
         {
-            annotation_default.accept(&mut *annotation_visitor, None);
+            annotation_default.accept(interner, &mut *annotation_visitor, None);
             annotation_visitor.visit_end();
         }
-        accept_annotations!(self, &mut *method_visitor);
+        accept_annotations!(interner, self, &mut *method_visitor);
         for (count, parameter_annotations, visible) in [
             (
                 self.visible_annotable_parameter_count,
@@ -169,10 +246,10 @@ impl MethodNode {
                 for annotation in annotations {
                     let av = method_visitor.visit_parameter_annotation(
                         parameter,
-                        &annotation.desc,
+                        interner.resolve(annotation.desc),
                         visible,
                     );
-                    accept_annotation(annotation, av);
+                    accept_annotation(interner, annotation, av);
                 }
             }
         }
@@ -185,20 +262,24 @@ impl MethodNode {
             method_visitor.visit_code();
             // Visits the try catch blocks.
             for (index, try_catch_block) in self.try_catch_blocks.iter().enumerate() {
-                try_catch_block.accept_with(method_visitor, Some(try_catch_type_ref(index)));
+                try_catch_block.accept_with(
+                    interner,
+                    method_visitor,
+                    Some(try_catch_type_ref(index)),
+                );
             }
             // Visit the instructions.
-            self.instructions.accept(method_visitor);
+            self.instructions.accept(interner, method_visitor);
             // Visits the local variables.
             for local_variable in &self.local_variables {
-                local_variable.accept(method_visitor);
+                local_variable.accept(interner, method_visitor);
             }
             // Visits the local variable annotations.
             for annotation in &self.visible_local_variable_annotations {
-                annotation.accept(method_visitor, true);
+                annotation.accept(interner, method_visitor, true);
             }
             for annotation in &self.invisible_local_variable_annotations {
-                annotation.accept(method_visitor, false);
+                annotation.accept(interner, method_visitor, false);
             }
             method_visitor.visit_maxs(self.max_stack, self.max_locals);
         }
@@ -210,106 +291,147 @@ impl MethodNode {
 // Implementation of the MethodVisitor trait
 // -------------------------------------------------------------------------------------------------
 
-/// The visitor methods of a method node that store strings, with the strings from the given
-/// source.
+/// The visitor methods of a method node that store strings, interned directly or through the
+/// memo of the class being visited.
 impl MethodNode {
-    fn add_parameter(&mut self, strings: &mut impl Strings, name: Option<&JavaStr>, access: u32) {
-        self.parameters
-            .push(ParameterNode::new(strings.get_opt(name), access));
+    /// The strings of this node's visit: through the given memo, if any.
+    fn strings<'a>(interner: &'a Interner, memo: Option<&'a mut InternMemo>) -> Strings<'a> {
+        match memo {
+            Some(memo) => Strings::Memo(memo),
+            None => Strings::Direct(interner),
+        }
     }
 
-    fn add_type_insn(&mut self, strings: &mut impl Strings, opcode: u8, type_: &JavaStr) {
-        self.instructions.add(Insn::Type {
-            opcode,
-            desc: strings.get(type_),
-        });
+    fn add_parameter(
+        &mut self,
+        memo: Option<&mut InternMemo>,
+        name: Option<&JavaStr>,
+        access: u32,
+    ) {
+        let name = Self::strings(&self.interner, memo).get_opt(name);
+        self.parameters.push(ParameterNode::new(name, access));
+    }
+
+    fn add_type_insn(&mut self, memo: Option<&mut InternMemo>, opcode: u8, type_: &JavaStr) {
+        let desc = Self::strings(&self.interner, memo).get(type_);
+        self.instructions.add(Insn::Type { opcode, desc });
     }
 
     fn add_field_insn(
         &mut self,
-        strings: &mut impl Strings,
+        memo: Option<&mut InternMemo>,
         opcode: u8,
         owner: &JavaStr,
         name: &JavaStr,
         descriptor: &JavaStr,
     ) {
-        self.instructions.add(Insn::Field {
+        let mut strings = Self::strings(&self.interner, memo);
+        let insn = Insn::Field {
             opcode,
             owner: strings.get(owner),
             name: strings.get(name),
             desc: strings.get(descriptor),
-        });
+        };
+        self.instructions.add(insn);
     }
 
     fn add_method_insn(
         &mut self,
-        strings: &mut impl Strings,
+        memo: Option<&mut InternMemo>,
         opcode: u8,
         owner: &JavaStr,
         name: &JavaStr,
         descriptor: &JavaStr,
         is_interface: bool,
     ) {
-        self.instructions.add(Insn::Method {
+        let mut strings = Self::strings(&self.interner, memo);
+        let insn = Insn::Method {
             opcode,
             owner: strings.get(owner),
             name: strings.get(name),
             desc: strings.get(descriptor),
             is_interface,
-        });
+        };
+        self.instructions.add(insn);
     }
 
     fn add_invoke_dynamic_insn(
         &mut self,
-        strings: &mut impl Strings,
+        memo: Option<&mut InternMemo>,
         name: &JavaStr,
         descriptor: &JavaStr,
         bootstrap_method_handle: &Handle,
         bootstrap_method_arguments: &[Constant<'_>],
     ) {
-        self.instructions.add(Insn::invoke_dynamic_insn(
-            strings.get(name),
-            strings.get(descriptor),
-            bootstrap_method_handle.clone(),
-            bootstrap_method_arguments
+        let mut strings = Self::strings(&self.interner, memo);
+        let insn = InvokeDynamicInsn {
+            name: strings.get(name),
+            desc: strings.get(descriptor),
+            bsm: SymHandle::from_visited(bootstrap_method_handle, &mut strings),
+            bsm_args: bootstrap_method_arguments
                 .iter()
-                .map(Constant::to_owned)
+                .map(|arg| SymConstant::from_visited(arg, &mut strings))
                 .collect(),
-        ));
+        };
+        self.instructions.add(Insn::InvokeDynamic(Box::new(insn)));
+    }
+
+    fn add_ldc_insn(&mut self, memo: Option<&mut InternMemo>, value: &Constant<'_>) {
+        let value = SymConstant::from_visited(value, &mut Self::strings(&self.interner, memo));
+        self.instructions.add(Insn::Ldc(value));
     }
 
     fn add_multi_a_new_array_insn(
         &mut self,
-        strings: &mut impl Strings,
+        memo: Option<&mut InternMemo>,
         descriptor: &JavaStr,
         num_dimensions: u8,
     ) {
+        let desc = Self::strings(&self.interner, memo).get(descriptor);
         self.instructions.add(Insn::MultiANewArray {
-            desc: strings.get(descriptor),
+            desc,
             dims: num_dimensions,
         });
     }
 
+    fn add_frame(
+        &mut self,
+        memo: Option<&mut InternMemo>,
+        kind: FrameKind,
+        locals: &[FrameValue<'_>],
+        stack: &[FrameValue<'_>],
+    ) {
+        let mut strings = Self::strings(&self.interner, memo);
+        let mut frame = FrameNode::from_visited(kind, locals, stack, &mut strings);
+        for value in frame.local.iter_mut().chain(&mut frame.stack) {
+            if let SymFrameValue::Uninitialized(label) = value {
+                *label = plain(*label);
+            }
+        }
+        self.instructions.add(frame);
+    }
+
     fn add_try_catch_block(
         &mut self,
-        strings: &mut impl Strings,
+        memo: Option<&mut InternMemo>,
         start: Label,
         end: Label,
         handler: Label,
         type_: Option<&JavaStr>,
     ) {
+        let type_ = Self::strings(&self.interner, memo).get_opt(type_);
         self.try_catch_blocks.push(TryCatchBlockNode::new(
             plain(start),
             plain(end),
             plain(handler),
-            strings.get_opt(type_),
+            type_,
         ));
     }
 
     #[allow(clippy::too_many_arguments)] // ASM's signature, and the strings
     fn add_local_variable(
         &mut self,
-        strings: &mut impl Strings,
+        memo: Option<&mut InternMemo>,
         name: &JavaStr,
         descriptor: &JavaStr,
         signature: Option<&JavaStr>,
@@ -317,45 +439,36 @@ impl MethodNode {
         end: Label,
         index: u16,
     ) {
-        self.local_variables.push(LocalVariableNode::new(
+        let mut strings = Self::strings(&self.interner, memo);
+        let local_variable = LocalVariableNode::new(
             strings.get(name),
             strings.get(descriptor),
             strings.get_opt(signature),
             plain(start),
             plain(end),
             index,
-        ));
-    }
-}
-
-/// A method node visited on its own stores a new allocation for each visited string longer
-/// than 23 bytes (a [`ClassNode`](crate::ClassNode) shares them).
-impl MethodVisitor for MethodNode {
-    fn visit_parameter(&mut self, name: Option<&JavaStr>, access: u32) {
-        self.add_parameter(&mut Unshared, name, access);
+        );
+        self.local_variables.push(local_variable);
     }
 
-    fn visit_annotation_default<'a>(&'a mut self) -> Option<Box<dyn AnnotationVisitor + 'a>> {
-        Some(Box::new(ValuesVisitor::Default(
-            &mut self.annotation_default,
-        )))
-    }
-
-    fn visit_annotation<'a>(
+    fn add_annotation<'a>(
         &'a mut self,
+        memo: Option<&'a mut InternMemo>,
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
         add_annotation(
             &mut self.visible_annotations,
             &mut self.invisible_annotations,
+            Self::strings(&self.interner, memo),
             descriptor,
             visible,
         )
     }
 
-    fn visit_type_annotation<'a>(
+    fn add_type_annotation<'a>(
         &'a mut self,
+        memo: Option<&'a mut InternMemo>,
         type_ref: TypeReference,
         type_path: Option<&TypePath>,
         descriptor: &JavaStr,
@@ -364,6 +477,7 @@ impl MethodVisitor for MethodNode {
         add_type_annotation(
             &mut self.visible_type_annotations,
             &mut self.invisible_type_annotations,
+            Self::strings(&self.interner, memo),
             type_ref,
             type_path,
             descriptor,
@@ -371,20 +485,23 @@ impl MethodVisitor for MethodNode {
         )
     }
 
-    fn visit_annotable_parameter_count(&mut self, parameter_count: u8, visible: bool) {
-        if visible {
-            self.visible_annotable_parameter_count = parameter_count;
-        } else {
-            self.invisible_annotable_parameter_count = parameter_count;
-        }
+    fn add_annotation_default<'a>(
+        &'a mut self,
+        memo: Option<&'a mut InternMemo>,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        Some(Box::new(ValuesVisitor {
+            values: Values::Default(&mut self.annotation_default),
+            strings: Self::strings(&self.interner, memo),
+        }))
     }
 
     /// Like ASM, the parameter annotation lists are first sized by the number of parameters of
     /// the method descriptor. Where ASM throws (`ArrayIndexOutOfBoundsException` for a parameter
     /// index past them, `StringIndexOutOfBoundsException` for a malformed descriptor), which only
     /// malformed class files cause, they grow to the parameter index instead.
-    fn visit_parameter_annotation<'a>(
+    fn add_parameter_annotation<'a>(
         &'a mut self,
+        memo: Option<&'a mut InternMemo>,
         parameter: u8,
         descriptor: &JavaStr,
         visible: bool,
@@ -395,16 +512,155 @@ impl MethodVisitor for MethodNode {
             &mut self.invisible_parameter_annotations
         };
         if parameter_annotations.is_empty() {
-            let params = Type::try_get_argument_count_of(&self.desc).unwrap_or(0);
+            let params =
+                Type::try_get_argument_count_of(self.interner.resolve(self.desc)).unwrap_or(0);
             parameter_annotations.resize_with(params, Vec::new);
         }
         let parameter = usize::from(parameter);
         if parameter >= parameter_annotations.len() {
             parameter_annotations.resize_with(parameter + 1, Vec::new);
         }
+        let mut strings = Self::strings(&self.interner, memo);
         let annotations = &mut parameter_annotations[parameter];
-        annotations.push(AnnotationNode::new(descriptor));
-        Some(Box::new(annotations.last_mut().expect("just added")))
+        annotations.push(AnnotationNode::new(strings.get(descriptor)));
+        let annotation = annotations.last_mut().expect("just added");
+        Some(Box::new(AnnotationNodeVisitor::new(annotation, strings)))
+    }
+
+    /// The annotation goes to the last real instruction (not a label, frame or line number).
+    /// If there is none, which only a malformed class file causes, it is not stored (ASM throws
+    /// a `NullPointerException`).
+    fn add_insn_annotation<'a>(
+        &'a mut self,
+        memo: Option<&'a mut InternMemo>,
+        type_ref: TypeReference,
+        type_path: Option<&TypePath>,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        // Find the last real instruction, i.e. the instruction targeted by this annotation.
+        let mut current_insn = self.instructions.last();
+        while let Some(id) = current_insn
+            && self.instructions[id].opcode().is_none()
+        {
+            current_insn = self.instructions.previous(id);
+        }
+        let insn: &mut InsnNode = &mut self.instructions[current_insn?];
+        // Add the annotation to this instruction.
+        let annotations = insn.type_annotations_mut();
+        add_type_annotation(
+            &mut annotations.visible,
+            &mut annotations.invisible,
+            Self::strings(&self.interner, memo),
+            type_ref,
+            type_path,
+            descriptor,
+            visible,
+        )
+    }
+
+    /// The annotation goes to the try catch block whose index is in the type reference. If
+    /// there is no such block, which only a malformed class file causes, it is not stored (ASM
+    /// throws an `IndexOutOfBoundsException`).
+    fn add_try_catch_annotation<'a>(
+        &'a mut self,
+        memo: Option<&'a mut InternMemo>,
+        type_ref: TypeReference,
+        type_path: Option<&TypePath>,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        let index = (type_ref.get_value() & 0x00FF_FF00) >> 8;
+        let try_catch_block = self.try_catch_blocks.get_mut(index as usize)?;
+        add_type_annotation(
+            &mut try_catch_block.visible_type_annotations,
+            &mut try_catch_block.invisible_type_annotations,
+            Self::strings(&self.interner, memo),
+            type_ref,
+            type_path,
+            descriptor,
+            visible,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)] // ASM's signature, and the strings
+    fn add_local_variable_annotation<'a>(
+        &'a mut self,
+        memo: Option<&'a mut InternMemo>,
+        type_ref: TypeReference,
+        type_path: Option<&TypePath>,
+        start: &[Label],
+        end: &[Label],
+        index: &[u16],
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        let annotations = if visible {
+            &mut self.visible_local_variable_annotations
+        } else {
+            &mut self.invisible_local_variable_annotations
+        };
+        let mut strings = Self::strings(&self.interner, memo);
+        annotations.push(LocalVariableAnnotationNode::new(
+            type_ref,
+            type_path.cloned(),
+            start.iter().copied().map(plain).collect(),
+            end.iter().copied().map(plain).collect(),
+            index.to_vec(),
+            strings.get(descriptor),
+        ));
+        let annotation = annotations.last_mut().expect("just added");
+        Some(Box::new(AnnotationNodeVisitor::new(
+            &mut annotation.annotation,
+            strings,
+        )))
+    }
+}
+
+/// A method node visited on its own interns each visited string directly in its interner (a
+/// [`ClassNode`](crate::ClassNode) interns them through its memo).
+impl MethodVisitor for MethodNode {
+    fn visit_parameter(&mut self, name: Option<&JavaStr>, access: u32) {
+        self.add_parameter(None, name, access);
+    }
+
+    fn visit_annotation_default<'a>(&'a mut self) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.add_annotation_default(None)
+    }
+
+    fn visit_annotation<'a>(
+        &'a mut self,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.add_annotation(None, descriptor, visible)
+    }
+
+    fn visit_type_annotation<'a>(
+        &'a mut self,
+        type_ref: TypeReference,
+        type_path: Option<&TypePath>,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.add_type_annotation(None, type_ref, type_path, descriptor, visible)
+    }
+
+    fn visit_annotable_parameter_count(&mut self, parameter_count: u8, visible: bool) {
+        if visible {
+            self.visible_annotable_parameter_count = parameter_count;
+        } else {
+            self.invisible_annotable_parameter_count = parameter_count;
+        }
+    }
+
+    fn visit_parameter_annotation<'a>(
+        &'a mut self,
+        parameter: u8,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.add_parameter_annotation(None, parameter, descriptor, visible)
     }
 
     fn visit_attribute(&mut self, attribute: &Attribute) {
@@ -421,13 +677,7 @@ impl MethodVisitor for MethodNode {
         locals: &[FrameValue<'_>],
         stack: &[FrameValue<'_>],
     ) {
-        let mut frame = FrameNode::new(kind, locals, stack);
-        for value in frame.local.iter_mut().chain(&mut frame.stack) {
-            if let FrameValue::Uninitialized(label) = value {
-                *label = plain(*label);
-            }
-        }
-        self.instructions.add(frame);
+        self.add_frame(None, kind, locals, stack);
     }
 
     fn visit_insn(&mut self, opcode: u8) {
@@ -446,7 +696,7 @@ impl MethodVisitor for MethodNode {
     }
 
     fn visit_type_insn(&mut self, opcode: u8, type_: &JavaStr) {
-        self.add_type_insn(&mut Unshared, opcode, type_);
+        self.add_type_insn(None, opcode, type_);
     }
 
     fn visit_field_insn(
@@ -456,7 +706,7 @@ impl MethodVisitor for MethodNode {
         name: &JavaStr,
         descriptor: &JavaStr,
     ) {
-        self.add_field_insn(&mut Unshared, opcode, owner, name, descriptor);
+        self.add_field_insn(None, opcode, owner, name, descriptor);
     }
 
     fn visit_method_insn(
@@ -467,7 +717,7 @@ impl MethodVisitor for MethodNode {
         descriptor: &JavaStr,
         is_interface: bool,
     ) {
-        self.add_method_insn(&mut Unshared, opcode, owner, name, descriptor, is_interface);
+        self.add_method_insn(None, opcode, owner, name, descriptor, is_interface);
     }
 
     fn visit_invoke_dynamic_insn(
@@ -478,7 +728,7 @@ impl MethodVisitor for MethodNode {
         bootstrap_method_arguments: &[Constant<'_>],
     ) {
         self.add_invoke_dynamic_insn(
-            &mut Unshared,
+            None,
             name,
             descriptor,
             bootstrap_method_handle,
@@ -498,7 +748,7 @@ impl MethodVisitor for MethodNode {
     }
 
     fn visit_ldc_insn(&mut self, value: &Constant<'_>) {
-        self.instructions.add(Insn::Ldc(value.to_owned()));
+        self.add_ldc_insn(None, value);
     }
 
     fn visit_iinc_insn(&mut self, var_index: u16, increment: i16) {
@@ -526,12 +776,9 @@ impl MethodVisitor for MethodNode {
     }
 
     fn visit_multi_a_new_array_insn(&mut self, descriptor: &JavaStr, num_dimensions: u8) {
-        self.add_multi_a_new_array_insn(&mut Unshared, descriptor, num_dimensions);
+        self.add_multi_a_new_array_insn(None, descriptor, num_dimensions);
     }
 
-    /// The annotation goes to the last real instruction (not a label, frame or line number).
-    /// If there is none, which only a malformed class file causes, it is not stored (ASM throws
-    /// a `NullPointerException`).
     fn visit_insn_annotation<'a>(
         &'a mut self,
         type_ref: TypeReference,
@@ -539,24 +786,7 @@ impl MethodVisitor for MethodNode {
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
-        // Find the last real instruction, i.e. the instruction targeted by this annotation.
-        let mut current_insn = self.instructions.last();
-        while let Some(id) = current_insn
-            && self.instructions[id].opcode().is_none()
-        {
-            current_insn = self.instructions.previous(id);
-        }
-        let insn: &mut InsnNode = &mut self.instructions[current_insn?];
-        // Add the annotation to this instruction.
-        let annotations = insn.type_annotations_mut();
-        add_type_annotation(
-            &mut annotations.visible,
-            &mut annotations.invisible,
-            type_ref,
-            type_path,
-            descriptor,
-            visible,
-        )
+        self.add_insn_annotation(None, type_ref, type_path, descriptor, visible)
     }
 
     fn visit_try_catch_block(
@@ -566,12 +796,9 @@ impl MethodVisitor for MethodNode {
         handler: Label,
         type_: Option<&JavaStr>,
     ) {
-        self.add_try_catch_block(&mut Unshared, start, end, handler, type_);
+        self.add_try_catch_block(None, start, end, handler, type_);
     }
 
-    /// The annotation goes to the try catch block whose index is in the type reference. If
-    /// there is no such block, which only a malformed class file causes, it is not stored (ASM
-    /// throws an `IndexOutOfBoundsException`).
     fn visit_try_catch_annotation<'a>(
         &'a mut self,
         type_ref: TypeReference,
@@ -579,11 +806,202 @@ impl MethodVisitor for MethodNode {
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
-        let index = (type_ref.get_value() & 0x00FF_FF00) >> 8;
-        let try_catch_block = self.try_catch_blocks.get_mut(index as usize)?;
-        add_type_annotation(
-            &mut try_catch_block.visible_type_annotations,
-            &mut try_catch_block.invisible_type_annotations,
+        self.add_try_catch_annotation(None, type_ref, type_path, descriptor, visible)
+    }
+
+    fn visit_local_variable(
+        &mut self,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        signature: Option<&JavaStr>,
+        start: Label,
+        end: Label,
+        index: u16,
+    ) {
+        self.add_local_variable(None, name, descriptor, signature, start, end, index);
+    }
+
+    #[allow(clippy::too_many_arguments)] // ASM's signature
+    fn visit_local_variable_annotation<'a>(
+        &'a mut self,
+        type_ref: TypeReference,
+        type_path: Option<&TypePath>,
+        start: &[Label],
+        end: &[Label],
+        index: &[u16],
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.add_local_variable_annotation(
+            None, type_ref, type_path, start, end, index, descriptor, visible,
+        )
+    }
+
+    fn visit_line_number(&mut self, line: u16, start: Label) {
+        self.instructions.add(Insn::Line {
+            line,
+            start: plain(start),
+        });
+    }
+
+    fn visit_maxs(&mut self, max_stack: u16, max_locals: u16) {
+        self.max_stack = max_stack;
+        self.max_locals = max_locals;
+    }
+
+    fn visit_end(&mut self) {
+        // Nothing to do.
+    }
+}
+
+/// The method visitor of a method node that a class node visits: it interns the strings of the
+/// method through the class node's memo, and otherwise delegates to the method node.
+pub(crate) struct PooledMethodNode<'a> {
+    pub(crate) node: &'a mut MethodNode,
+    pub(crate) memo: &'a mut InternMemo,
+}
+
+impl MethodVisitor for PooledMethodNode<'_> {
+    fn delegate(&mut self) -> Option<&mut dyn MethodVisitor> {
+        Some(self.node)
+    }
+
+    fn visit_parameter(&mut self, name: Option<&JavaStr>, access: u32) {
+        self.node.add_parameter(Some(self.memo), name, access);
+    }
+
+    fn visit_annotation_default<'a>(&'a mut self) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.node.add_annotation_default(Some(self.memo))
+    }
+
+    fn visit_annotation<'a>(
+        &'a mut self,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.node
+            .add_annotation(Some(self.memo), descriptor, visible)
+    }
+
+    fn visit_type_annotation<'a>(
+        &'a mut self,
+        type_ref: TypeReference,
+        type_path: Option<&TypePath>,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.node
+            .add_type_annotation(Some(self.memo), type_ref, type_path, descriptor, visible)
+    }
+
+    fn visit_parameter_annotation<'a>(
+        &'a mut self,
+        parameter: u8,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.node
+            .add_parameter_annotation(Some(self.memo), parameter, descriptor, visible)
+    }
+
+    fn visit_frame(
+        &mut self,
+        kind: FrameKind,
+        locals: &[FrameValue<'_>],
+        stack: &[FrameValue<'_>],
+    ) {
+        self.node.add_frame(Some(self.memo), kind, locals, stack);
+    }
+
+    fn visit_type_insn(&mut self, opcode: u8, type_: &JavaStr) {
+        self.node.add_type_insn(Some(self.memo), opcode, type_);
+    }
+
+    fn visit_field_insn(
+        &mut self,
+        opcode: u8,
+        owner: &JavaStr,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+    ) {
+        self.node
+            .add_field_insn(Some(self.memo), opcode, owner, name, descriptor);
+    }
+
+    fn visit_method_insn(
+        &mut self,
+        opcode: u8,
+        owner: &JavaStr,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        is_interface: bool,
+    ) {
+        self.node.add_method_insn(
+            Some(self.memo),
+            opcode,
+            owner,
+            name,
+            descriptor,
+            is_interface,
+        );
+    }
+
+    fn visit_invoke_dynamic_insn(
+        &mut self,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        bootstrap_method_handle: &Handle,
+        bootstrap_method_arguments: &[Constant<'_>],
+    ) {
+        self.node.add_invoke_dynamic_insn(
+            Some(self.memo),
+            name,
+            descriptor,
+            bootstrap_method_handle,
+            bootstrap_method_arguments,
+        );
+    }
+
+    fn visit_ldc_insn(&mut self, value: &Constant<'_>) {
+        self.node.add_ldc_insn(Some(self.memo), value);
+    }
+
+    fn visit_multi_a_new_array_insn(&mut self, descriptor: &JavaStr, num_dimensions: u8) {
+        self.node
+            .add_multi_a_new_array_insn(Some(self.memo), descriptor, num_dimensions);
+    }
+
+    fn visit_insn_annotation<'a>(
+        &'a mut self,
+        type_ref: TypeReference,
+        type_path: Option<&TypePath>,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.node
+            .add_insn_annotation(Some(self.memo), type_ref, type_path, descriptor, visible)
+    }
+
+    fn visit_try_catch_block(
+        &mut self,
+        start: Label,
+        end: Label,
+        handler: Label,
+        type_: Option<&JavaStr>,
+    ) {
+        self.node
+            .add_try_catch_block(Some(self.memo), start, end, handler, type_);
+    }
+
+    fn visit_try_catch_annotation<'a>(
+        &'a mut self,
+        type_ref: TypeReference,
+        type_path: Option<&TypePath>,
+        descriptor: &JavaStr,
+        visible: bool,
+    ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        self.node.add_try_catch_annotation(
+            Some(self.memo),
             type_ref,
             type_path,
             descriptor,
@@ -600,8 +1018,8 @@ impl MethodVisitor for MethodNode {
         end: Label,
         index: u16,
     ) {
-        self.add_local_variable(
-            &mut Unshared,
+        self.node.add_local_variable(
+            Some(self.memo),
             name,
             descriptor,
             signature,
@@ -622,126 +1040,15 @@ impl MethodVisitor for MethodNode {
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
-        let annotations = if visible {
-            &mut self.visible_local_variable_annotations
-        } else {
-            &mut self.invisible_local_variable_annotations
-        };
-        annotations.push(LocalVariableAnnotationNode::new(
+        self.node.add_local_variable_annotation(
+            Some(self.memo),
             type_ref,
-            type_path.cloned(),
-            start.iter().copied().map(plain).collect(),
-            end.iter().copied().map(plain).collect(),
-            index.to_vec(),
+            type_path,
+            start,
+            end,
+            index,
             descriptor,
-        ));
-        let annotation = annotations.last_mut().expect("just added");
-        Some(Box::new(&mut annotation.annotation))
-    }
-
-    fn visit_line_number(&mut self, line: u16, start: Label) {
-        self.instructions.add(Insn::Line {
-            line,
-            start: plain(start),
-        });
-    }
-
-    fn visit_maxs(&mut self, max_stack: u16, max_locals: u16) {
-        self.max_stack = max_stack;
-        self.max_locals = max_locals;
-    }
-
-    fn visit_end(&mut self) {
-        // Nothing to do.
-    }
-}
-
-/// The method visitor of a method node that a class node visits: it shares the strings of the
-/// method with those of the class, through the class node's pool, and otherwise delegates to the
-/// method node.
-pub(crate) struct PooledMethodNode<'a> {
-    pub(crate) node: &'a mut MethodNode,
-    pub(crate) strings: &'a mut StringPool,
-}
-
-impl MethodVisitor for PooledMethodNode<'_> {
-    fn delegate(&mut self) -> Option<&mut dyn MethodVisitor> {
-        Some(self.node)
-    }
-
-    fn visit_parameter(&mut self, name: Option<&JavaStr>, access: u32) {
-        self.node.add_parameter(self.strings, name, access);
-    }
-
-    fn visit_type_insn(&mut self, opcode: u8, type_: &JavaStr) {
-        self.node.add_type_insn(self.strings, opcode, type_);
-    }
-
-    fn visit_field_insn(
-        &mut self,
-        opcode: u8,
-        owner: &JavaStr,
-        name: &JavaStr,
-        descriptor: &JavaStr,
-    ) {
-        self.node
-            .add_field_insn(self.strings, opcode, owner, name, descriptor);
-    }
-
-    fn visit_method_insn(
-        &mut self,
-        opcode: u8,
-        owner: &JavaStr,
-        name: &JavaStr,
-        descriptor: &JavaStr,
-        is_interface: bool,
-    ) {
-        self.node
-            .add_method_insn(self.strings, opcode, owner, name, descriptor, is_interface);
-    }
-
-    fn visit_invoke_dynamic_insn(
-        &mut self,
-        name: &JavaStr,
-        descriptor: &JavaStr,
-        bootstrap_method_handle: &Handle,
-        bootstrap_method_arguments: &[Constant<'_>],
-    ) {
-        self.node.add_invoke_dynamic_insn(
-            self.strings,
-            name,
-            descriptor,
-            bootstrap_method_handle,
-            bootstrap_method_arguments,
-        );
-    }
-
-    fn visit_multi_a_new_array_insn(&mut self, descriptor: &JavaStr, num_dimensions: u8) {
-        self.node
-            .add_multi_a_new_array_insn(self.strings, descriptor, num_dimensions);
-    }
-
-    fn visit_try_catch_block(
-        &mut self,
-        start: Label,
-        end: Label,
-        handler: Label,
-        type_: Option<&JavaStr>,
-    ) {
-        self.node
-            .add_try_catch_block(self.strings, start, end, handler, type_);
-    }
-
-    fn visit_local_variable(
-        &mut self,
-        name: &JavaStr,
-        descriptor: &JavaStr,
-        signature: Option<&JavaStr>,
-        start: Label,
-        end: Label,
-        index: u16,
-    ) {
-        self.node
-            .add_local_variable(self.strings, name, descriptor, signature, start, end, index);
+            visible,
+        )
     }
 }

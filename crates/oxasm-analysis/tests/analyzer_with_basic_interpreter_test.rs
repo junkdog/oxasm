@@ -91,8 +91,13 @@ fn test_analyze_basic_interpreter() {
         let mut method_frames: Vec<Vec<Option<Frame<BasicValue>>>> = Vec::new();
         for method_node in &class_node.methods {
             let frames = analyzer
-                .analyze(&class_node.name, method_node)
-                .unwrap_or_else(|e| panic!("{class_parameter} {}: {e}", method_node.name))
+                .analyze(class_node.resolve(class_node.name), method_node)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{class_parameter} {}: {e}",
+                        method_node.resolve(method_node.name)
+                    )
+                })
                 .to_vec();
             method_frames.push(frames);
         }
@@ -120,10 +125,17 @@ fn test_analyze_and_compute_maxs_basic_interpreter() {
         let mut analyzer = Analyzer::new(BasicInterpreter::new());
 
         let mut analyzed_method_maxs: Vec<(u16, u16)> = Vec::new();
+        let interner = class_node.interner().clone();
+        let owner = interner.resolve(class_node.name);
         for method_node in &mut class_node.methods {
             analyzer
-                .analyze_and_compute_maxs(&class_node.name, method_node)
-                .unwrap_or_else(|e| panic!("{class_parameter} {}: {e}", method_node.name));
+                .analyze_and_compute_maxs(owner, method_node)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "{class_parameter} {}: {e}",
+                        interner.resolve(method_node.name)
+                    )
+                });
             analyzed_method_maxs.push((method_node.max_stack, method_node.max_locals));
         }
 
@@ -284,7 +296,7 @@ fn test_analyze_merge_with_jsr_reachable_from_two_different_paths() {
 
     analyzer
         .analyze(
-            &class_node.name,
+            class_node.resolve(class_node.name),
             get_method(&class_node, "basicStopBundles"),
         )
         .unwrap();
@@ -299,6 +311,6 @@ fn get_method<'a>(class_node: &'a ClassNode, name: &str) -> &'a MethodNode {
     class_node
         .methods
         .iter()
-        .find(|method_node| method_node.name == *name)
+        .find(|method_node| method_node.resolve(method_node.name) == name)
         .unwrap()
 }

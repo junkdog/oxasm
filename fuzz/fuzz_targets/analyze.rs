@@ -22,7 +22,7 @@ const MAX_FRAME_SLOTS: usize = 1 << 18;
 
 fn check<I: Interpreter>(class_node: &ClassNode, method: &MethodNode, interpreter: I) {
     let mut analyzer = Analyzer::new(interpreter);
-    match analyzer.analyze(&class_node.name, method) {
+    match analyzer.analyze(class_node.resolve(class_node.name), method) {
         Ok(frames) => assert!(frames.is_empty() || frames.len() == method.instructions.len()),
         Err(AnalyzerError { insn: Some(id), .. }) => {
             assert!(method.instructions.contains(id));
@@ -45,15 +45,16 @@ fuzz_target!(|data: &[u8]| {
         check(&class_node, method, BasicInterpreter);
         check(&class_node, method, BasicVerifier);
         check(&class_node, method, SourceInterpreter);
+        let resolve = |sym| Type::get_object_type(class_node.resolve(sym));
         let verifier = SimpleVerifier::for_class(
-            Type::get_object_type(&class_node.name),
-            class_node.super_name.as_ref().map(Type::get_object_type),
-            class_node.interfaces.iter().map(Type::get_object_type).collect(),
+            resolve(class_node.name),
+            class_node.super_name.map(resolve),
+            class_node.interfaces.iter().copied().map(resolve).collect(),
             class_node.access & ACC_INTERFACE != 0,
             ObjectHierarchy,
         );
         check(&class_node, method, verifier);
         let mut method = method.clone();
-        let _ = Analyzer::new(BasicInterpreter).analyze_and_compute_maxs(&class_node.name, &mut method);
+        let _ = Analyzer::new(BasicInterpreter).analyze_and_compute_maxs(class_node.resolve(class_node.name), &mut method);
     }
 });

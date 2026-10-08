@@ -5,6 +5,7 @@
 
 use std::collections::VecDeque;
 use std::fmt;
+use std::sync::Arc;
 
 use oxasm::opcodes::*;
 use oxasm::{JavaStr, Label, MethodVisitor};
@@ -59,12 +60,13 @@ impl<'a> JsrInlinerAdapter<'a> {
         exceptions: &[&JavaStr],
     ) -> Self {
         JsrInlinerAdapter {
-            method_node: MethodNode::new(
+            method_node: MethodNode::from_strings(
+                Arc::default(),
                 access,
                 name,
                 descriptor,
-                signature.map(Into::into),
-                exceptions.iter().map(|&e| e.into()).collect(),
+                signature,
+                exceptions,
             ),
             mv: method_visitor,
             subroutines_insns: Vec::new(),
@@ -490,7 +492,7 @@ impl<'n> Inliner<'n> {
                     start,
                     end,
                     handler,
-                    try_catch_block_node.type_.clone(),
+                    try_catch_block_node.type_,
                 ));
             }
         }
@@ -505,9 +507,9 @@ impl<'n> Inliner<'n> {
                     panic!("java.lang.NullPointerException");
                 };
                 new_local_variables.push(LocalVariableNode::new(
-                    local_variable_node.name.clone(),
-                    local_variable_node.desc.clone(),
-                    local_variable_node.signature.clone(),
+                    local_variable_node.name,
+                    local_variable_node.desc,
+                    local_variable_node.signature,
                     start,
                     end,
                     local_variable_node.index,
@@ -637,7 +639,7 @@ impl<'n> Inliner<'n> {
             }
             Insn::Frame(frame) => {
                 for value in frame.local.iter().chain(&frame.stack) {
-                    if let oxasm::FrameValue::Uninitialized(label) = value {
+                    if let oxasm_tree::SymFrameValue::Uninitialized(label) = value {
                         add(*label);
                     }
                 }

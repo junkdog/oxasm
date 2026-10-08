@@ -36,14 +36,14 @@ pub fn analyze(
     hierarchy: Option<&dyn ClassHierarchy>,
 ) -> Result<Vec<u8>, String> {
     let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
-    let mut class_node = ClassNode::new();
+    let mut class_node = crate::parity::class_node();
     reader
         .accept(&mut class_node, options)
         .map_err(|e| e.to_string())?;
     let mut text = Vec::new();
     for method in &class_node.methods {
-        text.extend_from_slice(method.name.as_bytes());
-        text.extend_from_slice(method.desc.as_bytes());
+        text.extend_from_slice(method.resolve(method.name).as_bytes());
+        text.extend_from_slice(method.resolve(method.desc).as_bytes());
         text.push(b'\n');
         match interp {
             Interp::Basic => {
@@ -54,14 +54,11 @@ pub fn analyze(
             }
             Interp::SimpleVerifier => {
                 let hierarchy = hierarchy.ok_or("simpleverifier needs a hierarchy")?;
+                let resolve = |sym| Type::get_object_type(class_node.resolve(sym));
                 let verifier = SimpleVerifier::for_class(
-                    Type::get_object_type(&class_node.name),
-                    class_node.super_name.as_ref().map(Type::get_object_type),
-                    class_node
-                        .interfaces
-                        .iter()
-                        .map(Type::get_object_type)
-                        .collect(),
+                    resolve(class_node.name),
+                    class_node.super_name.map(resolve),
+                    class_node.interfaces.iter().copied().map(resolve).collect(),
                     class_node.access & ACC_INTERFACE != 0,
                     hierarchy,
                 );
@@ -105,7 +102,7 @@ fn analyze_method<I: Interpreter>(
     text: &mut Vec<u8>,
 ) -> Result<(), String> {
     let mut analyzer = Analyzer::new(interpreter);
-    let frames = match analyzer.analyze(&class_node.name, method) {
+    let frames = match analyzer.analyze(class_node.resolve(class_node.name), method) {
         Ok(frames) => frames,
         // ASM's AssertionError is not a RuntimeException: it escapes its analyzer, and the
         // oracle fails for the whole class.
@@ -131,7 +128,7 @@ fn analyze_method<I: Interpreter>(
     let mut trace_method_visitor = TraceMethodVisitor::new(&mut textifier);
     for (i, insn) in method.instructions.iter().enumerate() {
         let start = trace_method_visitor.p.get_text().len();
-        insn.accept(&mut trace_method_visitor);
+        insn.accept(method.interner(), &mut trace_method_visitor);
         let insn_text: JavaString =
             text_to_java_string(&trace_method_visitor.p.get_text()[start..]);
         write!(text, "{i} ").expect("writing to a vector");

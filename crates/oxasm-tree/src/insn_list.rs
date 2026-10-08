@@ -6,7 +6,7 @@ use std::ops::{Index, IndexMut};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use oxasm::{Label, MethodVisitor};
+use oxasm::{Interner, Label, MethodVisitor};
 use rustc_hash::FxHashMap;
 
 use crate::insn::InsnNode;
@@ -226,10 +226,11 @@ impl InsnList {
         self.ids().map(|id| (id, &self[id]))
     }
 
-    /// Makes the given visitor visit all the instructions in this list.
-    pub fn accept(&self, method_visitor: &mut dyn MethodVisitor) {
+    /// Makes the given visitor visit all the instructions in this list, with the strings of the
+    /// given interner (that of the method that holds the list).
+    pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
         for node in self {
-            node.accept(method_visitor);
+            node.accept(interner, method_visitor);
         }
     }
 

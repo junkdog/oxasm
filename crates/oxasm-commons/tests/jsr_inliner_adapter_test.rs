@@ -8,6 +8,8 @@
 mod common;
 
 use common::{MethodNodeBuilder, build_class_with_method, to_text};
+use std::sync::Arc;
+
 use oxasm::opcodes::*;
 use oxasm::{
     ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, JavaStr, Label, MethodVisitor,
@@ -32,7 +34,14 @@ fn labels<const N: usize>() -> [Label; N] {
 /// ASM's `inputMethod.accept(new JSRInlinerAdapter(inlinedMethod, ACC_PUBLIC, "m", "()V", null,
 /// null))`: the inlined method.
 fn inline(input_method: &MethodNode) -> MethodNode {
-    let mut inlined_method = MethodNode::new(ACC_PUBLIC, "m", "()V", None, Vec::new());
+    let mut inlined_method = MethodNode::from_strings(
+        Arc::default(),
+        ACC_PUBLIC,
+        jstr!("m"),
+        jstr!("()V"),
+        None,
+        &[],
+    );
     input_method.accept_method_visitor(&mut JsrInlinerAdapter::new(
         Some(Box::new(&mut inlined_method)),
         ACC_PUBLIC,

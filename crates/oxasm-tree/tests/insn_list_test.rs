@@ -13,7 +13,7 @@
 //! - `testResetLabels` is dropped: labels are plain ids with no per-writer state (ADR-03), and
 //!   `resetLabels` is gone.
 
-use oxasm::{Label, MethodVisitor};
+use oxasm::{Interner, Label, MethodVisitor};
 use oxasm_tree::{Insn, InsnId, InsnList, InsnNode};
 use proptest::prelude::*;
 
@@ -109,7 +109,7 @@ fn test_accept_clone_list_visitor() {
     insn_list.add(new_insn(77));
     let mut dst_insn_list = InsnList::new();
 
-    insn_list.accept(&mut CloneVisitor(&mut dst_insn_list));
+    insn_list.accept(&Interner::new(), &mut CloneVisitor(&mut dst_insn_list));
 
     assert_eq!(dst_insn_list.len(), 2);
     assert_eq!(dst_insn_list.get(0).unwrap().opcode(), Some(55));

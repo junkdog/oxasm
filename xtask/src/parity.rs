@@ -11,10 +11,11 @@
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
 use oxasm::{
-    ClassHierarchy, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, JavaStr,
+    ClassHierarchy, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, Interner, JavaStr,
     MapHierarchy, ParsingOptions,
 };
 use oxasm_tree::ClassNode;
@@ -597,6 +598,13 @@ fn oxasm_outcome(
     }
 }
 
+/// An empty class node, whose strings are interned in the interner of this worker thread: shared
+/// by every class the thread reads, as sift shares one for a classpath.
+pub(crate) fn class_node() -> ClassNode {
+    thread_local!(static INTERNER: Arc<Interner> = Arc::default());
+    ClassNode::with_interner(INTERNER.with(Arc::clone))
+}
+
 /// oxasm's side of a Textifier or ASMifier mode: the text printed by a `TraceClassVisitor` with
 /// the given printer (ASM's `Oracle.print`).
 fn print_class(
@@ -609,7 +617,7 @@ fn print_class(
     let mut trace_class_visitor = TraceClassVisitor::with_printer(printer, &mut output);
     let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
     if tree {
-        let mut class_node = ClassNode::default();
+        let mut class_node = class_node();
         reader
             .accept(&mut class_node, options)
             .map_err(|e| e.to_string())?;
@@ -644,7 +652,7 @@ fn write_class(
         None => class_writer,
     };
     if tree {
-        let mut class_node = ClassNode::default();
+        let mut class_node = class_node();
         reader
             .accept(&mut class_node, roundtrip.options)
             .map_err(|e| e.to_string())?;

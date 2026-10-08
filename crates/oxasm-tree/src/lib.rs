@@ -13,6 +13,13 @@
 //! - ASM's `getNext()`/`getPrevious()` and `indexOf` are methods of the list, which owns the
 //!   nodes.
 //!
+//! The strings of the nodes are interned [`Sym`](oxasm::Sym)s (ADR-04's P9 amendment): four
+//! bytes each, compared and hashed as integers. A [`ClassNode`], [`MethodNode`], [`FieldNode`],
+//! [`RecordComponentNode`] or [`ModuleNode`] holds its [`Interner`](oxasm::Interner), in an
+//! `Arc` (and so do the members of a class node: the class's); the other nodes hold symbols of
+//! the interner of the node that holds them, and their `accept` methods take that interner. The
+//! constants a tree stores are [`SymConstant`]s, [`SymHandle`]s and the like.
+//!
 //! Every node is `Send + Sync`.
 //!
 //! [`oxasm`]: https://docs.rs/oxasm
@@ -27,9 +34,11 @@ mod method_node;
 mod module_node;
 mod nodes;
 mod strings;
+mod value;
 
 pub use annotation_node::{
-    AnnotationNode, AnnotationNodeValue, LocalVariableAnnotationNode, TypeAnnotationNode,
+    AnnotationNode, AnnotationNodeValue, AnnotationNodeVisitor, LocalVariableAnnotationNode,
+    TypeAnnotationNode,
 };
 pub use class_node::ClassNode;
 pub use field_node::{FieldNode, RecordComponentNode};
@@ -41,3 +50,4 @@ pub use module_node::{
     ModuleExportNode, ModuleNode, ModuleOpenNode, ModuleProvideNode, ModuleRequireNode,
 };
 pub use nodes::{InnerClassNode, LocalVariableNode, ParameterNode, TryCatchBlockNode};
+pub use value::{SymConstant, SymConstantDynamic, SymFrameValue, SymHandle};

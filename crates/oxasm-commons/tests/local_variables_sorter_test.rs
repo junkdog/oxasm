@@ -18,7 +18,7 @@ use oxasm::{
 };
 use oxasm_commons::LocalVariablesSorter;
 use oxasm_testkit::{PrecompiledClass, panic_message, t0_resource};
-use oxasm_tree::MethodNode;
+use oxasm_tree::{MethodNode, SymFrameValue};
 
 use common::{
     LocalVariablesSorterClassAdapter, assert_new_instance, assert_precompiled_new_instance,
@@ -185,11 +185,11 @@ fn test_visit_frame_remaps_and_compacts_locals() {
     assert_eq!(
         frame.local,
         [
-            FrameValue::Integer,
-            FrameValue::Long,
-            FrameValue::Object(jstr!("A").into()),
-            FrameValue::Double,
+            SymFrameValue::Integer,
+            SymFrameValue::Long,
+            SymFrameValue::Object(method_node.intern("A")),
+            SymFrameValue::Double,
         ]
     );
-    assert_eq!(frame.stack, [FrameValue::Null]);
+    assert_eq!(frame.stack, [SymFrameValue::Null]);
 }

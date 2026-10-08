@@ -283,6 +283,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
                 .iter_with_ids()
                 .enumerate()
                 .map(|(index, (id, node))| InsnRef {
+                    interner: method.interner(),
                     list: insn_list,
                     id,
                     index,
@@ -383,7 +384,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                 .new_parameter_value(is_instance_method, 0, &owner_type)?;
             set_local(&mut locals, value, "newParameterValue")?;
         }
-        let argument_types = Type::try_get_argument_types_of(&self.method.desc)
+        let argument_types = Type::try_get_argument_types_of(self.method.resolve(self.method.desc))
             .map_err(|e| AnalyzerError::runtime(e.message()))?;
         for argument_type in &argument_types {
             let local = locals.len();
@@ -400,7 +401,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
             let value = self.interpreter.new_empty_value(locals.len())?;
             set_local(&mut locals, value, "newEmptyValue")?;
         }
-        let return_type = Type::try_get_return_type_of(&self.method.desc)
+        let return_type = Type::try_get_return_type_of(self.method.resolve(self.method.desc))
             .map_err(|e| AnalyzerError::runtime(e.message()))?;
         let mut frame = Frame::new(locals, max_stack);
         frame.set_return(self.interpreter.new_return_type_value(&return_type)?);
@@ -544,8 +545,11 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
 
         for &try_catch_block_index in &handlers[insn_index] {
             let try_catch_block = &method.try_catch_blocks[try_catch_block_index];
-            let catch_type =
-                checked_object_type(try_catch_block.type_.as_deref().unwrap_or(THROWABLE))?;
+            let catch_type = checked_object_type(
+                try_catch_block
+                    .type_
+                    .map_or(THROWABLE, |t| method.resolve(t)),
+            )?;
             let handler_index = self.label_index(try_catch_block.handler)?;
             if self.hooks.new_control_flow_exception_edge_of(
                 insn_index,
@@ -831,7 +835,7 @@ fn mark_used(locals_used: &mut [bool], var_index: usize) -> Result<(), AnalyzerE
 
 /// The maximum number of local variables used in the given method (ASM's `computeMaxLocals`).
 fn compute_max_locals(method: &MethodNode) -> Result<usize, AnalyzerError> {
-    let sizes = Type::try_get_arguments_and_return_sizes_of(&method.desc)
+    let sizes = Type::try_get_arguments_and_return_sizes_of(method.resolve(method.desc))
         .map_err(|e| AnalyzerError::new(None, e.message()))?;
     let mut max_locals = (sizes >> 2) as usize;
     if method.access & ACC_STATIC != 0 {
