@@ -33,16 +33,16 @@ enum Repr {
     ReturnAddress,
     /// A value created with [`BasicValue::new`]. The type is shared, so that frames copy their
     /// values cheaply.
-    Of(Arc<Type>),
+    Of(Arc<Type<'static>>),
 }
 
 /// The type of `REFERENCE_VALUE`.
-static OBJECT: Type = Type::static_object_type(oxasm::jstr!("java/lang/Object"));
-static INT: Type = Type::INT;
-static FLOAT: Type = Type::FLOAT;
-static LONG: Type = Type::LONG;
-static DOUBLE: Type = Type::DOUBLE;
-static VOID: Type = Type::VOID;
+static OBJECT: Type<'static> = Type::static_object_type(oxasm::jstr!("java/lang/Object"));
+static INT: Type<'static> = Type::INT;
+static FLOAT: Type<'static> = Type::FLOAT;
+static LONG: Type<'static> = Type::LONG;
+static DOUBLE: Type<'static> = Type::DOUBLE;
+static VOID: Type<'static> = Type::VOID;
 
 impl BasicValue {
     /// An uninitialized value.
@@ -61,15 +61,15 @@ impl BasicValue {
     pub const RETURNADDRESS_VALUE: BasicValue = BasicValue(Repr::ReturnAddress);
 
     /// Constructs a new value of the given type, `None` for an uninitialized value.
-    pub fn new(ty: Option<Type>) -> BasicValue {
+    pub fn new(ty: Option<Type<'_>>) -> BasicValue {
         match ty {
             None => BasicValue::UNINITIALIZED_VALUE,
-            Some(ty) => BasicValue(Repr::Of(Arc::new(ty))),
+            Some(ty) => BasicValue(Repr::Of(Arc::new(ty.into_owned()))),
         }
     }
 
     /// The type of this value, or `None` for uninitialized values (ASM's `getType()`).
-    pub fn get_type(&self) -> Option<&Type> {
+    pub fn get_type(&self) -> Option<&Type<'static>> {
         Some(match &self.0 {
             Repr::Uninitialized => return None,
             Repr::Int => &INT,

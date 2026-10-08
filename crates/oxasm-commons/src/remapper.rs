@@ -415,7 +415,7 @@ pub mod defaults {
 
     /// ASM's private `mapType(Type)`: the given type, remapped with [`Remapper::map`] (object
     /// types and array element types) and [`Remapper::map_method_desc`] (method types).
-    pub fn map_type_value<R: Remapper + ?Sized>(remapper: &R, type_: &Type) -> Type {
+    pub fn map_type_value<'a, R: Remapper + ?Sized>(remapper: &R, type_: &Type<'a>) -> Type<'a> {
         match type_.get_sort() {
             TypeSort::Array => {
                 let mut remapped_descriptor = JavaString::new();
@@ -425,16 +425,17 @@ pub mod defaults {
                 remapped_descriptor.push_java_str(
                     &map_type_value(remapper, &type_.get_element_type()).get_descriptor(),
                 );
-                Type::get_type(remapped_descriptor)
+                Type::get_type(&remapped_descriptor).into_owned()
             }
             TypeSort::Object => match remapper.map(type_.get_internal_name()) {
                 Some(remapped_internal_name) => {
-                    crate::support::object_type(&remapped_internal_name)
+                    crate::support::object_type(&remapped_internal_name).into_owned()
                 }
                 None => type_.clone(),
             },
             TypeSort::Method => {
-                Type::get_method_type(remapper.map_method_desc(&type_.get_descriptor()))
+                Type::get_method_type(&*remapper.map_method_desc(&type_.get_descriptor()))
+                    .into_owned()
             }
             _ => type_.clone(),
         }

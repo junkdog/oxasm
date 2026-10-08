@@ -1,9 +1,14 @@
 //! A Java field or method type ([`Type`]): ASM's `Type`, which makes it easier to manipulate type
 //! and method descriptors (ADR-15).
 //!
-//! A `Type` is a window into a descriptor buffer, as in Java. The buffer is either `'static` (the
-//! primitive types, usable in `const`s) or an `Arc<JavaStr>` shared by every `Type` derived from
-//! it ([`Type::get_argument_types`] does not copy the method descriptor). Cloning is cheap.
+//! A `Type<'a>` is a window into a descriptor buffer, as in Java. The buffer is either borrowed
+//! for `'a` (the caller's descriptor, or a `'static` one such as the primitive types' in `const`s)
+//! or an `Arc<JavaStr>` shared by every `Type` derived from it. Parsing a descriptor borrows it
+//! instead of copying it, and the types derived from a type ([`Type::get_argument_types`],
+//! [`Type::get_element_type`], ...) share its buffer. Cloning is cheap.
+//!
+//! A `Type` that must outlive its descriptor is made owned with [`Type::into_owned`], which copies
+//! the descriptor once: `Type<'static>` is the type to store.
 //!
 //! Java's reflection entry points (`getType(Class)`, `getType(Method)`,
 //! `getType(Constructor)`, `getDescriptor(Class)`, ...) are not ported.
@@ -111,8 +116,10 @@ impl InvalidDescriptor {
 /// Equality and hashing compare the sort and the value (the internal name of object types, the
 /// descriptor of the others), as `Type.equals` does: `Type::get_object_type("I")` equals
 /// `Type::get_type("LI;")`.
+///
+/// The lifetime is the descriptor buffer's: see the [module documentation](self).
 #[derive(Clone)]
-pub struct Type {
+pub struct Type<'a> {
     /// The sort of this type. `Object` both for types created from a descriptor and from an
     /// internal name; `internal` tells the two apart (ASM's private `INTERNAL` sort).
     sort: TypeSort,
@@ -125,7 +132,7 @@ pub struct Type {
     /// For object types created from a descriptor, this buffer also contains the descriptor: the
     /// bytes in `begin..end` contain the internal name, and those in `begin - 1..end + 1` contain
     /// the descriptor.
-    buf: TypeBuf,
+    buf: TypeBuf<'a>,
     /// The beginning index, inclusive, of the value of this type in `buf`.
     begin: usize,
     /// The end index, exclusive, of the value of this type in `buf`.
@@ -133,16 +140,18 @@ pub struct Type {
 }
 
 #[derive(Clone)]
-enum TypeBuf {
+enum TypeBuf<'a> {
+    /// A `'static` buffer, which [`Type::into_owned`] keeps.
     Static(&'static JavaStr),
+    Borrowed(&'a JavaStr),
     Shared(Arc<JavaStr>),
 }
 
-impl TypeBuf {
+impl TypeBuf<'_> {
     #[inline]
     fn as_java_str(&self) -> &JavaStr {
         match self {
-            TypeBuf::Static(s) => s,
+            TypeBuf::Static(s) | TypeBuf::Borrowed(s) => s,
             TypeBuf::Shared(s) => s,
         }
     }
@@ -156,7 +165,7 @@ impl TypeBuf {
 /// The descriptors of the primitive types.
 const PRIMITIVE_DESCRIPTORS: &JavaStr = crate::jstr!("VZCBSIFJD");
 
-const fn primitive(sort: TypeSort) -> Type {
+const fn primitive(sort: TypeSort) -> Type<'static> {
     let index = sort as usize;
     Type {
         sort,
@@ -167,144 +176,213 @@ const fn primitive(sort: TypeSort) -> Type {
     }
 }
 
-impl Type {
+impl Type<'static> {
     /// The `void` type.
-    pub const VOID: Type = primitive(TypeSort::Void);
+    pub const VOID: Type<'static> = primitive(TypeSort::Void);
     /// The `boolean` type.
-    pub const BOOLEAN: Type = primitive(TypeSort::Boolean);
+    pub const BOOLEAN: Type<'static> = primitive(TypeSort::Boolean);
     /// The `char` type.
-    pub const CHAR: Type = primitive(TypeSort::Char);
+    pub const CHAR: Type<'static> = primitive(TypeSort::Char);
     /// The `byte` type.
-    pub const BYTE: Type = primitive(TypeSort::Byte);
+    pub const BYTE: Type<'static> = primitive(TypeSort::Byte);
     /// The `short` type.
-    pub const SHORT: Type = primitive(TypeSort::Short);
+    pub const SHORT: Type<'static> = primitive(TypeSort::Short);
     /// The `int` type.
-    pub const INT: Type = primitive(TypeSort::Int);
+    pub const INT: Type<'static> = primitive(TypeSort::Int);
     /// The `float` type.
-    pub const FLOAT: Type = primitive(TypeSort::Float);
+    pub const FLOAT: Type<'static> = primitive(TypeSort::Float);
     /// The `long` type.
-    pub const LONG: Type = primitive(TypeSort::Long);
+    pub const LONG: Type<'static> = primitive(TypeSort::Long);
     /// The `double` type.
-    pub const DOUBLE: Type = primitive(TypeSort::Double);
+    pub const DOUBLE: Type<'static> = primitive(TypeSort::Double);
 
+    /// [`Type::get_object_type`] of a `'static` internal name, usable in a `const` (no
+    /// allocation): `Type::static_object_type(jstr!("java/lang/Object"))`.
+    #[must_use]
+    pub const fn static_object_type(internal_name: &'static JavaStr) -> Type<'static> {
+        object_type(internal_name)
+    }
+
+    /// Returns the method type corresponding to the given argument and return types (Java's
+    /// `getMethodType(Type, Type...)`).
+    #[must_use]
+    pub fn get_method_type_of(
+        return_type: &Type<'_>,
+        argument_types: &[Type<'_>],
+    ) -> Type<'static> {
+        // The descriptor is written once, in place (ASM builds a `String`, which `getType` wraps).
+        let end = method_descriptor_len(return_type, argument_types);
+        let mut bytes = Arc::<[u8]>::new_uninit_slice(end);
+        let mut rest = &mut Arc::get_mut(&mut bytes).expect("a new Arc is unique")[..];
+        let mut put = |part: &[u8]| {
+            let (head, tail) = std::mem::take(&mut rest).split_at_mut(part.len());
+            head.write_copy_of_slice(part);
+            rest = tail;
+        };
+        put(b"(");
+        for argument_type in argument_types {
+            argument_type
+                .descriptor_parts()
+                .into_iter()
+                .for_each(&mut put);
+        }
+        put(b")");
+        return_type
+            .descriptor_parts()
+            .into_iter()
+            .for_each(&mut put);
+        assert!(rest.is_empty());
+        // SAFETY: the parts, whose lengths sum to the slice's, initialized every byte.
+        let bytes = unsafe { bytes.assume_init() };
+        // SAFETY: `JavaStr` is `repr(transparent)` over `[u8]`, so `Arc<[u8]>` and `Arc<JavaStr>`
+        // have the same layout and metadata; the bytes are canonical semi-UTF-8, a concatenation
+        // of ASCII and of whole descriptors (or internal names) of other types.
+        let descriptor = unsafe { Arc::from_raw(Arc::into_raw(bytes) as *const JavaStr) };
+        Type {
+            sort: TypeSort::Method,
+            internal: false,
+            buf: TypeBuf::Shared(descriptor),
+            begin: 0,
+            end,
+        }
+    }
+}
+
+impl<'a> Type<'a> {
     // ---------------------------------------------------------------------------------------------
     // Methods to get Type(s) from a descriptor, other types, etc.
     // ---------------------------------------------------------------------------------------------
 
-    /// Returns the type corresponding to the given field or method type descriptor.
+    /// Returns the type corresponding to the given field or method type descriptor. The type
+    /// borrows the descriptor.
     ///
     /// # Panics
     ///
     /// If the descriptor does not start with a type character (see [`Type::try_get_type`]).
     #[must_use]
     #[track_caller]
-    pub fn get_type(type_descriptor: impl AsRef<JavaStr>) -> Type {
+    pub fn get_type<S: AsRef<JavaStr> + ?Sized>(type_descriptor: &'a S) -> Type<'a> {
         Type::try_get_type(type_descriptor).unwrap_or_else(|e| e.throw())
     }
 
-    /// Returns the type corresponding to the given field or method type descriptor.
+    /// Returns the type corresponding to the given field or method type descriptor. The type
+    /// borrows the descriptor.
     ///
     /// # Errors
     ///
     /// If the descriptor does not start with a type character.
-    pub fn try_get_type(type_descriptor: impl AsRef<JavaStr>) -> Result<Type, InvalidDescriptor> {
+    pub fn try_get_type<S: AsRef<JavaStr> + ?Sized>(
+        type_descriptor: &'a S,
+    ) -> Result<Type<'a>, InvalidDescriptor> {
         let type_descriptor = type_descriptor.as_ref();
-        // A primitive type needs no copy of the descriptor.
-        if let Some(primitive) = type_descriptor
-            .as_bytes()
-            .first()
-            .and_then(|&c| primitive_of(c))
-        {
-            return Ok(primitive);
+        // The common cases, inline: an object type whose descriptor ends with an ASCII character
+        // (normally its `;`), and array and method types, whose value is the whole descriptor.
+        let (sort, begin, end) = match type_descriptor.as_bytes() {
+            [b'L', .., last] if last.is_ascii() => (TypeSort::Object, 1, type_descriptor.len() - 1),
+            [b'[', ..] => (TypeSort::Array, 0, type_descriptor.len()),
+            [b'(', ..] => (TypeSort::Method, 0, type_descriptor.len()),
+            _ => {
+                let buf = TypeBuf::Borrowed(type_descriptor);
+                return get_type_internal(&buf, 0, type_descriptor.len());
+            }
+        };
+        Ok(Type {
+            sort,
+            internal: false,
+            buf: TypeBuf::Borrowed(type_descriptor),
+            begin,
+            end,
+        })
+    }
+
+    /// This type, owning its descriptor: a borrowed buffer is copied (only the part this type
+    /// uses), a shared one is kept.
+    #[must_use]
+    pub fn into_owned(self) -> Type<'static> {
+        let Type {
+            sort,
+            internal,
+            buf,
+            begin,
+            end,
+        } = self;
+        match buf {
+            TypeBuf::Static(buf) => Type {
+                sort,
+                internal,
+                buf: TypeBuf::Static(buf),
+                begin,
+                end,
+            },
+            TypeBuf::Shared(buf) => Type {
+                sort,
+                internal,
+                buf: TypeBuf::Shared(buf),
+                begin,
+                end,
+            },
+            TypeBuf::Borrowed(s) => {
+                // An object type created from a descriptor keeps the characters around its value.
+                let (from, to) = if sort == TypeSort::Object && !internal {
+                    (begin - 1, end + next_char_len(s, end))
+                } else {
+                    (begin, end)
+                };
+                Type {
+                    sort,
+                    internal,
+                    buf: TypeBuf::Shared(Arc::from(&s[from..to])),
+                    begin: begin - from,
+                    end: end - from,
+                }
+            }
         }
-        let buf = shared(type_descriptor);
-        let end = buf.bytes().len();
-        get_type_internal(&buf, 0, end)
     }
 
     /// Returns the type of the elements of this array type. This method should only be used for
-    /// an array type.
+    /// an array type. The returned type shares this type's buffer.
     ///
     /// # Panics
     ///
     /// If this type is a malformed array type such as `[` (see [`Type::try_get_element_type`]).
     #[must_use]
     #[track_caller]
-    pub fn get_element_type(&self) -> Type {
+    pub fn get_element_type(&self) -> Type<'a> {
         self.try_get_element_type().unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the type of the elements of this array type. This method should only be used for
-    /// an array type.
+    /// an array type. The returned type shares this type's buffer.
     ///
     /// # Errors
     ///
     /// If the element type descriptor is missing or invalid.
-    pub fn try_get_element_type(&self) -> Result<Type, InvalidDescriptor> {
+    pub fn try_get_element_type(&self) -> Result<Type<'a>, InvalidDescriptor> {
         let num_dimensions = self.get_dimensions();
         get_type_internal(&self.buf, self.begin + num_dimensions, self.end)
     }
 
     /// Returns the type corresponding to the given internal name (see
-    /// [`Type::get_internal_name`]). A name starting with `[` gives an array type.
+    /// [`Type::get_internal_name`]). A name starting with `[` gives an array type. The type
+    /// borrows the name.
     #[must_use]
-    pub fn get_object_type(internal_name: impl AsRef<JavaStr>) -> Type {
-        let buf = shared(internal_name.as_ref());
-        let end = buf.bytes().len();
-        let is_array = buf.bytes().first() == Some(&b'[');
-        Type {
-            sort: if is_array {
-                TypeSort::Array
-            } else {
-                TypeSort::Object
-            },
-            internal: !is_array,
-            buf,
-            begin: 0,
-            end,
-        }
-    }
-
-    /// [`Type::get_object_type`] of a `'static` internal name, usable in a `const` (no
-    /// allocation): `Type::static_object_type(jstr!("java/lang/Object"))`.
-    #[must_use]
-    pub const fn static_object_type(internal_name: &'static JavaStr) -> Type {
-        let bytes = internal_name.as_bytes();
-        let is_array = !bytes.is_empty() && bytes[0] == b'[';
-        Type {
-            sort: if is_array {
-                TypeSort::Array
-            } else {
-                TypeSort::Object
-            },
-            internal: !is_array,
-            buf: TypeBuf::Static(internal_name),
-            begin: 0,
-            end: bytes.len(),
-        }
+    pub fn get_object_type<S: AsRef<JavaStr> + ?Sized>(internal_name: &'a S) -> Type<'a> {
+        object_type(internal_name.as_ref())
     }
 
     /// Returns the type corresponding to the given method descriptor. Equivalent to
     /// `Type::get_type(method_descriptor)` for valid descriptors, but does not look at the
-    /// descriptor at all.
+    /// descriptor at all. The type borrows the descriptor.
     #[must_use]
-    pub fn get_method_type(method_descriptor: impl AsRef<JavaStr>) -> Type {
-        let buf = shared(method_descriptor.as_ref());
-        let end = buf.bytes().len();
+    pub fn get_method_type<S: AsRef<JavaStr> + ?Sized>(method_descriptor: &'a S) -> Type<'a> {
+        let method_descriptor = method_descriptor.as_ref();
         Type {
             sort: TypeSort::Method,
             internal: false,
-            buf,
+            buf: TypeBuf::Borrowed(method_descriptor),
             begin: 0,
-            end,
+            end: method_descriptor.len(),
         }
-    }
-
-    /// Returns the method type corresponding to the given argument and return types (Java's
-    /// `getMethodType(Type, Type...)`).
-    #[must_use]
-    pub fn get_method_type_of(return_type: &Type, argument_types: &[Type]) -> Type {
-        Type::get_type(Type::get_method_descriptor(return_type, argument_types))
     }
 
     /// Returns the argument types of methods of this type. This method should only be used for
@@ -315,80 +393,72 @@ impl Type {
     /// On a malformed method descriptor (see [`Type::try_get_argument_types_of`]).
     #[must_use]
     #[track_caller]
-    pub fn get_argument_types(&self) -> Vec<Type> {
+    pub fn get_argument_types(&self) -> Vec<Type<'a>> {
         let descriptor = self.descriptor_buf();
         argument_types(&descriptor, 0).unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the types corresponding to the argument types of the given method descriptor.
+    /// The types borrow the descriptor.
     ///
     /// # Panics
     ///
     /// On a malformed method descriptor (see [`Type::try_get_argument_types_of`]).
     #[must_use]
     #[track_caller]
-    pub fn get_argument_types_of(method_descriptor: impl AsRef<JavaStr>) -> Vec<Type> {
+    pub fn get_argument_types_of<S: AsRef<JavaStr> + ?Sized>(
+        method_descriptor: &'a S,
+    ) -> Vec<Type<'a>> {
         Type::try_get_argument_types_of(method_descriptor).unwrap_or_else(|e| e.throw())
     }
 
     /// Returns the types corresponding to the argument types of the given method descriptor.
+    /// The types borrow the descriptor.
     ///
     /// # Errors
     ///
     /// If the descriptor ends before its `)`, or an argument type character is invalid.
-    pub fn try_get_argument_types_of(
-        method_descriptor: impl AsRef<JavaStr>,
-    ) -> Result<Vec<Type>, InvalidDescriptor> {
-        argument_types(&shared(method_descriptor.as_ref()), 0)
+    pub fn try_get_argument_types_of<S: AsRef<JavaStr> + ?Sized>(
+        method_descriptor: &'a S,
+    ) -> Result<Vec<Type<'a>>, InvalidDescriptor> {
+        argument_types(&TypeBuf::Borrowed(method_descriptor.as_ref()), 0)
     }
 
     /// Returns the return type of methods of this type. This method should only be used for
-    /// method types.
+    /// method types. The returned type shares this type's buffer.
     ///
     /// # Panics
     ///
     /// On a malformed method descriptor (see [`Type::try_get_return_type_of`]).
     #[must_use]
     #[track_caller]
-    pub fn get_return_type(&self) -> Type {
+    pub fn get_return_type(&self) -> Type<'a> {
         let descriptor = self.descriptor_buf();
         return_type(&descriptor).unwrap_or_else(|e| e.throw())
     }
 
-    /// Returns the type corresponding to the return type of the given method descriptor.
+    /// Returns the type corresponding to the return type of the given method descriptor. The
+    /// type borrows the descriptor.
     ///
     /// # Panics
     ///
     /// On a malformed method descriptor (see [`Type::try_get_return_type_of`]).
     #[must_use]
     #[track_caller]
-    pub fn get_return_type_of(method_descriptor: impl AsRef<JavaStr>) -> Type {
+    pub fn get_return_type_of<S: AsRef<JavaStr> + ?Sized>(method_descriptor: &'a S) -> Type<'a> {
         Type::try_get_return_type_of(method_descriptor).unwrap_or_else(|e| e.throw())
     }
 
-    /// Returns the type corresponding to the return type of the given method descriptor.
+    /// Returns the type corresponding to the return type of the given method descriptor. The
+    /// type borrows the descriptor.
     ///
     /// # Errors
     ///
     /// If the descriptor ends before its return type, or the return type is invalid.
-    pub fn try_get_return_type_of(
-        method_descriptor: impl AsRef<JavaStr>,
-    ) -> Result<Type, InvalidDescriptor> {
-        let method_descriptor = method_descriptor.as_ref();
-        // A primitive return type needs no copy of the descriptor.
-        let offset = Type::get_return_type_offset(method_descriptor)?;
-        if let Some(primitive) = method_descriptor
-            .as_bytes()
-            .get(offset)
-            .and_then(|&c| primitive_of(c))
-        {
-            return Ok(primitive);
-        }
-        get_type_internal(
-            &shared(method_descriptor),
-            offset,
-            method_descriptor.as_bytes().len(),
-        )
+    pub fn try_get_return_type_of<S: AsRef<JavaStr> + ?Sized>(
+        method_descriptor: &'a S,
+    ) -> Result<Type<'a>, InvalidDescriptor> {
+        return_type(&TypeBuf::Borrowed(method_descriptor.as_ref()))
     }
 
     /// Returns the start index of the return type of the given method descriptor.
@@ -473,8 +543,12 @@ impl Type {
 
     /// Returns the descriptor corresponding to the given argument and return types.
     #[must_use]
-    pub fn get_method_descriptor(return_type: &Type, argument_types: &[Type]) -> JavaString {
-        let mut descriptor = JavaString::new();
+    pub fn get_method_descriptor(
+        return_type: &Type<'_>,
+        argument_types: &[Type<'_>],
+    ) -> JavaString {
+        let mut descriptor =
+            JavaString::with_capacity(method_descriptor_len(return_type, argument_types));
         descriptor.push('(');
         for argument_type in argument_types {
             argument_type.append_descriptor(&mut descriptor);
@@ -727,31 +801,81 @@ impl Type {
         &self.buf.as_java_str()[self.begin..self.end]
     }
 
+    /// The length in bytes of this type's descriptor.
+    fn descriptor_len(&self) -> usize {
+        let [a, b, c] = self.descriptor_parts();
+        a.len() + b.len() + c.len()
+    }
+
+    /// This type's descriptor, in up to three parts (`L`, the internal name and `;` for an
+    /// object type created from an internal name).
+    fn descriptor_parts(&self) -> [&[u8]; 3] {
+        if self.internal {
+            [b"L", self.value().as_bytes(), b";"]
+        } else if self.sort == TypeSort::Object {
+            [self.object_descriptor().as_bytes(), b"", b""]
+        } else {
+            [self.value().as_bytes(), b"", b""]
+        }
+    }
+
     /// The descriptor around the value of an object type created from a descriptor: one
     /// character before and after it (normally `L` and `;`).
     fn object_descriptor(&self) -> &JavaStr {
         let s = self.buf.as_java_str();
-        let last = s[self.end..]
-            .chars()
-            .next()
-            .map_or(0, |c| c.len_semi_utf8());
-        &s[self.begin - 1..self.end + last]
+        &s[self.begin - 1..self.end + next_char_len(s, self.end)]
     }
 
-    /// This method type's descriptor as a shareable buffer (the whole buffer when it is exactly
-    /// the descriptor, which is always the case for method types built from a descriptor).
-    fn descriptor_buf(&self) -> TypeBuf {
-        if !self.internal && self.begin == 0 && self.end == self.buf.bytes().len() {
-            self.buf.clone()
-        } else {
-            shared(&self.get_descriptor())
+    /// This method type's descriptor as a buffer of its own: a borrowed buffer is narrowed to the
+    /// descriptor, a shared one is kept when it is exactly the descriptor (always the case for
+    /// method types built from a descriptor).
+    fn descriptor_buf(&self) -> TypeBuf<'a> {
+        if self.internal {
+            return TypeBuf::Shared(Arc::from(&*self.get_descriptor()));
+        }
+        match &self.buf {
+            TypeBuf::Static(s) => TypeBuf::Static(&s[self.begin..self.end]),
+            TypeBuf::Borrowed(s) => TypeBuf::Borrowed(&s[self.begin..self.end]),
+            TypeBuf::Shared(s) if self.begin == 0 && self.end == s.len() => self.buf.clone(),
+            TypeBuf::Shared(s) => TypeBuf::Shared(Arc::from(&s[self.begin..self.end])),
         }
     }
 }
 
-/// Copies a descriptor into a shared buffer.
-fn shared(s: &JavaStr) -> TypeBuf {
-    TypeBuf::Shared(Arc::from(s))
+/// The length in bytes of the descriptor of a method of the given return and argument types.
+fn method_descriptor_len(return_type: &Type<'_>, argument_types: &[Type<'_>]) -> usize {
+    let mut length = 2 + return_type.descriptor_len();
+    for argument_type in argument_types {
+        length += argument_type.descriptor_len();
+    }
+    length
+}
+
+/// The length of the character at `offset` of `s`, 0 at its end.
+fn next_char_len(s: &JavaStr, offset: usize) -> usize {
+    match s.as_bytes().get(offset) {
+        None => 0,
+        // The common case: a descriptor's `;`.
+        Some(&b) if b.is_ascii() => 1,
+        Some(_) => s[offset..].chars().next().map_or(0, |c| c.len_semi_utf8()),
+    }
+}
+
+/// The object or array type of an internal name.
+const fn object_type(internal_name: &JavaStr) -> Type<'_> {
+    let bytes = internal_name.as_bytes();
+    let is_array = !bytes.is_empty() && bytes[0] == b'[';
+    Type {
+        sort: if is_array {
+            TypeSort::Array
+        } else {
+            TypeSort::Object
+        },
+        internal: !is_array,
+        buf: TypeBuf::Borrowed(internal_name),
+        begin: 0,
+        end: bytes.len(),
+    }
 }
 
 fn invalid(descriptor: &JavaStr) -> InvalidDescriptor {
@@ -806,16 +930,14 @@ fn skip_argument(d: &[u8], mut offset: usize) -> Result<usize, usize> {
     Ok(offset)
 }
 
-fn argument_types(buf: &TypeBuf, base: usize) -> Result<Vec<Type>, InvalidDescriptor> {
+fn argument_types<'a>(buf: &TypeBuf<'a>, base: usize) -> Result<Vec<Type<'a>>, InvalidDescriptor> {
     let descriptor = &buf.as_java_str()[base..];
     let d = descriptor.as_bytes();
     let past_end = |offset| out_of_bounds(descriptor, offset);
-    // First step: compute the number of argument types in methodDescriptor (which, like ASM,
-    // reports a descriptor that ends too early before an invalid argument type).
-    let num_argument_types = Type::try_get_argument_count_of(descriptor)?;
-
-    // Second step: create a Type instance for each argument type.
-    let mut argument_types = Vec::with_capacity(num_argument_types);
+    // ASM counts the argument types first, then creates them: a descriptor that ends too early
+    // is reported before an invalid argument type. This does both in one pass, and finishes the
+    // count only when an argument type is invalid.
+    let mut argument_types = Vec::new();
     // Skip the first character, which is always a '('.
     let mut current_offset = char_len(d, 0);
     // Parse and create the argument types, one at each loop iteration.
@@ -826,39 +948,32 @@ fn argument_types(buf: &TypeBuf, base: usize) -> Result<Vec<Type>, InvalidDescri
     {
         let current_argument_type_offset = current_offset;
         current_offset = skip_argument(d, current_offset).map_err(past_end)?;
-        argument_types.push(get_type_internal(
+        match get_type_internal(
             buf,
             base + current_argument_type_offset,
             base + current_offset,
-        )?);
+        ) {
+            Ok(argument_type) => argument_types.push(argument_type),
+            Err(invalid) => {
+                Type::try_get_argument_count_of(descriptor)?;
+                return Err(invalid);
+            }
+        }
     }
     Ok(argument_types)
 }
 
-fn return_type(buf: &TypeBuf) -> Result<Type, InvalidDescriptor> {
+fn return_type<'a>(buf: &TypeBuf<'a>) -> Result<Type<'a>, InvalidDescriptor> {
     let offset = Type::get_return_type_offset(buf.as_java_str())?;
     get_type_internal(buf, offset, buf.bytes().len())
 }
 
-/// The primitive type of the given descriptor character, if it is one.
-#[inline]
-fn primitive_of(c: u8) -> Option<Type> {
-    match c {
-        b'V' => Some(Type::VOID),
-        b'Z' => Some(Type::BOOLEAN),
-        b'C' => Some(Type::CHAR),
-        b'B' => Some(Type::BYTE),
-        b'S' => Some(Type::SHORT),
-        b'I' => Some(Type::INT),
-        b'F' => Some(Type::FLOAT),
-        b'J' => Some(Type::LONG),
-        b'D' => Some(Type::DOUBLE),
-        _ => None,
-    }
-}
-
 /// Returns the type corresponding to the descriptor in `buf[begin..end]`.
-fn get_type_internal(buf: &TypeBuf, begin: usize, end: usize) -> Result<Type, InvalidDescriptor> {
+fn get_type_internal<'a>(
+    buf: &TypeBuf<'a>,
+    begin: usize,
+    end: usize,
+) -> Result<Type<'a>, InvalidDescriptor> {
     let invalid = || invalid(buf.as_java_str());
     if begin >= buf.bytes().len() {
         return Err(out_of_bounds(buf.as_java_str(), begin));
@@ -906,29 +1021,29 @@ fn get_type_internal(buf: &TypeBuf, begin: usize, end: usize) -> Result<Type, In
 // Equals, hashCode and toString.
 // -------------------------------------------------------------------------------------------------
 
-impl PartialEq for Type {
-    fn eq(&self, other: &Type) -> bool {
+impl<'b> PartialEq<Type<'b>> for Type<'_> {
+    fn eq(&self, other: &Type<'b>) -> bool {
         self.sort == other.sort && self.value() == other.value()
     }
 }
 
-impl Eq for Type {}
+impl Eq for Type<'_> {}
 
-impl Hash for Type {
+impl Hash for Type<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.sort.hash(state);
         self.value().hash(state);
     }
 }
 
-impl fmt::Display for Type {
+impl fmt::Display for Type<'_> {
     /// Writes the descriptor of this type.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&*self.get_descriptor(), f)
     }
 }
 
-impl fmt::Debug for Type {
+impl fmt::Debug for Type<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Type({:?})", &*self.get_descriptor())
     }

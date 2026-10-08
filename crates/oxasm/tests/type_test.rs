@@ -432,11 +432,16 @@ mod properties {
             prop_assert_eq!(d.as_str(), &*t.get_descriptor());
             if d.starts_with('L') {
                 prop_assert_eq!(t.get_sort(), TypeSort::Object);
-                prop_assert_eq!(Type::get_object_type(t.get_internal_name()), t);
+                prop_assert_eq!(Type::get_object_type(t.get_internal_name()), t.clone());
             } else if d.starts_with('[') {
                 prop_assert_eq!(t.get_dimensions(), d.bytes().take_while(|&b| b == b'[').count());
-                prop_assert_eq!(Type::get_object_type(&*d), t);
+                prop_assert_eq!(Type::get_object_type(&*d), t.clone());
             }
+            // An owned copy is the same type.
+            let owned = t.clone().into_owned();
+            prop_assert_eq!(&owned, &t);
+            prop_assert_eq!(&*owned.get_descriptor(), &*t.get_descriptor());
+            prop_assert_eq!(owned.get_internal_name(), t.get_internal_name());
         }
 
         #[test]
@@ -453,6 +458,9 @@ mod properties {
             let sizes: usize = arguments.iter().map(Type::get_size).sum::<usize>() + 1;
             let ret_size = t.get_return_type().get_size();
             prop_assert_eq!(t.get_arguments_and_return_sizes() as usize, (sizes << 2) | ret_size);
+            let owned = t.clone().into_owned();
+            prop_assert_eq!(owned.get_argument_types(), arguments);
+            prop_assert_eq!(owned.get_return_type(), t.get_return_type());
         }
 
         #[test]
@@ -490,4 +498,51 @@ fn test_malformed_method_descriptor_non_ascii() {
     assert_eq!(1, Type::get_argument_count_of("(é)V"));
     assert_eq!(2 << 2, Type::get_arguments_and_return_sizes_of("(é)V"));
     assert!(Type::try_get_argument_types_of("(é)V").is_err());
+}
+
+// oxasm-specific: a `Type` borrows its descriptor (ADR-15's P9 amendment); `into_owned` copies
+// the part of it the type uses, and the owned type, and the types derived from it, outlive it.
+#[test]
+fn test_into_owned() {
+    let method = {
+        let descriptor = String::from("(I[Ljava/lang/String;)Ljava/util/List;");
+        Type::get_method_type(&*descriptor).into_owned()
+    };
+    let arguments = method.get_argument_types();
+    assert_eq!(Type::INT, arguments[0]);
+    assert_eq!(
+        "java/lang/String",
+        arguments[1].get_element_type().get_internal_name()
+    );
+    assert_eq!(
+        "Ljava/util/List;",
+        &*method.get_return_type().get_descriptor()
+    );
+
+    // An object type keeps the characters around its internal name.
+    let element = {
+        let descriptor = String::from("[[Ljava/lang/Object;");
+        Type::get_type(&*descriptor).get_element_type().into_owned()
+    };
+    assert_eq!("java/lang/Object", element.get_internal_name());
+    assert_eq!("Ljava/lang/Object;", &*element.get_descriptor());
+
+    // Even when the last of them is not ASCII (a malformed descriptor).
+    let malformed = {
+        let descriptor = String::from("Lfo\u{e9}");
+        Type::get_type(&*descriptor).into_owned()
+    };
+    assert_eq!("fo", malformed.get_internal_name());
+    assert_eq!("Lfo\u{e9}", &*malformed.get_descriptor());
+
+    let internal = {
+        let name = String::from("a/B");
+        Type::get_object_type(&*name).into_owned()
+    };
+    assert_eq!("La/B;", &*internal.get_descriptor());
+    assert_eq!(Type::get_type("La/B;"), internal);
+
+    for (t, ..) in PRIMITIVES {
+        assert_eq!(t, t.clone().into_owned());
+    }
 }

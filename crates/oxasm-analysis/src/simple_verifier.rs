@@ -35,11 +35,11 @@ const MAX_RECURSION: usize = 256;
 #[derive(Clone, Debug)]
 pub struct SimpleVerifier<H> {
     /// The type of the class that is verified.
-    current_class: Option<Type>,
+    current_class: Option<Type<'static>>,
     /// The type of the super class of the class that is verified.
-    current_super_class: Option<Type>,
+    current_super_class: Option<Type<'static>>,
     /// The types of the interfaces directly implemented by the class that is verified.
-    current_class_interfaces: Vec<Type>,
+    current_class_interfaces: Vec<Type<'static>>,
     /// Whether the class that is verified is an interface.
     is_interface: bool,
     hierarchy: H,
@@ -62,16 +62,19 @@ impl<H: ClassHierarchy> SimpleVerifier<H> {
     /// asked to `hierarchy`, since it may be incorrect (ASM's `SimpleVerifier(Type, Type, List,
     /// boolean)`).
     pub fn for_class(
-        current_class: Type,
-        current_super_class: Option<Type>,
-        current_class_interfaces: Vec<Type>,
+        current_class: Type<'_>,
+        current_super_class: Option<Type<'_>>,
+        current_class_interfaces: Vec<Type<'_>>,
         is_interface: bool,
         hierarchy: H,
     ) -> SimpleVerifier<H> {
         SimpleVerifier {
-            current_class: Some(current_class),
-            current_super_class,
-            current_class_interfaces,
+            current_class: Some(current_class.into_owned()),
+            current_super_class: current_super_class.map(Type::into_owned),
+            current_class_interfaces: current_class_interfaces
+                .into_iter()
+                .map(Type::into_owned)
+                .collect(),
             is_interface,
             hierarchy,
         }
@@ -106,7 +109,7 @@ impl<H: ClassHierarchy> SimpleVerifier<H> {
     /// # Errors
     ///
     /// If the hierarchy does not know it.
-    pub fn get_super_class(&self, ty: &Type) -> Result<Option<Type>, AnalyzerError> {
+    pub fn get_super_class(&self, ty: &Type<'_>) -> Result<Option<Type<'static>>, AnalyzerError> {
         if self.is_current_class(ty) {
             return Ok(self.current_super_class.clone());
         }
@@ -114,7 +117,7 @@ impl<H: ClassHierarchy> SimpleVerifier<H> {
             .hierarchy
             .super_class(ty.get_internal_name())
             .map_err(hierarchy_error)?
-            .map(Type::get_object_type))
+            .map(|name| Type::get_object_type(&name).into_owned()))
     }
 
     /// Whether the class of `type1` is the same as, or a super class or interface of, the class
@@ -492,14 +495,14 @@ fn is_reference_type(ty: &Type) -> bool {
 }
 
 /// The element type of an array type, whose malformed descriptor is a runtime error.
-fn element_type(ty: &Type) -> Result<Type, AnalyzerError> {
+fn element_type<'a>(ty: &Type<'a>) -> Result<Type<'a>, AnalyzerError> {
     ty.try_get_element_type()
         .map_err(|e| AnalyzerError::runtime(e.message()))
 }
 
 /// A reference type as an object type and a number of dimensions: an array of primitive values
 /// is seen as an `Object` array with one dimension less.
-fn element_and_dimensions(ty: &Type) -> Result<(Type, usize), AnalyzerError> {
+fn element_and_dimensions<'a>(ty: &Type<'a>) -> Result<(Type<'a>, usize), AnalyzerError> {
     if ty.get_sort() != TypeSort::Array {
         return Ok((ty.clone(), 0));
     }

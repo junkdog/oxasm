@@ -194,7 +194,7 @@ impl SymConstant {
 /// descriptor of a type that isn't a method type gives it back: `Type::get_type` takes the whole
 /// descriptor as the type's value, without parsing it further, so even a malformed internal name
 /// (whose descriptor is `L<name>;`) comes back intact.
-pub(crate) fn resolve_type(interner: &Interner, descriptor: Sym) -> Type {
+pub(crate) fn resolve_type(interner: &Interner, descriptor: Sym) -> Type<'_> {
     Type::get_type(interner.resolve(descriptor))
 }
 

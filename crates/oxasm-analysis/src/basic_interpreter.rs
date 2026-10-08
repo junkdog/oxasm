@@ -28,7 +28,7 @@ const NULL: &JavaStr = oxasm::jstr!("null");
 impl BasicInterpreter {
     /// Special type used for the `null` literal: an object reference type with descriptor
     /// `Lnull;`.
-    pub const NULL_TYPE: Type = Type::static_object_type(NULL);
+    pub const NULL_TYPE: Type<'static> = Type::static_object_type(NULL);
 
     /// Constructs a new interpreter.
     pub fn new() -> BasicInterpreter {
@@ -343,12 +343,12 @@ impl Interpreter for BasicInterpreter {
 }
 
 /// The object type of an internal name.
-pub(crate) fn object_type(internal_name: &str) -> Type {
+pub(crate) fn object_type(internal_name: &str) -> Type<'_> {
     Type::get_object_type(oxasm::jstr!(internal_name))
 }
 
 /// `Type.getObjectType(internalName)`, which throws for an empty name (`charAt(0)`).
-pub(crate) fn checked_object_type(internal_name: &JavaStr) -> Result<Type, AnalyzerError> {
+pub(crate) fn checked_object_type(internal_name: &JavaStr) -> Result<Type<'_>, AnalyzerError> {
     if internal_name.is_empty() {
         return Err(AnalyzerError::runtime("Index 0 out of bounds for length 0"));
     }
@@ -356,12 +356,12 @@ pub(crate) fn checked_object_type(internal_name: &JavaStr) -> Result<Type, Analy
 }
 
 /// `Type.getType(descriptor)`, whose `IllegalArgumentException` is a runtime error.
-pub(crate) fn get_type(descriptor: &JavaStr) -> Result<Type, AnalyzerError> {
+pub(crate) fn get_type(descriptor: &JavaStr) -> Result<Type<'_>, AnalyzerError> {
     Type::try_get_type(descriptor).map_err(|e| AnalyzerError::runtime(e.message()))
 }
 
 /// `Type.getReturnType(methodDescriptor)`, whose exceptions are runtime errors.
-pub(crate) fn return_type(method_descriptor: &JavaStr) -> Result<Type, AnalyzerError> {
+pub(crate) fn return_type(method_descriptor: &JavaStr) -> Result<Type<'_>, AnalyzerError> {
     Type::try_get_return_type_of(method_descriptor).map_err(|e| AnalyzerError::runtime(e.message()))
 }
 

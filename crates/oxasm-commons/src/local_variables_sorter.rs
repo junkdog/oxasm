@@ -214,7 +214,7 @@ impl<M, H> std::fmt::Debug for LocalVariablesSorter<M, H> {
 }
 
 /// The type of a local variable in a stack map frame, for its remapping.
-fn frame_value_type(local_type: &FrameValue<'_>) -> Type {
+fn frame_value_type<'a>(local_type: &'a FrameValue<'_>) -> Type<'a> {
     match local_type {
         FrameValue::Integer => Type::INT,
         FrameValue::Float => Type::FLOAT,

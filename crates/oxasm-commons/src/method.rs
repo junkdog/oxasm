@@ -177,14 +177,14 @@ impl Method {
     /// Returns the return type of the method described by this object.
     #[must_use]
     #[track_caller]
-    pub fn get_return_type(&self) -> Type {
+    pub fn get_return_type(&self) -> Type<'_> {
         Type::get_return_type_of(&*self.descriptor)
     }
 
     /// Returns the argument types of the method described by this object.
     #[must_use]
     #[track_caller]
-    pub fn get_argument_types(&self) -> Vec<Type> {
+    pub fn get_argument_types(&self) -> Vec<Type<'_>> {
         Type::get_argument_types_of(&*self.descriptor)
     }
 }

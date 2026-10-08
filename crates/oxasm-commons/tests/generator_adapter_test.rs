@@ -831,7 +831,7 @@ fn test_return_value() {
     assert_eq!(return_value("()Lpkg/Class"), "ARETURN");
 }
 
-fn pkg_class() -> Type {
+fn pkg_class() -> Type<'static> {
     Type::get_object_type("pkg/Class")
 }
 

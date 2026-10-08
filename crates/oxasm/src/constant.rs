@@ -32,7 +32,7 @@ pub enum Constant<'a> {
     Double(f64),
     String(Cow<'a, JavaStr>),
     /// A class (`OBJECT` or `ARRAY` sort) or method type (`METHOD` sort) constant.
-    Type(Type),
+    Type(Type<'a>),
     Handle(Handle),
     Dynamic(Box<ConstantDynamic>),
 }
@@ -47,7 +47,7 @@ impl Constant<'_> {
             Constant::Long(v) => Constant::Long(v),
             Constant::Double(v) => Constant::Double(v),
             Constant::String(s) => Constant::String(Cow::Owned(s.into_owned())),
-            Constant::Type(t) => Constant::Type(t),
+            Constant::Type(t) => Constant::Type(t.into_owned()),
             Constant::Handle(h) => Constant::Handle(h),
             Constant::Dynamic(d) => Constant::Dynamic(d),
         }
@@ -93,7 +93,13 @@ macro_rules! impl_from {
     )*};
 }
 
-impl_from!(i32 => Integer, f32 => Float, i64 => Long, f64 => Double, Type => Type, Handle => Handle);
+impl_from!(i32 => Integer, f32 => Float, i64 => Long, f64 => Double, Handle => Handle);
+
+impl<'a> From<Type<'a>> for Constant<'a> {
+    fn from(v: Type<'a>) -> Self {
+        Constant::Type(v)
+    }
+}
 
 impl From<ConstantDynamic> for Constant<'_> {
     fn from(v: ConstantDynamic) -> Self {
@@ -182,7 +188,7 @@ pub enum AnnotationValue<'a> {
     String(Cow<'a, JavaStr>),
     /// A class value: a [`Type`] of sort `OBJECT` or `ARRAY` (or a primitive type, for
     /// `int.class` and the like).
-    Type(Type),
+    Type(Type<'a>),
     ByteArray(Cow<'a, [i8]>),
     BooleanArray(Cow<'a, [bool]>),
     CharArray(Cow<'a, [u16]>),
@@ -210,7 +216,7 @@ impl AnnotationValue<'_> {
             AnnotationValue::Float(v) => AnnotationValue::Float(v),
             AnnotationValue::Double(v) => AnnotationValue::Double(v),
             AnnotationValue::String(s) => AnnotationValue::String(Cow::Owned(s.into_owned())),
-            AnnotationValue::Type(t) => AnnotationValue::Type(t),
+            AnnotationValue::Type(t) => AnnotationValue::Type(t.into_owned()),
             AnnotationValue::ByteArray(a) => AnnotationValue::ByteArray(own(a)),
             AnnotationValue::BooleanArray(a) => AnnotationValue::BooleanArray(own(a)),
             AnnotationValue::CharArray(a) => AnnotationValue::CharArray(own(a)),

@@ -27,7 +27,7 @@ pub(crate) fn unsupported_operation(message: impl Display) -> ! {
 /// ASM's `Type.getObjectType`, which throws on an empty internal name (its `charAt(0)`), where
 /// oxasm's [`Type::get_object_type`] returns an object type with an empty name.
 #[track_caller]
-pub(crate) fn object_type(internal_name: &JavaStr) -> Type {
+pub(crate) fn object_type(internal_name: &JavaStr) -> Type<'_> {
     if internal_name.is_empty() {
         panic!("java.lang.StringIndexOutOfBoundsException: Index 0 out of bounds for length 0");
     }

@@ -134,11 +134,11 @@ struct LocalTypes {
     first_local: u32,
     /// The types of the local variables of the method visited by this adapter, from
     /// `first_local` on.
-    local_types: Vec<Option<Type>>,
+    local_types: Vec<Option<Type<'static>>>,
 }
 
 impl LocalVariablesSorterHooks for LocalTypes {
-    fn set_local_type(&mut self, local: u32, type_: &Type) {
+    fn set_local_type(&mut self, local: u32, type_: &Type<'_>) {
         let index = i64::from(local) - i64::from(self.first_local);
         let Ok(index) = usize::try_from(index) else {
             // ASM's List.set throws.
@@ -150,7 +150,7 @@ impl LocalVariablesSorterHooks for LocalTypes {
         if self.local_types.len() < index + 1 {
             self.local_types.resize(index + 1, None);
         }
-        self.local_types[index] = Some(type_.clone());
+        self.local_types[index] = Some(type_.clone().into_owned());
     }
 }
 
@@ -223,9 +223,9 @@ pub struct GeneratorAdapter<M> {
     /// The name of the visited method.
     name: JavaString,
     /// The return type of the visited method.
-    return_type: Type,
+    return_type: Type<'static>,
     /// The argument types of the visited method.
-    argument_types: Vec<Type>,
+    argument_types: Vec<Type<'static>>,
 }
 
 impl<M: MethodVisitor> GeneratorAdapter<M> {
@@ -246,12 +246,14 @@ impl<M: MethodVisitor> GeneratorAdapter<M> {
                 local_types: Vec::new(),
             },
         );
+        // One copy of the descriptor, shared by the return and argument types.
+        let method_type = Type::get_method_type(descriptor).into_owned();
         let mut generator = GeneratorAdapter {
             sorter,
             access,
             name: name.to_owned(),
-            return_type: Type::get_return_type_of(descriptor),
-            argument_types: Type::get_argument_types_of(descriptor),
+            return_type: method_type.get_return_type(),
+            argument_types: method_type.get_argument_types(),
         };
         generator.sorter.hooks.first_local = generator.sorter.first_local();
         generator
@@ -296,13 +298,13 @@ impl<M: MethodVisitor> GeneratorAdapter<M> {
 
     /// Returns the return type of the method visited by this adapter.
     #[must_use]
-    pub fn get_return_type(&self) -> &Type {
+    pub fn get_return_type(&self) -> &Type<'static> {
         &self.return_type
     }
 
     /// Returns the argument types of the method visited by this adapter.
     #[must_use]
-    pub fn get_argument_types(&self) -> &[Type] {
+    pub fn get_argument_types(&self) -> &[Type<'static>] {
         &self.argument_types
     }
 
@@ -557,7 +559,7 @@ impl<M: MethodVisitor> GeneratorAdapter<M> {
     /// `IndexOutOfBoundsException`).
     #[must_use]
     #[track_caller]
-    pub fn get_local_type(&self, local: u16) -> Option<Type> {
+    pub fn get_local_type(&self, local: u16) -> Option<Type<'static>> {
         let local_types = &self.sorter.hooks.local_types;
         let index = i64::from(local) - i64::from(self.sorter.first_local());
         match usize::try_from(index)
@@ -575,7 +577,7 @@ impl<M: MethodVisitor> GeneratorAdapter<M> {
     /// The type of a local variable, which must have one (ASM throws a `NullPointerException`
     /// on `null`).
     #[track_caller]
-    fn local_type(&self, local: u16) -> Type {
+    fn local_type(&self, local: u16) -> Type<'static> {
         self.get_local_type(local)
             .unwrap_or_else(|| panic!("java.lang.NullPointerException"))
     }
@@ -760,7 +762,7 @@ impl<M: MethodVisitor> GeneratorAdapter<M> {
     // Instructions to do boxing and unboxing operations
     // ---------------------------------------------------------------------------------------------
 
-    fn get_boxed_type(type_: &Type) -> Type {
+    fn get_boxed_type<'a>(type_: &Type<'a>) -> Type<'a> {
         match type_.get_sort() {
             TypeSort::Byte => BYTE_TYPE,
             TypeSort::Boolean => BOOLEAN_TYPE,
