@@ -8,6 +8,8 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use common::MethodNodeBuilder;
 use oxasm::opcodes::*;
 use oxasm::{ClassReader, Label, ParsingOptions, jstr};
@@ -320,7 +322,7 @@ fn test_analyze_valid_method_with_exception_handlers() {
 #[test]
 fn test_analyze_basic_verifier() {
     for &class_parameter in PrecompiledClass::ALL {
-        let mut class_node = ClassNode::new();
+        let mut class_node = ClassNode::with_interner(Arc::default());
         ClassReader::new(class_parameter.bytes())
             .unwrap()
             .accept(&mut class_node, ParsingOptions::empty())

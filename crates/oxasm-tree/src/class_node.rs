@@ -27,8 +27,10 @@ use crate::strings::{Strings, resolve_all};
 /// strings. Its fields and methods hold the same interner.
 ///
 /// Share one interner between the class nodes of a classpath ([`with_interner`](Self::with_interner)):
-/// each distinct string is then stored once, and two symbols of it are equal. `ClassNode::new()`
-/// makes a new interner.
+/// each distinct string is then stored once, and two symbols of it are equal. There is no
+/// constructor that makes the interner implicitly (nor a `Default`): symbols of two interners
+/// compare as integers, so two class nodes that each made their own would compare equal symbols
+/// for different strings. A class node on its own takes `Arc::default()`.
 ///
 /// ```
 /// # fn main() -> Result<(), oxasm::error::ReadError> {
@@ -110,13 +112,8 @@ pub struct ClassNode {
 }
 
 impl ClassNode {
-    /// Constructs an empty class node (ASM's `ClassNode()`), with a new interner; the same as
-    /// `ClassNode::default()`.
-    pub fn new() -> ClassNode {
-        ClassNode::default()
-    }
-
-    /// Constructs an empty class node whose strings are symbols of the given interner.
+    /// Constructs an empty class node (ASM's `ClassNode()`) whose strings are symbols of the given
+    /// interner.
     pub fn with_interner(interner: Arc<Interner>) -> ClassNode {
         ClassNode {
             version: 0,
@@ -229,12 +226,6 @@ impl ClassNode {
             method.accept(class_visitor);
         }
         class_visitor.visit_end();
-    }
-}
-
-impl Default for ClassNode {
-    fn default() -> Self {
-        ClassNode::with_interner(Arc::default())
     }
 }
 

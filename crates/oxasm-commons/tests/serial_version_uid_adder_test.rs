@@ -3,6 +3,8 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use oxasm::opcodes::*;
 use oxasm::{ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, ParsingOptions, jstr};
 use oxasm_commons::SerialVersionUidAdder;
@@ -97,7 +99,7 @@ fn test_all_methods_precompiled_class() {
 fn test_added_field_value() {
     let class_file = t0_resource("asm-commons", "SerialVersionClass.class");
     let class_reader = ClassReader::new(&class_file).unwrap();
-    let mut class_node = ClassNode::default();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let mut svuid_adder = SerialVersionUidAdder::new(&mut class_node);
     class_reader
         .accept(&mut svuid_adder, ParsingOptions::empty())

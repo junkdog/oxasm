@@ -20,6 +20,8 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use common::{MethodNodeBuilder, assert_new_instance, build_class_with_method};
 use oxasm::opcodes::*;
 use oxasm::{ClassReader, Label, MapHierarchy, ParsingOptions, Type, jstr};
@@ -370,7 +372,7 @@ fn test_analyze_merge_stack_frames_with_exception_handlers() {
 #[test]
 fn test_analyze_simple_verifier() {
     for &class_parameter in PrecompiledClass::ALL {
-        let mut class_node = ClassNode::new();
+        let mut class_node = ClassNode::with_interner(Arc::default());
         ClassReader::new(class_parameter.bytes())
             .unwrap()
             .accept(&mut class_node, ParsingOptions::empty())

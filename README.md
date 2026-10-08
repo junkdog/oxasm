@@ -19,7 +19,7 @@ adapters. M1's acceptance holds: ports of sift's `TextifierLines` and `OriginSou
 (hardening, performance, API review) is under way: the reader's string cache is 21% faster, and the tree stores
 interned `Sym`s from a caller-owned `Interner` (ADR-04). Share one interner between the class nodes of a classpath
 (`ClassNode::with_interner`): reading `java.base` is then 3–4% faster than before, while a new interner per class
-(`ClassNode::new()`) costs 8% more.
+(`ClassNode::with_interner(Arc::default())`) costs 8% more.
 
 | Crate | Ports |
 |---|---|

@@ -8,6 +8,8 @@
 
 #![no_main]
 
+use std::sync::Arc;
+
 use libfuzzer_sys::fuzz_target;
 use oxasm::opcodes::ACC_INTERFACE;
 use oxasm::{ClassReader, ObjectHierarchy, ParsingOptions, Type};
@@ -35,7 +37,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(reader) = ClassReader::new(data) else {
         return;
     };
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let _ = reader.accept(&mut class_node, ParsingOptions::empty());
     for method in &class_node.methods {
         let slots = usize::from(method.max_locals) + usize::from(method.max_stack);

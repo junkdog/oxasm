@@ -11,6 +11,7 @@
 mod common;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use oxasm::constant::Constant;
 use oxasm::opcodes::ACC_RECORD;
@@ -26,7 +27,7 @@ use oxasm_tree::{ClassNode, InsnId, MethodNode};
 use common::{assert_same_class_file, attributes, textify, textify_node};
 
 fn read_class_node(class: PrecompiledClass) -> ClassNode {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     ClassReader::new(class.bytes())
         .unwrap()
         .accept_with_codecs(&mut class_node, &attributes(), ParsingOptions::empty())
@@ -36,7 +37,7 @@ fn read_class_node(class: PrecompiledClass) -> ClassNode {
 
 #[test]
 fn test_constructor() {
-    let class_node = ClassNode::new();
+    let class_node = ClassNode::with_interner(Arc::default());
 
     assert!(class_node.interfaces.is_empty());
     assert!(class_node.inner_classes.is_empty());

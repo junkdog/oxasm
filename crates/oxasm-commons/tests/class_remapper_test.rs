@@ -11,6 +11,7 @@
 mod common;
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use oxasm::opcodes::*;
 use oxasm::{
@@ -27,7 +28,7 @@ use common::{CodeComment, assert_precompiled_new_instance, assert_same_class_fil
 
 #[test]
 fn test_visit() {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let mut class_remapper = ClassRemapper::new(
         &mut class_node,
         SimpleRemapper::with_single_mapping("pkg/C", "new/pkg/C"),
@@ -63,7 +64,7 @@ fn test_visit_annotation() {
             Cow::Borrowed(name)
         }
     }
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let mut remapper = ClassRemapper::new(&mut class_node, AnnotationAttributeRemapper);
     remapper.visit(
         V1_5,
@@ -109,7 +110,7 @@ fn remap_inner_class(
     outer_name: &str,
     inner_name: &str,
 ) -> ClassNode {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let mut remapper = ClassRemapper::new(&mut class_node, MapRemapper(mapping));
     remapper.visit(
         V1_5,
@@ -204,7 +205,7 @@ fn test_visit_attribute_module_hashes() {
             Cow::Owned(new_name)
         }
     }
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let mut class_remapper = ClassRemapper::new(&mut class_node, ModuleNameRemapper);
     class_remapper.visit(
         V1_5,
@@ -256,7 +257,7 @@ impl Remapper for ConstantDynamicRemapper {
 
 #[test]
 fn test_visit_ldc_insn_constant_dynamic() {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let mut class_remapper = ClassRemapper::new(&mut class_node, ConstantDynamicRemapper);
     class_remapper.visit(
         V11,
@@ -330,7 +331,7 @@ fn test_invoke_dynamic_insn_field() {
             Cow::Borrowed(name)
         }
     }
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let mut class_remapper = ClassRemapper::new(&mut class_node, FieldHandleRemapper);
     class_remapper.visit(
         V11,
@@ -452,7 +453,7 @@ fn remap_precompiled_class(class_parameter: PrecompiledClass) -> Vec<u8> {
 /// fed by a class node (ASM's `testAllMethods_precompiledClass_fromClassNode`, less the JVM
 /// check).
 fn remap_precompiled_class_from_class_node(class_parameter: PrecompiledClass) -> Vec<u8> {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     ClassReader::new(class_parameter.bytes())
         .unwrap()
         .accept(&mut class_node, ParsingOptions::empty())

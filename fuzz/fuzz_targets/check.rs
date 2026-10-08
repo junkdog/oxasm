@@ -10,7 +10,7 @@
 #![no_main]
 
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 use libfuzzer_sys::fuzz_target;
 use oxasm::{ClassReader, ClassWriter, ClassWriterFlags, ObjectHierarchy, ParsingOptions};
@@ -31,7 +31,7 @@ fn message<'a>(payload: &'a (dyn std::any::Any + Send)) -> Option<&'a str> {
 
 /// Whether the analyses of the class's methods are small enough.
 fn small_enough(reader: &ClassReader<'_>) -> bool {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let _ = reader.accept(&mut class_node, ParsingOptions::empty());
     class_node.methods.iter().all(|method| {
         let max_var = method

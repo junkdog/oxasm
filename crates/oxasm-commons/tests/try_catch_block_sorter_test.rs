@@ -2,6 +2,8 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use oxasm::opcodes::*;
 use oxasm::{
     ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, JavaStr, Label, MethodVisitor,
@@ -79,7 +81,7 @@ fn test_all_methods_precompile_class_transforms() {
     for &class_parameter in PrecompiledClass::ALL {
         let new_class_file = sort_try_catch_blocks(class_parameter);
         let read = |class_file: &[u8]| {
-            let mut class_node = ClassNode::default();
+            let mut class_node = ClassNode::with_interner(Arc::default());
             ClassReader::new(class_file)
                 .unwrap()
                 .accept(&mut class_node, ParsingOptions::empty())

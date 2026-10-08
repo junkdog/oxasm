@@ -68,7 +68,7 @@ impl ClassVisitor for UninitializedMethods {
 fn test_visit_and_accept_with_uninitialized_method_node() {
     for &class in PrecompiledClass::ALL {
         let class_file = class.bytes();
-        let mut class_node = UninitializedMethods(ClassNode::new());
+        let mut class_node = UninitializedMethods(ClassNode::with_interner(Arc::default()));
         let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
 
         ClassReader::new(class_file)
@@ -91,7 +91,7 @@ fn test_visit_and_accept_with_uninitialized_method_node_textify() {
         else {
             continue;
         };
-        let mut class_node = UninitializedMethods(ClassNode::new());
+        let mut class_node = UninitializedMethods(ClassNode::with_interner(Arc::default()));
 
         ClassReader::new(class.bytes())
             .unwrap()

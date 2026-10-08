@@ -9,6 +9,8 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use oxasm::constant::FrameValue;
 use oxasm::{ClassReader, ClassWriter, ClassWriterFlags, FrameKind, Label, ParsingOptions};
 use oxasm_analysis::BasicVerifier;
@@ -275,7 +277,7 @@ fn compute_frames(class_parameter: PrecompiledClass) -> ClassNode {
         .accept(&mut class_writer, ParsingOptions::empty())
         .unwrap();
     let class_file = class_writer.to_bytes().unwrap();
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     ClassReader::new(&class_file)
         .unwrap()
         .accept(&mut class_node, ParsingOptions::empty())

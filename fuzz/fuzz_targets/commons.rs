@@ -12,7 +12,7 @@
 
 use std::borrow::Cow;
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 use libfuzzer_sys::fuzz_target;
 use oxasm::opcodes::{ACC_ABSTRACT, ACC_NATIVE, JSR};
@@ -160,7 +160,7 @@ impl<V: ClassVisitor> ClassVisitor for MethodAdapters<V> {
 
 /// The number of `JSR` instructions in the class.
 fn jsr_count(reader: &ClassReader<'_>) -> usize {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     let _ = reader.accept(&mut class_node, ParsingOptions::SKIP_DEBUG);
     class_node
         .methods

@@ -22,7 +22,9 @@
 //!   there first, the staged bytes stay unpublished, and the next insert into the arena
 //!   overwrites them.
 //! - **Cache lines:** what lookups read (a shard's table pointer, an arena's chunk pointers) is
-//!   apart from what inserts write (the mutexes).
+//!   apart from what inserts write (the mutexes). So is the interner itself (the pointers to its
+//!   shards and arenas, which every lookup reads) from the reference counts of the `Arc` that
+//!   holds it, which every member node of the tree writes when it is made and dropped.
 
 use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
 use std::cell::UnsafeCell;
@@ -689,6 +691,8 @@ fn thread_arena() -> (usize, bool) {
 /// It is `Send + Sync`: threads intern and resolve concurrently, and a lookup that finds its
 /// string takes no lock. The strings live until the interner drops; each is stored once, and
 /// never moves. A new interner holds the [well-known symbols](super#constants).
+// Aligned so that in an `Arc`, its fields are not on the cache line of the reference counts.
+#[repr(align(128))]
 pub struct Interner {
     shards: Box<[Shard]>,
     arenas: Box<[Arena]>,

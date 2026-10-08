@@ -4,6 +4,8 @@
 //! and try catch block annotations are visited in another order), so the goldens are ASM's tree
 //! path's, not the direct Textifier goldens.
 
+use std::sync::Arc;
+
 use oxasm::{ClassReader, ParsingOptions};
 use oxasm_testkit::golden::{self, Golden, ReaderOptions};
 use oxasm_tree::ClassNode;
@@ -21,7 +23,7 @@ fn parsing_options(options: ReaderOptions) -> ParsingOptions {
 
 /// The Textifier output of the class read into a `ClassNode`, or the reader's error.
 fn tree_textify(class_file: &[u8], options: ParsingOptions) -> Result<Vec<u8>, String> {
-    let mut class_node = ClassNode::default();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     ClassReader::new(class_file)
         .and_then(|reader| reader.accept(&mut class_node, options))
         .map_err(|e| e.to_string())?;

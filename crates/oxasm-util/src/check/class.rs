@@ -529,7 +529,7 @@ pub fn verify(
     print_results: bool,
     print_writer: &mut dyn io::Write,
 ) -> io::Result<()> {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     class_reader
         .accept(
             &mut CheckClassAdapter::with_check_data_flow(&mut class_node, false),

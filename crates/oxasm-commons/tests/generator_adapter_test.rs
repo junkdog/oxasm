@@ -8,6 +8,8 @@
 //! Dropped: `testConstructor_illegalState` (a subclass calling the public constructor throws an
 //! `IllegalStateException`): there is no subclassing (ADR-13).
 
+use std::sync::Arc;
+
 use oxasm::constant::Constant;
 use oxasm::opcodes::*;
 use oxasm::{ConstantDynamic, Handle, HandleKind, JavaStr, Label, Type, jstr};
@@ -125,7 +127,7 @@ fn test_constructor_basic_descriptor() {
 
 #[test]
 fn test_constructor_with_class_visitor_and_exceptions() {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
 
     let generator_adapter = GeneratorAdapter::with_class_visitor(
         ACC_PUBLIC,
@@ -155,7 +157,7 @@ fn test_constructor_with_class_visitor_and_exceptions() {
 
 #[test]
 fn test_constructor_with_class_visitor_and_no_exceptions() {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
 
     let generator_adapter = GeneratorAdapter::with_class_visitor(
         ACC_PUBLIC,

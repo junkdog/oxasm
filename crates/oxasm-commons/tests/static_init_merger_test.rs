@@ -2,6 +2,8 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use oxasm::opcodes::*;
 use oxasm::{ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, ParsingOptions, jstr};
 use oxasm_commons::StaticInitMerger;
@@ -25,7 +27,7 @@ fn class_writer_output(num_static_init_blocks: usize) -> Vec<u8> {
 fn test_all_methods_multiple_static_init_blocks() {
     let class_file = class_writer_output(5);
 
-    let mut class_node = ClassNode::default();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     ClassReader::new(&class_file)
         .unwrap()
         .accept(&mut class_node, ParsingOptions::empty())
@@ -72,7 +74,7 @@ fn test_all_methods_multiple_static_init_blocks_new_instance() {
 }
 
 fn new_class_with_static_init_blocks(num_static_init_blocks: usize) -> ClassNode {
-    let mut class_node = ClassNode::default();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     class_node.visit(
         V1_1,
         ACC_PUBLIC,

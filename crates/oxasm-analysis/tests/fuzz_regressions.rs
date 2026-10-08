@@ -1,6 +1,8 @@
 //! The inputs the `analyze` fuzz target found failing (`fuzz/regressions/analyze/`), as ordinary
 //! tests (oxasm-verification, "Fuzzing"), and oxasm-specific tests of the recursion bounds.
 
+use std::sync::Arc;
+
 use oxasm::opcodes::ACC_INTERFACE;
 use oxasm::{ClassReader, ObjectHierarchy, ParsingOptions, Type};
 use oxasm_analysis::{
@@ -29,7 +31,7 @@ fn analyze_regressions() {
                 let Ok(reader) = ClassReader::new(&data) else {
                     return;
                 };
-                let mut class_node = ClassNode::new();
+                let mut class_node = ClassNode::with_interner(Arc::default());
                 let _ = reader.accept(&mut class_node, ParsingOptions::empty());
                 analyze_all(&class_node, || BasicInterpreter);
                 analyze_all(&class_node, || BasicVerifier);

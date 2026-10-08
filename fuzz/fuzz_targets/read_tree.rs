@@ -5,6 +5,8 @@
 
 #![no_main]
 
+use std::sync::Arc;
+
 use libfuzzer_sys::fuzz_target;
 use oxasm::{ClassReader, ParsingOptions};
 use oxasm_tree::ClassNode;
@@ -15,7 +17,7 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
     for options in [ParsingOptions::empty(), ParsingOptions::EXPAND_FRAMES] {
-        let mut class_node = ClassNode::new();
+        let mut class_node = ClassNode::with_interner(Arc::default());
         // A class node visited from a prefix of the events (the reader failed) must work too.
         let _ = reader.accept(&mut class_node, options);
         let mut trace_class_visitor = TraceClassVisitor::new(std::io::sink());

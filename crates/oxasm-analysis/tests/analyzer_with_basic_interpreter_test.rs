@@ -12,7 +12,7 @@
 
 mod common;
 
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
@@ -29,7 +29,7 @@ use oxasm_tree::{ClassNode, MethodNode, TryCatchBlockNode};
 const CLASS_NAME: &str = "C";
 
 fn read_class_node(bytes: &[u8]) -> ClassNode {
-    let mut class_node = ClassNode::new();
+    let mut class_node = ClassNode::with_interner(Arc::default());
     ClassReader::new(bytes)
         .unwrap()
         .accept(&mut class_node, ParsingOptions::empty())

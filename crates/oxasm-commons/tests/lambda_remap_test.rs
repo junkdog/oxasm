@@ -7,6 +7,7 @@
 //! ASM's latest api ones.
 
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use oxasm::opcodes::*;
 use oxasm::{ClassVisitor, Constant, Handle, HandleKind, JavaStr, MethodVisitor, Type, jstr};
@@ -154,7 +155,7 @@ fn remappers_latest() -> Vec<Box<dyn Remapper>> {
 /// remapped invokedynamic instruction.
 fn assert_lambda_remapped(func: fn(&mut dyn MethodVisitor)) {
     for remapper in remappers_latest() {
-        let mut class_node = ClassNode::new();
+        let mut class_node = ClassNode::with_interner(Arc::default());
         let mut class_remapper = ClassRemapper::new(&mut class_node, &*remapper);
         class_remapper.visit(
             V11,
