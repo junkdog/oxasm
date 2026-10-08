@@ -387,6 +387,17 @@ impl MethodWriterState {
     fn code_length(&self) -> i32 {
         self.code.size() as i32
     }
+
+    /// Sizes the code and the label table for a method of `code_length` bytes of bytecode (the
+    /// hint of [`MethodVisitor::visit_code_length`]), so that rewriting a method grows neither.
+    fn reserve_code(&mut self, code_length: u32) {
+        // A larger code array is not one a method can have (ASM's MethodTooLargeException).
+        let code_length = code_length.min(65535) as usize;
+        self.code.reserve_total(code_length);
+        // Methods have about one label per 12 bytes of bytecode; one per 4, plus 2, covers 99.9%
+        // of a corpus' methods.
+        self.labels.reserve(code_length / 4 + 2);
+    }
 }
 
 /// A [`MethodVisitor`] that generates a corresponding `method_info` structure, as defined in the
@@ -504,6 +515,10 @@ impl MethodVisitor for MethodWriter<'_> {
 
     fn visit_code(&mut self) {
         // Nothing to do.
+    }
+
+    fn visit_code_length(&mut self, code_length: u32) {
+        self.state.reserve_code(code_length);
     }
 
     fn visit_frame(

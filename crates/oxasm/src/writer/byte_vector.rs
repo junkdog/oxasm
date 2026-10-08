@@ -65,6 +65,14 @@ impl ByteVector {
         self.data
     }
 
+    /// Reserves room for at least `total` bytes in this vector, and no more (a size known in
+    /// advance).
+    #[inline]
+    pub(crate) fn reserve_total(&mut self, total: usize) {
+        self.data
+            .reserve_exact(total.saturating_sub(self.data.len()));
+    }
+
     /// Truncates this vector to the given length (ASM sets `length` directly).
     #[inline]
     pub(crate) fn truncate(&mut self, length: usize) {

@@ -10,6 +10,7 @@
 //! share a bucket under any hash.
 
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroU32;
 
 use rustc_hash::{FxHashMap, FxHasher};
 
@@ -122,6 +123,24 @@ impl Symbol {
     }
 }
 
+/// The number of buckets of a new, empty [`SymbolTable`]'s hash set (ASM's 256).
+const INITIAL_CAPACITY: usize = 256;
+
+/// A reference to an entry of a [`SymbolTable`]'s arena, or `None`: the entry's index plus one,
+/// so that a link takes 4 bytes and an array of empty buckets is allocated zeroed.
+type Link = Option<NonZeroU32>;
+
+/// The link to the entry at the given index in the arena.
+#[allow(clippy::cast_possible_truncation)] // the arena never holds u32::MAX entries
+fn link(index: usize) -> Link {
+    NonZeroU32::new(index as u32 + 1)
+}
+
+/// The index in the arena of the entry that a link refers to.
+fn linked(link: NonZeroU32) -> u32 {
+    link.get() - 1
+}
+
 /// An entry of the hash set of a [`SymbolTable`]: a symbol, its hash code, and the next entry of
 /// its bucket.
 #[derive(Clone, Debug)]
@@ -129,8 +148,8 @@ struct Entry {
     symbol: Symbol,
     /// The hash code of this entry (non negative, as in ASM).
     hash_code: i32,
-    /// The next entry in the same bucket, as an index in [`SymbolTable::arena`].
-    next: Option<u32>,
+    /// The next entry in the same bucket, in [`SymbolTable::arena`].
+    next: Link,
 }
 
 /// The constant pool entries, the BootstrapMethods attribute entries and the (ASM specific) type
@@ -146,9 +165,9 @@ pub(crate) struct SymbolTable {
     /// Every entry of this table, in insertion order (the storage of ASM's `Entry` objects).
     arena: Vec<Entry>,
     /// A hash set of all the entries in this table (constant pool, bootstrap method and type
-    /// table entries): each bucket holds the index in `arena` of its first entry, the others
-    /// being linked through [`Entry::next`].
-    entries: Vec<Option<u32>>,
+    /// table entries): each bucket links to its first entry in `arena`, the others being linked
+    /// through [`Entry::next`].
+    entries: Vec<Link>,
     /// The number of constant pool items in `constant_pool`, plus 1. The first constant pool item
     /// has index 1, and long and double items count for two items.
     constant_pool_count: i32,
@@ -198,7 +217,7 @@ impl SymbolTable {
             major_version: 0,
             class_name: None,
             arena: Vec::new(),
-            entries: vec![None; 256],
+            entries: vec![None; INITIAL_CAPACITY],
             constant_pool_count: 1,
             constant_pool: ByteVector::new(),
             bootstrap_method_count: 0,
@@ -537,14 +556,16 @@ impl SymbolTable {
     // ---------------------------------------------------------------------------------------------
 
     /// The first entry of the bucket of the given hash code.
-    fn get(&self, hash_code: i32) -> Option<u32> {
+    fn get(&self, hash_code: i32) -> Link {
         self.entries[hash_code as usize % self.entries.len()]
     }
 
-    /// Finds the first entry, in the bucket of `hash_code`, that has this hash code and matches.
+    /// Finds the first entry, in the bucket of `hash_code`, that has this hash code and matches,
+    /// and returns its index in the arena.
     fn find(&self, hash_code: i32, matches: impl Fn(&Symbol) -> bool) -> Option<u32> {
         let mut entry = self.get(hash_code);
-        while let Some(index) = entry {
+        while let Some(l) = entry {
+            let index = linked(l);
             let e = &self.arena[index as usize];
             if e.hash_code == hash_code && matches(&e.symbol) {
                 return Some(index);
@@ -563,12 +584,12 @@ impl SymbolTable {
             let mut new_entries = vec![None; new_capacity];
             for i in (0..current_capacity).rev() {
                 let mut current_entry = self.entries[i];
-                while let Some(index) = current_entry {
-                    let e = &mut self.arena[index as usize];
+                while let Some(l) = current_entry {
+                    let e = &mut self.arena[linked(l) as usize];
                     let new_current_entry_index = e.hash_code as usize % new_capacity;
                     let next_entry = e.next;
                     e.next = new_entries[new_current_entry_index];
-                    new_entries[new_current_entry_index] = Some(index);
+                    new_entries[new_current_entry_index] = Some(l);
                     current_entry = next_entry;
                 }
             }
@@ -576,19 +597,18 @@ impl SymbolTable {
         }
         let bucket = entry.hash_code as usize % self.entries.len();
         entry.next = self.entries[bucket];
-        let index = self.arena.len() as u32;
+        let index = self.arena.len();
         self.arena.push(entry);
-        self.entries[bucket] = Some(index);
-        index
+        self.entries[bucket] = link(index);
+        index as u32
     }
 
     /// Adds the given entry in the hash set, without resizing it (ASM's `add`).
     fn add(&mut self, mut entry: Entry) {
         let bucket = entry.hash_code as usize % self.entries.len();
         entry.next = self.entries[bucket];
-        let index = self.arena.len() as u32;
+        self.entries[bucket] = link(self.arena.len());
         self.arena.push(entry);
-        self.entries[bucket] = Some(index);
     }
 
     /// The symbol of the given entry.

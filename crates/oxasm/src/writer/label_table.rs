@@ -219,6 +219,12 @@ pub(crate) struct LabelTable {
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // Java's int arithmetic
 impl LabelTable {
+    /// Reserves room for `additional` more labels.
+    pub(crate) fn reserve(&mut self, additional: usize) {
+        self.index.reserve(additional);
+        self.blocks.reserve(additional);
+    }
+
     /// The index of the state of the given label, created if needed.
     pub(crate) fn id(&mut self, label: Label) -> BlockId {
         let next = self.blocks.len() as BlockId;

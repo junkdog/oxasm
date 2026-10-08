@@ -120,6 +120,55 @@ fn test_recursive_condy_fast_enough() {
     assert!(start.elapsed() < Duration::from_millis(1_000));
 }
 
+/// Tests that the code length hint (an oxasm extension) only sizes the method writer's buffers:
+/// with no hint, a wrong one or one larger than any method, the class is the same.
+#[test]
+fn test_visit_code_length_is_only_a_hint() {
+    let write = |code_length: Option<u32>| {
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::COMPUTE_FRAMES);
+        class_writer.visit(
+            opcodes::V11,
+            opcodes::ACC_SUPER,
+            JavaStr::from_str("Test"),
+            None,
+            Some(JavaStr::from_str("java/lang/Object")),
+            &[],
+        );
+        {
+            let mut mv = class_writer
+                .visit_method(
+                    opcodes::ACC_STATIC,
+                    JavaStr::from_str("m"),
+                    JavaStr::from_str("(I)I"),
+                    None,
+                    &[],
+                )
+                .expect("a method writer");
+            mv.visit_code();
+            if let Some(code_length) = code_length {
+                mv.visit_code_length(code_length);
+            }
+            let (zero, end) = (Label::new(), Label::new());
+            mv.visit_var_insn(opcodes::ILOAD, 0);
+            mv.visit_jump_insn(opcodes::IFEQ, zero);
+            mv.visit_insn(opcodes::ICONST_1);
+            mv.visit_jump_insn(opcodes::GOTO, end);
+            mv.visit_label(zero);
+            mv.visit_insn(opcodes::ICONST_0);
+            mv.visit_label(end);
+            mv.visit_insn(opcodes::IRETURN);
+            mv.visit_maxs(0, 0);
+            mv.visit_end();
+        }
+        class_writer.visit_end();
+        class_writer.to_bytes().expect("a class file")
+    };
+    let expected = write(None);
+    for code_length in [0, 1, 10, 65_535, u32::MAX] {
+        assert_eq!(write(Some(code_length)), expected, "hint {code_length}");
+    }
+}
+
 // -------------------------------------------------------------------------------------------------
 // LabelTest
 // -------------------------------------------------------------------------------------------------
