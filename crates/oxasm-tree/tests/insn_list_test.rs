@@ -876,7 +876,9 @@ fn annotate(insn_list: &mut InsnList, id: InsnId, interner: &Interner, descripto
     insn_list
         .type_annotations_mut(id)
         .visible
-        .push(oxasm_tree::TypeAnnotationNode::new(type_ref, None, descriptor));
+        .push(oxasm_tree::TypeAnnotationNode::new(
+            type_ref, None, descriptor,
+        ));
 }
 
 fn annotation_count(insn_list: &InsnList, id: InsnId) -> usize {
@@ -908,6 +910,47 @@ fn type_annotations_follow_their_instruction() {
     annotate(&mut other, reused, &interner, "LB;");
     let (replaced, _) = other.set(reused, new_insn(9));
     assert_eq!(annotation_count(&other, replaced), 0);
+}
+
+/// Counts instructions and instruction annotations.
+#[derive(Default)]
+struct CountingVisitor {
+    insns: usize,
+    annotations: usize,
+}
+
+impl MethodVisitor for CountingVisitor {
+    fn visit_insn(&mut self, _opcode: u8) {
+        self.insns += 1;
+    }
+
+    fn visit_insn_annotation<'a>(
+        &'a mut self,
+        _type_ref: oxasm::TypeReference,
+        _type_path: Option<&oxasm::TypePath>,
+        _descriptor: &oxasm::JavaStr,
+        _visible: bool,
+    ) -> Option<Box<dyn oxasm::AnnotationVisitor + 'a>> {
+        self.annotations += 1;
+        None
+    }
+}
+
+#[test]
+fn accepting_an_instruction_visits_its_type_annotations() {
+    let interner = Interner::new();
+    let (mut insn_list, insn1, insn2) = new_insn_list_2();
+    annotate(&mut insn_list, insn2, &interner, "LA;");
+
+    let mut visitor = CountingVisitor::default();
+    insn_list.accept_insn(insn1, &interner, &mut visitor);
+    assert_eq!((visitor.insns, visitor.annotations), (1, 0));
+    insn_list.accept_insn(insn2, &interner, &mut visitor);
+    assert_eq!((visitor.insns, visitor.annotations), (2, 1));
+
+    let mut visitor = CountingVisitor::default();
+    insn_list.accept(&interner, &mut visitor);
+    assert_eq!((visitor.insns, visitor.annotations), (2, 1));
 }
 
 #[test]

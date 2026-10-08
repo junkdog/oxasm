@@ -532,12 +532,6 @@ impl InsnNode {
         self.insn.opcode()
     }
 
-    /// Makes the given visitor visit this instruction (without its type annotations, which its
-    /// list holds), with the strings of the given interner.
-    pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
-        self.insn.accept(interner, method_visitor);
-    }
-
     /// A copy of this instruction, whose labels are replaced with their image in the given map
     /// (ASM's `clone(Map<LabelNode, LabelNode>)`); see [`Insn::clone_with`]. ASM's clone also
     /// copies the type annotations of real instructions, which here are in the list: see

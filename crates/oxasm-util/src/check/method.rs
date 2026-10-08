@@ -204,8 +204,10 @@ pub(crate) fn print_analyzer_result(
     out.push_java_str(method.resolve(method.name));
     out.push_java_str(method.resolve(method.desc));
     out.push('\n');
-    for (i, insn) in method.instructions.iter().enumerate() {
-        insn.accept(method.interner(), &mut trace_method_visitor);
+    for (i, id) in method.instructions.ids().enumerate() {
+        method
+            .instructions
+            .accept_insn(id, method.interner(), &mut trace_method_visitor);
 
         let mut string_builder = JavaString::new();
         match frames.get(i).and_then(Option::as_ref) {

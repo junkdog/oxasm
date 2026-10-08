@@ -126,9 +126,11 @@ fn analyze_method<I: Interpreter>(
     };
     let mut textifier = Textifier::new();
     let mut trace_method_visitor = TraceMethodVisitor::new(&mut textifier);
-    for (i, insn) in method.instructions.iter().enumerate() {
+    for (i, id) in method.instructions.ids().enumerate() {
         let start = trace_method_visitor.p.get_text().len();
-        insn.accept(method.interner(), &mut trace_method_visitor);
+        method
+            .instructions
+            .accept_insn(id, method.interner(), &mut trace_method_visitor);
         let insn_text: JavaString =
             text_to_java_string(&trace_method_visitor.p.get_text()[start..]);
         write!(text, "{i} ").expect("writing to a vector");

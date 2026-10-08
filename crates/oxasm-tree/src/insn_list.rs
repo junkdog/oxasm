@@ -241,16 +241,39 @@ impl InsnList {
     pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
         let mut current = self.first;
         while current != NIL {
-            let slot = &self.slots[current as usize];
-            let node = slot.node.as_ref().expect("a linked slot holds a node");
-            node.accept(interner, method_visitor);
-            if !self.annotations.is_empty()
-                && node.opcode().is_some()
-                && let Some(annotations) = self.annotations.get(&current)
-            {
-                annotations.accept(interner, method_visitor);
-            }
-            current = slot.next;
+            self.accept_slot(current, interner, method_visitor);
+            current = self.slots[current as usize].next;
+        }
+    }
+
+    /// Makes the given visitor visit the given instruction, then its type annotations if it is
+    /// a real instruction (ASM's `AbstractInsnNode.accept`), with the strings of the given
+    /// interner. [`Insn::accept`](crate::Insn::accept) visits the instruction alone.
+    ///
+    /// # Panics
+    ///
+    /// If `id` is not an instruction of this list.
+    pub fn accept_insn(
+        &self,
+        id: InsnId,
+        interner: &Interner,
+        method_visitor: &mut dyn MethodVisitor,
+    ) {
+        self.accept_slot(self.expect_slot(id), interner, method_visitor);
+    }
+
+    /// [`accept_insn`](Self::accept_insn) for the instruction in the given (linked) slot.
+    fn accept_slot(&self, slot: u32, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
+        let node = self.slots[slot as usize]
+            .node
+            .as_ref()
+            .expect("a linked slot holds a node");
+        node.insn.accept(interner, method_visitor);
+        if !self.annotations.is_empty()
+            && node.opcode().is_some()
+            && let Some(annotations) = self.annotations.get(&slot)
+        {
+            annotations.accept(interner, method_visitor);
         }
     }
 
