@@ -252,7 +252,7 @@ impl<H: ClassHierarchy> SimpleVerifier<H> {
         }
         // Special case for the type of the "null" literal.
         if *type1 == BasicInterpreter::NULL_TYPE {
-            return Ok(Some(value2.clone()));
+            return Ok(Some(*value2));
         }
         if *type2 == BasicInterpreter::NULL_TYPE {
             return Ok(None);
@@ -330,7 +330,7 @@ impl<H: ClassHierarchy> Verifier for SimpleVerifier<H> {
                     .new_value(Some(&element))?
                     .ok_or_else(|| null_pointer("value"));
             } else if *array_type == BasicInterpreter::NULL_TYPE {
-                return Ok(object_array_value.clone());
+                return Ok(*object_array_value);
             }
         }
         Err(assertion_error())

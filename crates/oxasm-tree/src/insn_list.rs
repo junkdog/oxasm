@@ -257,8 +257,10 @@ impl InsnList {
     }
 
     /// An iterator over the handles and instructions of this list, in order.
-    pub fn iter_with_ids(&self) -> impl DoubleEndedIterator<Item = (InsnId, &InsnNode)> {
-        self.ids().map(|id| (id, &self[id]))
+    pub fn iter_with_ids(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (InsnId, &InsnNode)> + ExactSizeIterator {
+        IterWithIds { ids: self.ids() }
     }
 
     /// Makes the given visitor visit all the instructions in this list, with the strings of the
@@ -814,6 +816,37 @@ impl DoubleEndedIterator for Iter<'_> {
 }
 
 impl ExactSizeIterator for Iter<'_> {}
+
+/// An iterator over the handles and instructions of an [`InsnList`], in order: an [`Iter`] that
+/// also yields the handles (the node of a linked slot needs no lookup by handle).
+#[derive(Clone, Debug)]
+struct IterWithIds<'a> {
+    ids: Ids<'a>,
+}
+
+impl<'a> Iterator for IterWithIds<'a> {
+    type Item = (InsnId, &'a InsnNode);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let slot = self.ids.front;
+        let id = self.ids.next()?;
+        Some((id, self.ids.list.slots[slot as usize].node.as_ref()?))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.ids.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for IterWithIds<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let slot = self.ids.back;
+        let id = self.ids.next_back()?;
+        Some((id, self.ids.list.slots[slot as usize].node.as_ref()?))
+    }
+}
+
+impl ExactSizeIterator for IterWithIds<'_> {}
 
 /// A cursor over an [`InsnList`] that can modify it as it moves: ASM's `ListIterator` over an
 /// `InsnList`, i.e. a position between two instructions, and the last instruction returned by

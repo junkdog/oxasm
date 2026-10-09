@@ -69,8 +69,13 @@ impl<V: Value> Frame<V> {
         self.values.assign(values);
         self.num_locals = shape.num_locals;
         self.max_stack = shape.max_stack;
-        self.capacity = self.capacity.max(shape.capacity);
+        self.accumulate_capacity(shape);
         self
+    }
+
+    /// What [`init_from`](Self::init_from) keeps of the previous state: the largest capacity.
+    pub(crate) fn accumulate_capacity(&mut self, shape: FrameShape) {
+        self.capacity = self.capacity.max(shape.capacity);
     }
 
     /// Makes this frame a clone of the frame with the given parts, reusing its storage.

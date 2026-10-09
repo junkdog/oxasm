@@ -171,6 +171,16 @@ impl<V: Value> FrameArena<V> {
         )
     }
 
+    /// Updates what [`init`](Self::init) accumulates in `frame` from the frame at `index`: its
+    /// capacity, the largest of those of the frames it was initialized from.
+    ///
+    /// # Panics
+    ///
+    /// If the instruction at `index` has no frame.
+    pub(crate) fn init_capacity(&self, index: usize, frame: &mut Frame<V>) {
+        frame.accumulate_capacity(self.slot(index).shape);
+    }
+
     /// Makes `frame` a clone of the frame at `index`.
     ///
     /// # Panics

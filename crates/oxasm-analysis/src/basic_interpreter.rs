@@ -140,7 +140,7 @@ impl BasicInterpreter {
 
     /// ASM's `BasicInterpreter.copyOperation`: the value itself.
     pub fn copy_operation(value: &BasicValue) -> BasicValue {
-        value.clone()
+        *value
     }
 
     /// ASM's `BasicInterpreter.unaryOperation`, which calls `this.new_value`.

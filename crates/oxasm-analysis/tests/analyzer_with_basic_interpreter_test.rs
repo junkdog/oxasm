@@ -245,10 +245,7 @@ impl Interpreter for BadInterpreter {
     ) -> Result<Option<BasicValue>, AnalyzerError> {
         // ASM: return new BasicValue(super.merge(value1, value2).getType()). A `None` merge is
         // value1: a new value is returned in its place, which breaks the contract.
-        let merged = self
-            .0
-            .merge(value1, value2)?
-            .unwrap_or_else(|| value1.clone());
+        let merged = self.0.merge(value1, value2)?.unwrap_or(*value1);
         Ok(Some(BasicValue::new(merged.get_type().cloned())))
     }
 }

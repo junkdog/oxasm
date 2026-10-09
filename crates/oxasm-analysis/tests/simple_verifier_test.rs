@@ -51,14 +51,8 @@ fn test_merge_object_types() {
             SimpleVerifier::new(MapHierarchy::from_tsv(JDK_HIERARCHY.as_bytes()).unwrap());
 
         // A `None` merge is value1.
-        let merge1 = verifier
-            .merge(&value1, &value2)
-            .unwrap()
-            .unwrap_or_else(|| value1.clone());
-        let merge2 = verifier
-            .merge(&value2, &value1)
-            .unwrap()
-            .unwrap_or_else(|| value2.clone());
+        let merge1 = verifier.merge(&value1, &value2).unwrap().unwrap_or(value1);
+        let merge2 = verifier.merge(&value2, &value1).unwrap().unwrap_or(value2);
 
         let expected_value = BasicValue::new(Some(Type::get_object_type(expected_internal_name)));
         assert_eq!(expected_value, merge1, "{internal_name1}, {internal_name2}");

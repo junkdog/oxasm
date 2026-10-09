@@ -89,7 +89,7 @@ impl BasicVerifier {
                         value,
                     ));
                 }
-                return Ok(value.clone());
+                return Ok(*value);
             }
             ASTORE => {
                 if !value.is_reference() && BasicValue::RETURNADDRESS_VALUE != *value {
@@ -100,14 +100,14 @@ impl BasicVerifier {
                         value,
                     ));
                 }
-                return Ok(value.clone());
+                return Ok(*value);
             }
-            _ => return Ok(value.clone()),
+            _ => return Ok(*value),
         };
         if expected != *value {
             return Err(expected_value_error(insn, None, Some(&expected), value));
         }
-        Ok(value.clone())
+        Ok(*value)
     }
 
     /// ASM's `BasicVerifier.unaryOperation`.
@@ -289,7 +289,7 @@ impl BasicVerifier {
             LASTORE => (array(this, "[J")?, BasicValue::LONG_VALUE),
             FASTORE => (array(this, "[F")?, BasicValue::FLOAT_VALUE),
             DASTORE => (array(this, "[D")?, BasicValue::DOUBLE_VALUE),
-            AASTORE => (Some(value1.clone()), BasicValue::REFERENCE_VALUE),
+            AASTORE => (Some(*value1), BasicValue::REFERENCE_VALUE),
             _ => return Err(assertion_error()),
         };
         if !is_sub_type_of(this, value1, expected1.as_ref())? {
