@@ -92,6 +92,15 @@ impl<T: Copy + Eq> Many<'_, T> {
             .any(|(_, e)| e == element)
     }
 
+    /// Whether this set contains every element of `elements`.
+    #[inline]
+    fn contains_all(&self, elements: &[T]) -> bool
+    where
+        T: Hash,
+    {
+        elements.iter().all(|e| self.contains(hash_of(e), e))
+    }
+
     /// Whether every element of `other` is in this set.
     fn is_superset(&self, other: &Many<'_, T>) -> bool {
         let (a, b) = (self.elements, other.elements);
@@ -213,32 +222,86 @@ impl<'s, T: Copy + Eq + Hash> SmallSet<'s, T> {
     /// The union of this set and `other` (ASM's `union`). A set of two or more elements that is
     /// neither operand is allocated in `sets`.
     pub fn union(&self, other: &SmallSet<'s, T>, sets: &'s SetArena) -> SmallSet<'s, T> {
+        self.union_if_grown(other, sets).unwrap_or(*self)
+    }
+
+    /// The [`union`](Self::union) of this set and `other`, or `None` if it is this set (`other`
+    /// is a subset of it). Each case of the two sets' forms is decided by one test of their
+    /// elements, where a superset test and then a union would test them up to three times.
+    #[inline]
+    pub(crate) fn union_if_grown(
+        &self,
+        other: &SmallSet<'s, T>,
+        sets: &'s SetArena,
+    ) -> Option<SmallSet<'s, T>> {
         match (&self.0, &other.0) {
-            (_, Repr::Empty) => *self,
-            (Repr::Empty, _) => *other,
-            (Repr::One(a), Repr::One(b)) if a == b => *self,
-            (Repr::One(a), Repr::One(b)) => SmallSet(Repr::Two(sets.alloc([*a, *b]))),
-            _ if self.is_superset(other) => *self,
-            _ if other.is_superset(self) => *other,
-            _ => {
-                let elements = sets.alloc_slice(&merge(&self.entries(), &other.entries()));
-                // The operands first, then the subsets they remember, nearest first.
-                let mut subsets = [0; SUBSETS];
-                let operands = [&self.0, &other.0].map(|operand| match operand {
-                    Repr::Many(set) => Some(*set),
-                    _ => None,
-                });
-                let ids = operands.iter().flatten().map(|set| set.id()).chain(
-                    operands
-                        .iter()
-                        .flatten()
-                        .flat_map(|set| set.subsets.iter().copied().filter(|&id| id != 0)),
-                );
-                for (slot, id) in subsets.iter_mut().zip(ids) {
-                    *slot = id;
-                }
-                SmallSet(Repr::Many(sets.alloc(Many { subsets, elements })))
+            (_, Repr::Empty) => None,
+            (Repr::Empty, _) => Some(*other),
+            (Repr::One(a), Repr::One(b)) if a == b => None,
+            (Repr::One(a), Repr::One(b)) => Some(SmallSet(Repr::Two(sets.alloc([*a, *b])))),
+            (Repr::One(a), Repr::Two([c, d])) if a == c || a == d => Some(*other),
+            (Repr::Two([a, b]), Repr::One(c)) if c == a || c == b => None,
+            (Repr::Two([a, b]), Repr::Two([c, d])) if (a == c && b == d) || (a == d && b == c) => {
+                None
             }
+            (Repr::One(_) | Repr::Two(_), Repr::One(_) | Repr::Two(_)) => {
+                Some(self.new_union(other, sets))
+            }
+            (Repr::Many(set), Repr::One(_) | Repr::Two(_)) => {
+                if set.contains_all(other.inline_elements()) {
+                    None
+                } else {
+                    Some(self.new_union(other, sets))
+                }
+            }
+            (Repr::One(_) | Repr::Two(_), Repr::Many(set)) => {
+                if set.contains_all(self.inline_elements()) {
+                    Some(*other)
+                } else {
+                    Some(self.new_union(other, sets))
+                }
+            }
+            (Repr::Many(a), Repr::Many(b)) => {
+                if a.is_superset(b) {
+                    None
+                } else if b.is_superset(a) {
+                    Some(*other)
+                } else {
+                    Some(self.new_union(other, sets))
+                }
+            }
+        }
+    }
+
+    /// The union of this set and `other`, neither a subset of the other, as a new set in `sets`.
+    #[inline(never)]
+    fn new_union(&self, other: &SmallSet<'s, T>, sets: &'s SetArena) -> SmallSet<'s, T> {
+        let elements = sets.alloc_slice(&merge(&self.entries(), &other.entries()));
+        // The operands first, then the subsets they remember, nearest first.
+        let mut subsets = [0; SUBSETS];
+        let operands = [&self.0, &other.0].map(|operand| match operand {
+            Repr::Many(set) => Some(*set),
+            _ => None,
+        });
+        let ids = operands.iter().flatten().map(|set| set.id()).chain(
+            operands
+                .iter()
+                .flatten()
+                .flat_map(|set| set.subsets.iter().copied().filter(|&id| id != 0)),
+        );
+        for (slot, id) in subsets.iter_mut().zip(ids) {
+            *slot = id;
+        }
+        SmallSet(Repr::Many(sets.alloc(Many { subsets, elements })))
+    }
+
+    /// The elements of a set of at most two elements (none for a larger set).
+    #[inline]
+    fn inline_elements(&self) -> &[T] {
+        match &self.0 {
+            Repr::One(a) => std::slice::from_ref(a),
+            Repr::Two(pair) => &pair[..],
+            Repr::Empty | Repr::Many(_) => &[],
         }
     }
 
@@ -286,8 +349,10 @@ impl<T: Copy + Eq + Hash> Default for SmallSet<'_, T> {
 }
 
 impl<T: Copy + Eq + Hash> PartialEq for SmallSet<'_, T> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.len() == other.len() && self.is_superset(other)
+        // An analysis compares mostly identical copies (a frame's return value with the last one).
+        self.is_identical(other) || (self.len() == other.len() && self.is_superset(other))
     }
 }
 

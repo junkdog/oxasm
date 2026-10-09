@@ -210,13 +210,12 @@ impl<'s> SourceInterpreter<'s> {
         value1: &mut SourceValue<'s, P>,
         value2: &SourceValue<'s, P>,
     ) -> bool {
-        if value1.size <= value2.size && value1.insns.is_superset(&value2.insns) {
-            return false;
+        let size = value1.size.min(value2.size);
+        match value1.insns.union_if_grown(&value2.insns, sets) {
+            Some(insns) => *value1 = SourceValue::with_insns(size, insns),
+            None if size == value1.size => return false,
+            None => value1.size = size,
         }
-        *value1 = SourceValue::with_insns(
-            value1.size.min(value2.size),
-            value1.insns.union(&value2.insns, sets),
-        );
         true
     }
 }

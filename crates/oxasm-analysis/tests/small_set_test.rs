@@ -206,5 +206,13 @@ proptest! {
         prop_assert_eq!(union.len(), model_union.len());
         prop_assert_eq!(union.iter().map(|e| e.0).collect::<HashSet<u8>>(), model_union);
         prop_assert!(union.is_superset(&set_a) && union.is_superset(&set_b));
+        // ASM's `union` returns an operand that is a superset, the first one first: the same
+        // elements in the same order (a pair's insertion order, a larger set's slice).
+        let elements = |set: &SmallSet<'_, Colliding>| set.iter().map(|e| e.0).collect::<Vec<u8>>();
+        if model_a.is_superset(&model_b) {
+            prop_assert_eq!(elements(&union), elements(&set_a));
+        } else if model_b.is_superset(&model_a) {
+            prop_assert_eq!(elements(&union), elements(&set_b));
+        }
     }
 }
