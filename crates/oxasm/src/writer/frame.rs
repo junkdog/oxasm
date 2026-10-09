@@ -1289,6 +1289,24 @@ impl FrameMut<'_> {
     ) -> Result<(), WriteError> {
         let mark = self.values.values.len();
         self.execute(opcode, arg, arg_symbol, symbol_table)?;
+        if self.frame.initializations.len == 0
+            && let (Some(input_locals), Some(input_stack)) =
+                (self.frame.input_locals, self.frame.input_stack)
+            && input_stack.len as i64 + i64::from(self.frame.output_stack_start) >= 0
+            && self.frame.output_stack_top >= 0
+        {
+            return self.update_inputs_in_place(input_locals, input_stack, mark);
+        }
+        self.merge_into_new_input_frame(symbol_table, mark)
+    }
+
+    /// The end of [`Self::execute_current`] in general: merges the frame into a new frame,
+    /// which becomes its input frame (ASM's `merge(symbolTable, successor, 0)` and `copyFrom`).
+    fn merge_into_new_input_frame(
+        &mut self,
+        symbol_table: &mut SymbolTable,
+        mark: usize,
+    ) -> Result<(), WriteError> {
         let source = *self.frame;
         let mut successor = Frame::new(None);
         // The successor's input frame is new: no reference types are merged.
@@ -1303,6 +1321,83 @@ impl FrameMut<'_> {
         )?;
         self.copy_from(successor);
         self.reclaim(&source, mark);
+        Ok(())
+    }
+
+    /// [`Self::execute_current`]'s merge into a new frame and copy, for an instruction that
+    /// initialized nothing and popped no more than the input stack has (otherwise the merge
+    /// resolves every local, or fails), with a stack top that did not overflow.
+    ///
+    /// The new input locals are then the old ones but for those the instruction assigned, so only
+    /// these are resolved, in place: an instruction costs what it touches, not `max_locals`.
+    /// A merge into a new frame also turns an array of NULL into NULL (`merge_type`), which the
+    /// input types never are: they come from the descriptor, an API frame, or a previous
+    /// instruction's merge. The changed locals and the new stack are resolved against the old
+    /// input frame, in the merge's order (so the first error is the same), before any is written.
+    fn update_inputs_in_place(
+        &mut self,
+        input_locals: Span,
+        input_stack: Span,
+        mark: usize,
+    ) -> Result<(), WriteError> {
+        let frame = &mut *self.frame;
+        let values = &mut self.values.values;
+        let num_stack = input_stack.len;
+        // The changed locals, as (index, type) pairs, then the new stack, after the instruction's
+        // output arrays.
+        let changed_locals = values.len();
+        if let Some(output_locals) = frame.output_locals {
+            for i in 0..output_locals.len.min(input_locals.len) {
+                let output_local = values[output_locals.start + i];
+                if output_local != 0 {
+                    let concrete_output_type = get_concrete_output_type(
+                        output_local,
+                        num_stack,
+                        &values[input_locals.start..input_locals.end()],
+                        &values[input_stack.start..input_stack.end()],
+                    )?;
+                    values.extend([i as i32, null_merged(concrete_output_type)]);
+                }
+            }
+        }
+        let new_stack = values.len();
+        let num_input_stack = (num_stack as i64 + i64::from(frame.output_stack_start)) as usize;
+        values.extend_from_within(input_stack.start..input_stack.start + num_input_stack);
+        let output_stack = frame.output_stack.unwrap_or_default();
+        for i in 0..i64::from(frame.output_stack_top) {
+            let abstract_output_type = element(&values[output_stack.start..output_stack.end()], i)?;
+            let concrete_output_type = get_concrete_output_type(
+                abstract_output_type,
+                num_stack,
+                &values[input_locals.start..input_locals.end()],
+                &values[input_stack.start..input_stack.end()],
+            )?;
+            values.push(null_merged(concrete_output_type));
+        }
+        for pair in (changed_locals..new_stack).step_by(2) {
+            let (index, abstract_type) = (values[pair] as usize, values[pair + 1]);
+            values[input_locals.start + index] = abstract_type;
+        }
+        // The old input stack is not used anymore: the new one replaces it if it is the last
+        // array before the instruction's (it always is, in practice).
+        let stack_len = values.len() - new_stack;
+        let stack_start = if input_stack.end() == mark {
+            input_stack.start
+        } else {
+            mark
+        };
+        values.copy_within(new_stack.., stack_start);
+        values.truncate(stack_start + stack_len);
+        frame.input_stack = Some(Span {
+            start: stack_start,
+            len: stack_len,
+        });
+        frame.output_locals = None;
+        frame.output_stack = None;
+        frame.output_stack_start = 0;
+        frame.output_stack_top = 0;
+        frame.initializations = Span::default();
+        frame.initializations_capacity = 0;
         Ok(())
     }
 
@@ -1411,6 +1506,16 @@ impl FrameValues {
         let (before, rest) = self.values.split_at_mut(dst.start);
         let (dst_values, after) = rest.split_at_mut(dst.len);
         (OtherArrays { before, after, dst }, dst_values)
+    }
+}
+
+/// The type [`merge_type`] stores in an unassigned slot from the given type: NULL for an array
+/// of NULL.
+fn null_merged(abstract_type: i32) -> i32 {
+    if abstract_type & !DIM_MASK == NULL {
+        NULL
+    } else {
+        abstract_type
     }
 }
 
@@ -1978,5 +2083,114 @@ mod tests {
             let len = current.values.values.len();
             assert!(len <= locals.len() + stack.len() + 20, "{i}: {len}");
         }
+    }
+
+    /// `execute_current` resolves only the locals an instruction assigned, in place; ASM merges
+    /// every local into a new frame. Both give the same frames and the same first error, on
+    /// random instruction sequences (loads, stores, stack shuffles and pops below the input
+    /// stack, NULLs and array elements of NULL).
+    #[test]
+    fn execute_current_in_place_is_the_merge() {
+        let new_frame = |symbol_table: &mut SymbolTable| {
+            symbol_table
+                .set_major_version_and_class_name(opcodes::V1_8 as i32, JavaStr::from_str("pkg/C"));
+            let mut frame = Frame::new(None);
+            let mut values = FrameValues::default();
+            FrameMut {
+                frame: &mut frame,
+                values: &mut values,
+            }
+            .set_input_frame_from_descriptor(
+                symbol_table,
+                0,
+                JavaStr::from_str("(J[Ljava/lang/String;I)V"),
+                12,
+            )
+            .unwrap();
+            (frame, values)
+        };
+        let frame_of = |frame: &Frame, values: &FrameValues| {
+            (
+                values.get_or_empty(frame.input_locals).to_vec(),
+                values.get_or_empty(frame.input_stack).to_vec(),
+            )
+        };
+        let instructions = [
+            (opcodes::ACONST_NULL, -1),
+            (opcodes::ICONST_0, -1),
+            (opcodes::LCONST_0, -1),
+            (opcodes::ALOAD, 0),
+            (opcodes::ALOAD, 3),
+            (opcodes::ALOAD, 1),
+            (opcodes::ASTORE, 1),
+            (opcodes::ISTORE, 1),
+            (opcodes::LSTORE, 1),
+            (opcodes::DSTORE, 1),
+            (opcodes::ILOAD, 1),
+            (opcodes::LLOAD, 1),
+            (opcodes::IINC, 1),
+            (opcodes::AALOAD, -1),
+            (opcodes::IADD, -1),
+            (opcodes::POP, -1),
+            (opcodes::POP2, -1),
+            (opcodes::DUP, -1),
+            (opcodes::DUP_X1, -1),
+            (opcodes::DUP2_X2, -1),
+            (opcodes::SWAP, -1),
+            (opcodes::ARETURN, -1),
+        ];
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut in_place_runs = 0;
+        for _ in 0..2000 {
+            let (mut frame, mut values) = new_frame(&mut SymbolTable::new());
+            let (mut reference, mut reference_values) = (frame, values.clone());
+            let mut symbol_table = SymbolTable::new();
+            let mut reference_symbol_table = SymbolTable::new();
+            new_frame(&mut symbol_table);
+            new_frame(&mut reference_symbol_table);
+            for _ in 0..30 {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                let (opcode, arg) =
+                    instructions[usize::try_from(seed % instructions.len() as u64).unwrap()];
+                // A local in 0..14, past the 12 locals too.
+                let arg = if arg < 0 {
+                    0
+                } else {
+                    i32::try_from((seed >> 32) % 14).unwrap()
+                };
+                let mut current = FrameMut {
+                    frame: &mut frame,
+                    values: &mut values,
+                };
+                let result = current.execute_current(opcode, arg, None, &mut symbol_table);
+                let mut merged = FrameMut {
+                    frame: &mut reference,
+                    values: &mut reference_values,
+                };
+                let mark = merged.values.values.len();
+                let reference_result = merged
+                    .execute(opcode, arg, None, &mut reference_symbol_table)
+                    .and_then(|()| {
+                        merged.merge_into_new_input_frame(&mut reference_symbol_table, mark)
+                    });
+                assert_eq!(
+                    format!("{result:?}"),
+                    format!("{reference_result:?}"),
+                    "{opcode} {arg}"
+                );
+                if result.is_err() {
+                    break;
+                }
+                assert_eq!(
+                    frame_of(&frame, &values),
+                    frame_of(&reference, &reference_values),
+                    "{opcode} {arg}"
+                );
+                in_place_runs += 1;
+            }
+        }
+        assert!(in_place_runs > 4000, "{in_place_runs}");
     }
 }
