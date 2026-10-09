@@ -100,6 +100,9 @@ pub struct MethodNode {
     pub visible_local_variable_annotations: Vec<LocalVariableAnnotationNode>,
     /// The invisible local variable annotations of this method.
     pub invisible_local_variable_annotations: Vec<LocalVariableAnnotationNode>,
+    /// The code length this node was visited with, if any (see
+    /// [`MethodVisitor::visit_code_length`]), which [`accept`](Self::accept) passes on.
+    visited_code_length: Option<u32>,
 }
 
 impl MethodNode {
@@ -138,6 +141,7 @@ impl MethodNode {
             local_variables: Vec::new(),
             visible_local_variable_annotations: Vec::new(),
             invisible_local_variable_annotations: Vec::new(),
+            visited_code_length: None,
         }
     }
 
@@ -260,6 +264,7 @@ impl MethodNode {
         // Visit the code.
         if !self.instructions.is_empty() {
             method_visitor.visit_code();
+            method_visitor.visit_code_length(self.code_length_hint());
             // Visits the try catch blocks.
             for (index, try_catch_block) in self.try_catch_blocks.iter().enumerate() {
                 try_catch_block.accept_with(
@@ -284,6 +289,22 @@ impl MethodNode {
             method_visitor.visit_maxs(self.max_stack, self.max_locals);
         }
         method_visitor.visit_end();
+    }
+
+    /// The length of this method's bytecode to send to [`MethodVisitor::visit_code_length`]:
+    /// the one this node was visited with, if any, otherwise an estimate. It is only a hint, so
+    /// a length that the node's changes since have made stale costs a visitor at most some
+    /// growth or some unused capacity.
+    ///
+    /// The estimate is two bytes per node, plus 4. A method has about 1.1 bytes of bytecode per
+    /// node at the median and 1.9 at p99, more in large methods, so this bound is short for 0.3%
+    /// of a corpus' methods (1% of its bytecode).
+    fn code_length_hint(&self) -> u32 {
+        if let Some(code_length) = self.visited_code_length {
+            return code_length;
+        }
+        u32::try_from(self.instructions.len())
+            .map_or(u32::MAX, |n| n.saturating_mul(2).saturating_add(4))
     }
 }
 
@@ -671,6 +692,7 @@ impl MethodVisitor for MethodNode {
     }
 
     fn visit_code_length(&mut self, code_length: u32) {
+        self.visited_code_length = Some(code_length);
         // A method has about 0.7 nodes (instructions, labels, frames and line numbers) per
         // byte of bytecode, small methods up to about 1: one node per byte, and a few for the
         // smallest, leaves most lists without a single reallocation.

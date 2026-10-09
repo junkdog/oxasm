@@ -249,3 +249,60 @@ fn malformed_events_do_not_panic() {
         Some(oxasm_tree::Insn::Frame(frame)) if frame.kind == oxasm::FrameKind::Insert
     ));
 }
+
+/// The code lengths of the methods a visitor visits.
+#[derive(Default)]
+struct CodeLengths(Vec<u32>);
+impl ClassVisitor for CodeLengths {
+    fn visit_method<'a>(
+        &'a mut self,
+        _access: u32,
+        _name: &JavaStr,
+        _descriptor: &JavaStr,
+        _signature: Option<&JavaStr>,
+        _exceptions: &[&JavaStr],
+    ) -> Option<Box<dyn MethodVisitor + 'a>> {
+        Some(Box::new(&mut *self))
+    }
+}
+impl MethodVisitor for CodeLengths {
+    fn visit_code_length(&mut self, code_length: u32) {
+        self.0.push(code_length);
+    }
+}
+
+/// oxasm-specific: a method node passes the code length it was visited with on to the visitors
+/// of its `accept`, and estimates one when it was not visited with any (W11 in
+/// oxasm-optimization.md: a writer sizes its code from it).
+#[test]
+fn accept_visits_the_code_length() {
+    for &class in PrecompiledClass::ALL {
+        let reader = ClassReader::new(class.bytes()).unwrap();
+        let mut read = CodeLengths::default();
+        reader.accept(&mut read, ParsingOptions::empty()).unwrap();
+        let mut class_node = ClassNode::with_interner(Arc::default());
+        reader
+            .accept(&mut class_node, ParsingOptions::empty())
+            .unwrap();
+        let mut accepted = CodeLengths::default();
+
+        class_node.accept(&mut accepted);
+
+        assert_eq!(accepted.0, read.0, "{class}");
+    }
+
+    // A method node built by hand: two bytes per node, plus 4.
+    let mut method_node = MethodNode::default();
+    method_node.visit_code();
+    method_node.visit_label(Label::new());
+    method_node.visit_insn(NOP);
+    method_node.visit_insn(NOP);
+    let mut accepted = CodeLengths::default();
+    method_node.accept_method_visitor(&mut accepted);
+    assert_eq!(accepted.0, [10]);
+
+    // No code, no code length.
+    let mut accepted = CodeLengths::default();
+    MethodNode::default().accept_method_visitor(&mut accepted);
+    assert!(accepted.0.is_empty());
+}

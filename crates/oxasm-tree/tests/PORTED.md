@@ -29,7 +29,7 @@ test class of ASM at tag `ASM_9_10_1` (`asm-tree/src/test/java`). A phase is don
 | `LineNumberNodeTest` | P3 | 1 | 1 | 0 | ported |  |
 | `LookupSwitchInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
 | `MethodInsnNodeTest` | P3 | 3 | 3 | 0 | ported |  |
-| `MethodNodeTest` | P3 / P5 | 4 | 3 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09); `testVisitAndAccept_withUninitializedMethodNode` compares `ClassFile` dumps, its P3 Textifier form kept (`*_textify`); plus try catch annotation index and label flag tests |
+| `MethodNodeTest` | P3 / P5 | 4 | 3 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09); `testVisitAndAccept_withUninitializedMethodNode` compares `ClassFile` dumps, its P3 Textifier form kept (`*_textify`); plus try catch annotation index, label flag and code length hint tests |
 | `ModuleNodeTest` | P3 | 3 | 2 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09); plus a test of every directive |
 | `MultiANewArrayInsnNodeTest` | P3 | 1 | 1 | 0 | ported |  |
 | `RecordComponentNodeTest` | P3 | 2 | 1 | 1 | ported | `testConstructor_illegalState` dropped (ADR-09) |
