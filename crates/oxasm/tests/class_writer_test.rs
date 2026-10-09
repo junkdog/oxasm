@@ -1135,6 +1135,55 @@ fn test_visit_member_counts_is_only_a_hint() {
     }
 }
 
+/// A class writer whose constant pool size hint is replaced: by the given size, or by none.
+struct ConstantPoolSizeHint {
+    size: Option<(u16, u32)>,
+    class_writer: ClassWriter<'static>,
+}
+
+impl ClassVisitor for ConstantPoolSizeHint {
+    fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
+        Some(&mut self.class_writer)
+    }
+
+    fn visit_constant_pool_size(&mut self, _: u16, _: u32) {
+        if let Some((constant_pool_count, length)) = self.size {
+            self.class_writer
+                .visit_constant_pool_size(constant_pool_count, length);
+        }
+    }
+}
+
+/// oxasm-specific: the constant pool size hint only sizes the class writer's symbol table: with
+/// the reader's hint, none, or wrong ones, every class is written the same (W13 in
+/// oxasm-optimization.md).
+#[test]
+fn test_visit_constant_pool_size_is_only_a_hint() {
+    for &class in PrecompiledClass::ALL {
+        let write = |size: Option<(u16, u32)>| {
+            let mut hinted = ConstantPoolSizeHint {
+                size,
+                class_writer: ClassWriter::new(ClassWriterFlags::empty()),
+            };
+            ClassReader::new(class.bytes())
+                .unwrap()
+                .accept(&mut hinted, ParsingOptions::empty())
+                .unwrap();
+            hinted.class_writer.to_bytes().unwrap()
+        };
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+        ClassReader::new(class.bytes())
+            .unwrap()
+            .accept(&mut class_writer, ParsingOptions::empty())
+            .unwrap();
+        let expected = class_writer.to_bytes().unwrap();
+
+        for size in [None, Some((0, 0)), Some((1, 0)), Some((u16::MAX, 1 << 16))] {
+            assert!(write(size) == expected, "{class}, hint {size:?}");
+        }
+    }
+}
+
 // -------------------------------------------------------------------------------------------------
 // Adapters
 // -------------------------------------------------------------------------------------------------

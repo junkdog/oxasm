@@ -113,9 +113,9 @@ pub(crate) struct Block {
     /// The offset of this label in the bytecode of its method, in bytes. This value is set if
     /// and only if the `FLAG_RESOLVED` flag is set.
     pub(crate) bytecode_offset: i32,
-    /// The forward references to this label: `(source instruction bytecode offset, reference
-    /// type | handle)` pairs, in the order they were added.
-    forward_references: Vec<(i32, i32)>,
+    /// The last forward reference to this label in [`LabelTable::forward_references`], linked
+    /// to the previous ones, or [`NO_REFERENCE`].
+    last_forward_reference: u32,
 
     // Fields for the control flow and data flow graph analysis algorithms (used to compute the
     // maximum stack size or the stack map frames). A control flow graph contains one node per
@@ -191,7 +191,7 @@ impl Block {
             label,
             flags: 0,
             bytecode_offset: 0,
-            forward_references: Vec::new(),
+            last_forward_reference: NO_REFERENCE,
             input_stack_size: 0,
             output_stack_size: 0,
             output_stack_max: 0,
@@ -203,6 +203,20 @@ impl Block {
         }
     }
 }
+
+/// A forward reference to a label (an element of ASM's `Label.forwardReferences`).
+#[derive(Clone, Copy, Debug)]
+struct ForwardReference {
+    /// The bytecode offset of the instruction that refers to the label.
+    source_insn_bytecode_offset: i32,
+    /// The reference type and handle (the `FORWARD_REFERENCE_*` values).
+    reference: i32,
+    /// The previous forward reference to the same label, or [`NO_REFERENCE`].
+    previous: u32,
+}
+
+/// The end of a list of [`ForwardReference`]s.
+const NO_REFERENCE: u32 = u32::MAX;
 
 /// A free slot of [`LabelTable::slots`].
 const NO_BLOCK: BlockId = BlockId::MAX;
@@ -221,6 +235,9 @@ pub(crate) struct LabelTable {
     overflow: FxHashMap<Label, BlockId>,
     /// The state of each label seen.
     blocks: Vec<Block>,
+    /// The forward references of all the labels, each label's linked from its last one (one
+    /// list for the method, where ASM has an array per label: a block owns no memory).
+    forward_references: Vec<ForwardReference>,
     /// The frames of the basic blocks (ASM's `Frame` objects that labels refer to).
     frames: Vec<Frame>,
     /// The arrays of the frames.
@@ -234,7 +251,30 @@ impl LabelTable {
     /// Reserves room for `additional` more labels.
     pub(crate) fn reserve(&mut self, additional: usize) {
         self.blocks.reserve(additional);
+        // About one reference per label (most labels are jump targets).
+        self.forward_references.reserve(additional);
         self.reserve_slots(self.blocks.len().saturating_add(additional));
+    }
+
+    /// Whether this table holds memory (a table that saw no label holds none).
+    pub(crate) fn has_memory(&self) -> bool {
+        self.slots.capacity() > 0 || self.blocks.capacity() > 0
+    }
+
+    /// Removes every label, keeping the memory, for another method: a table as new, but for
+    /// its capacity.
+    pub(crate) fn clear(&mut self) {
+        // Free only the slots the labels took: the table may be much larger than the method.
+        let mask = self.slots.len().wrapping_sub(1);
+        for block in &self.blocks {
+            self.slots[block.label.id() as usize & mask] = NO_BLOCK;
+        }
+        self.overflow.clear();
+        self.blocks.clear();
+        self.forward_references.clear();
+        self.frames.clear();
+        self.frame_values.clear();
+        self.edges.clear();
     }
 
     /// Makes `slots` at least twice as large as the given number of labels, and maps the labels
@@ -423,6 +463,23 @@ impl LabelTable {
             .map(|b| b.bytecode_offset)
     }
 
+    /// Adds a forward reference to the label of the block `id`.
+    fn add_forward_reference(
+        &mut self,
+        id: BlockId,
+        source_insn_bytecode_offset: i32,
+        reference: i32,
+    ) {
+        let block = &mut self.blocks[id as usize];
+        let index = self.forward_references.len() as u32;
+        self.forward_references.push(ForwardReference {
+            source_insn_bytecode_offset,
+            reference,
+            previous: block.last_forward_reference,
+        });
+        block.last_forward_reference = index;
+    }
+
     /// Puts a reference to the given label in the bytecode of a method (ASM's `Label.put(code,
     /// sourceInsnBytecodeOffset, wideReference)`). If the bytecode offset of the label is known,
     /// the relative bytecode offset between the label and the instruction referencing it is
@@ -435,19 +492,22 @@ impl LabelTable {
         source_insn_bytecode_offset: i32,
         wide_reference: bool,
     ) {
-        let block = self.block_mut(label);
+        let id = self.id(label);
+        let block = &self.blocks[id as usize];
         if block.flags & FLAG_RESOLVED == 0 {
             if wide_reference {
-                block.forward_references.push((
+                self.add_forward_reference(
+                    id,
                     source_insn_bytecode_offset,
                     FORWARD_REFERENCE_TYPE_WIDE | code.size() as i32,
-                ));
+                );
                 code.put_int(-1);
             } else {
-                block.forward_references.push((
+                self.add_forward_reference(
+                    id,
                     source_insn_bytecode_offset,
                     FORWARD_REFERENCE_TYPE_SHORT | code.size() as i32,
-                ));
+                );
                 code.put_short(-1);
             }
         } else if wide_reference {
@@ -470,14 +530,15 @@ impl LabelTable {
     /// written directly. Otherwise, a null relative offset is written and a new forward
     /// reference is declared for this label.
     pub(crate) fn put_stack_map(&mut self, label: Label, stack_map_table_entries: &mut ByteVector) {
-        let block = self.block_mut(label);
-        if block.flags & FLAG_RESOLVED == 0 {
-            block.forward_references.push((
+        let id = self.id(label);
+        if self.blocks[id as usize].flags & FLAG_RESOLVED == 0 {
+            self.add_forward_reference(
+                id,
                 0,
                 FORWARD_REFERENCE_TYPE_STACK_MAP | stack_map_table_entries.size() as i32,
-            ));
+            );
         }
-        stack_map_table_entries.put_short(block.bytecode_offset);
+        stack_map_table_entries.put_short(self.blocks[id as usize].bytecode_offset);
     }
 
     /// Sets the bytecode offset of the given label to the given value and resolves the forward
@@ -494,7 +555,15 @@ impl LabelTable {
         block.flags |= FLAG_RESOLVED;
         block.bytecode_offset = bytecode_offset;
         let mut has_asm_instructions = false;
-        for &(source_insn_bytecode_offset, reference) in block.forward_references.iter().rev() {
+        // The references from the last one to the first, as ASM walks its array.
+        let mut next = block.last_forward_reference;
+        while next != NO_REFERENCE {
+            let ForwardReference {
+                source_insn_bytecode_offset,
+                reference,
+                previous,
+            } = self.forward_references[next as usize];
+            next = previous;
             let relative_offset = bytecode_offset.wrapping_sub(source_insn_bytecode_offset);
             let mut handle = (reference & FORWARD_REFERENCE_HANDLE_MASK) as usize;
             let reference_type = reference & FORWARD_REFERENCE_TYPE_MASK;

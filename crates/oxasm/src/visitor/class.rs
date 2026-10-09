@@ -73,6 +73,17 @@ pub trait ClassVisitor {
         }
     }
 
+    /// Visits the size of the constant pool of the class: an oxasm extension, which ASM does not
+    /// have. A class reader calls it right after [`visit`](Self::visit), with its
+    /// `constant_pool_count` and the length in bytes of its constant pool, so that a visitor
+    /// which builds a constant pool (a class writer) can size it once. It is only a hint: other
+    /// sources of events need not call it, and the constants used may be fewer or more.
+    fn visit_constant_pool_size(&mut self, constant_pool_count: u16, length: u32) {
+        if let Some(d) = self.delegate() {
+            d.visit_constant_pool_size(constant_pool_count, length);
+        }
+    }
+
     /// Visits the source of the class.
     ///
     /// - `source`: the name of the source file from which the class was compiled, or `None`.
@@ -334,6 +345,9 @@ macro_rules! forward_class_visitor {
             }
             fn visit_member_counts(&mut self, fields_count: u16, methods_count: u16) {
                 (**self).visit_member_counts(fields_count, methods_count);
+            }
+            fn visit_constant_pool_size(&mut self, constant_pool_count: u16, length: u32) {
+                (**self).visit_constant_pool_size(constant_pool_count, length);
             }
             fn visit_source(&mut self, source: Option<&JavaStr>, debug: Option<&JavaStr>) {
                 (**self).visit_source(source, debug);

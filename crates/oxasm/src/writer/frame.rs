@@ -537,6 +537,11 @@ impl FrameValues {
         self.values.reserve(additional);
     }
 
+    /// Removes every array, keeping the memory.
+    pub(crate) fn clear(&mut self) {
+        self.values.clear();
+    }
+
     /// A new array of `len` zeros.
     fn alloc(&mut self, len: usize) -> Span {
         let start = self.values.len();

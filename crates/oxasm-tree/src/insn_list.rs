@@ -3,6 +3,7 @@
 
 use std::cell::Cell;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::mem::ManuallyDrop;
 use std::ops::{Index, IndexMut};
 use std::sync::OnceLock;
@@ -53,11 +54,30 @@ fn next_list_id() -> u32 {
 /// instructions. Once the instruction is removed (or replaced, or moved to another list), the
 /// handle is *stale*: the list answers `None` for it, or panics for operations that need an
 /// instruction of the list. It never designates another instruction, of this list or another.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Eq, PartialOrd, Ord)]
 pub struct InsnId {
     list: u32,
     slot: u32,
     generation: u32,
+}
+
+impl PartialEq for InsnId {
+    /// One test of the three fields, without a branch each: an analysis compares its values'
+    /// producers by the million.
+    #[inline]
+    fn eq(&self, other: &InsnId) -> bool {
+        ((self.list ^ other.list) | (self.slot ^ other.slot) | (self.generation ^ other.generation))
+            == 0
+    }
+}
+
+impl Hash for InsnId {
+    /// The derived hash: the three fields, in order (consistent with `eq`, which compares them).
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.list.hash(state);
+        self.slot.hash(state);
+        self.generation.hash(state);
+    }
 }
 
 impl fmt::Debug for InsnId {

@@ -35,7 +35,7 @@ use crate::writer::annotation_writer::{AnnotationList, AnnotationWriter, MemberA
 use crate::writer::attributes::AttributeList;
 use crate::writer::byte_vector::ByteVector;
 use crate::writer::frame::SymbolArg;
-use crate::writer::handler::Handler;
+use crate::writer::handler::{Handler, put_exception_table};
 use crate::writer::label_table::{
     BlockId, EDGE_JUMP, FLAG_JUMP_TARGET, FLAG_SUBROUTINE_CALLER, FLAG_SUBROUTINE_END,
     FLAG_SUBROUTINE_START, LabelTable,
@@ -203,11 +203,20 @@ pub(crate) struct MethodWriterState {
     /// is from a class reader (ASM's `sourceOffset` and `sourceLength`, copied at once,
     /// ADR-08).
     copied_method_info: Option<Vec<u8>>,
+    /// The exception table, with its length, if it was written at the end of the visit of the
+    /// method, when `labels` was released for the next method writer (see
+    /// [`release_labels`](Self::release_labels)).
+    exception_table: Option<ByteVector>,
+    /// Whether `labels` was released: writing the method no longer reads it.
+    labels_released: bool,
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // Java's int arithmetic
 impl MethodWriterState {
-    /// Constructs a new method writer state (ASM's `MethodWriter` constructor).
+    /// Constructs a new method writer state (ASM's `MethodWriter` constructor), with the label
+    /// table of `spare_labels`, emptied, if any: the [`released_labels`](Self::released_labels)
+    /// of the previous method, to reuse their memory.
+    #[allow(clippy::too_many_arguments)] // ASM's constructor, and the table
     pub(crate) fn new(
         symbol_table: &mut SymbolTable,
         access: u32,
@@ -216,6 +225,7 @@ impl MethodWriterState {
         signature: Option<&JavaStr>,
         exceptions: &[&JavaStr],
         compute: Compute,
+        spare_labels: Option<&mut LabelTable>,
     ) -> MethodWriterState {
         let access_flags = if name == "<init>" {
             access | ACC_CONSTRUCTOR
@@ -276,7 +286,13 @@ impl MethodWriterState {
             has_asm_instructions: false,
             last_bytecode_offset: 0,
             copied_method_info: None,
+            exception_table: None,
+            labels_released: false,
         };
+        if let Some(spare_labels) = spare_labels {
+            spare_labels.clear();
+            std::mem::swap(&mut state.labels, spare_labels);
+        }
         if compute != Compute::Nothing {
             // Update maxLocals and currentLocals.
             let mut arguments_size = match Type::try_get_arguments_and_return_sizes_of(descriptor) {
@@ -297,6 +313,30 @@ impl MethodWriterState {
             state.first_basic_block = Some(state.labels.id(first_basic_block));
         }
         state
+    }
+
+    /// Releases the labels of this method, for the next method writer to take, empty and reuse
+    /// ([`released_labels`](Self::released_labels)), if writing the method needs nothing more of
+    /// them: the exception table, which refers to them, is written now. Non-standard code
+    /// attributes, which resolve their labels when they are written, keep them, as does a table
+    /// that has no memory to reuse (a copied method, or one without code). Called at the end of
+    /// the visit of the method.
+    pub(crate) fn release_labels(&mut self) {
+        if !self.code_attributes.is_empty() || !self.labels.has_memory() {
+            return;
+        }
+        if !self.handlers.is_empty() {
+            let mut exception_table = ByteVector::with_capacity(2 + 8 * self.handlers.len());
+            put_exception_table(&self.handlers, &self.labels, &mut exception_table);
+            self.exception_table = Some(exception_table);
+        }
+        self.labels_released = true;
+    }
+
+    /// The labels of this method, if it released them (they stay here until the next method
+    /// takes them, as the control flow graph of the last method is read from them in tests).
+    pub(crate) fn released_labels(&mut self) -> Option<&mut LabelTable> {
+        self.labels_released.then_some(&mut self.labels)
     }
 
     /// Whether the stack map frames are computed, i.e. the instructions are executed on the
@@ -1298,7 +1338,8 @@ impl MethodVisitor for MethodWriter<'_> {
     }
 
     fn visit_end(&mut self) {
-        // Nothing to do.
+        // Not in ASM: release the label table, for the next method writer.
+        self.state.release_labels();
     }
 }
 

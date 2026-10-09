@@ -720,6 +720,55 @@ fn test_accept_visits_the_member_counts() {
     }
 }
 
+/// Records the constant pool size hint, and whether the class header was visited before it.
+#[derive(Default)]
+struct ConstantPoolSize {
+    visited: bool,
+    hint: Option<(u16, u32)>,
+}
+
+impl ClassVisitor for ConstantPoolSize {
+    fn visit(
+        &mut self,
+        _: u32,
+        _: u32,
+        _: &JavaStr,
+        _: Option<&JavaStr>,
+        _: Option<&JavaStr>,
+        _: &[&JavaStr],
+    ) {
+        self.visited = true;
+    }
+
+    fn visit_constant_pool_size(&mut self, constant_pool_count: u16, length: u32) {
+        assert!(self.visited && self.hint.is_none(), "one hint, after visit");
+        self.hint = Some((constant_pool_count, length));
+    }
+}
+
+/// oxasm-specific: a reader visits its `constant_pool_count` and the length of its constant pool
+/// once, after the header (W13 in oxasm-optimization.md: a writer sizes its symbol table from
+/// it). The constant pool starts 10 bytes into a class file, and ends at the access flags.
+#[test]
+fn test_accept_visits_the_constant_pool_size() {
+    for &class in PrecompiledClass::ALL {
+        let class_reader = reader(class);
+        let mut constant_pool_size = ConstantPoolSize::default();
+
+        class_reader
+            .accept(&mut constant_pool_size, ParsingOptions::empty())
+            .unwrap();
+
+        let constant_pool_count = u16::from_be_bytes([class.bytes()[8], class.bytes()[9]]);
+        let length = u32::try_from(class_reader.header() - 10).unwrap();
+        assert_eq!(
+            constant_pool_size.hint,
+            Some((constant_pool_count, length)),
+            "{class}"
+        );
+    }
+}
+
 /// Records the labels, line numbers and instructions of the methods a reader visits.
 #[derive(Default)]
 struct LineNumberEvents(RefCell<Vec<String>>);

@@ -731,21 +731,7 @@ impl SymbolTable {
     /// not check whether the set already contains a similar entry.
     fn put(&mut self, mut entry: Entry) -> u32 {
         if self.arena.len() > (self.entries.len() * 3) / 4 {
-            let current_capacity = self.entries.len();
-            let new_capacity = current_capacity * 2 + 1;
-            let mut new_entries = vec![None; new_capacity];
-            for i in (0..current_capacity).rev() {
-                let mut current_entry = self.entries[i];
-                while let Some(l) = current_entry {
-                    let e = &mut self.arena[linked(l) as usize];
-                    let new_current_entry_index = e.hash_code as usize % new_capacity;
-                    let next_entry = e.next;
-                    e.next = new_entries[new_current_entry_index];
-                    new_entries[new_current_entry_index] = Some(l);
-                    current_entry = next_entry;
-                }
-            }
-            self.entries = new_entries;
+            self.rehash(self.entries.len() * 2 + 1);
         }
         let bucket = entry.hash_code as usize % self.entries.len();
         entry.next = self.entries[bucket];
@@ -753,6 +739,41 @@ impl SymbolTable {
         self.arena.push(entry);
         self.entries[bucket] = link(index);
         index as u32
+    }
+
+    /// Moves the entries to a hash set of `new_capacity` buckets (ASM's resize in `put`).
+    fn rehash(&mut self, new_capacity: usize) {
+        let current_capacity = self.entries.len();
+        let mut new_entries = vec![None; new_capacity];
+        for i in (0..current_capacity).rev() {
+            let mut current_entry = self.entries[i];
+            while let Some(l) = current_entry {
+                let e = &mut self.arena[linked(l) as usize];
+                let new_current_entry_index = e.hash_code as usize % new_capacity;
+                let next_entry = e.next;
+                e.next = new_entries[new_current_entry_index];
+                new_entries[new_current_entry_index] = Some(l);
+                current_entry = next_entry;
+            }
+        }
+        self.entries = new_entries;
+    }
+
+    /// Reserves room for a constant pool of about `constant_pool_count` entries and `length`
+    /// bytes (a hint: those of the class being copied), so that the entries, the hash set, the
+    /// strings and the constant pool grow at most once more.
+    pub(crate) fn reserve(&mut self, constant_pool_count: usize, length: usize) {
+        self.arena
+            .reserve(constant_pool_count.saturating_sub(self.arena.len()));
+        // The decoded strings are about as long as their modified UTF-8 encodings.
+        self.strings
+            .bytes
+            .reserve(length.saturating_sub(self.strings.bytes.len()));
+        self.constant_pool.reserve_total(length);
+        // As `from_reader`: twice as many buckets as entries, so that `put` does not resize.
+        if constant_pool_count * 2 > self.entries.len() {
+            self.rehash(constant_pool_count * 2);
+        }
     }
 
     /// Adds the given entry in the hash set, without resizing it (ASM's `add`).

@@ -356,7 +356,12 @@ impl MethodWriterState {
                 .put_short(self.max_locals)
                 .put_int(self.code.size() as i32)
                 .put_byte_array(self.code.data());
-            put_exception_table(&self.handlers, labels, output);
+            match &self.exception_table {
+                Some(exception_table) => {
+                    output.put_byte_array(exception_table.data());
+                }
+                None => put_exception_table(&self.handlers, labels, output),
+            }
             output.put_short(code_attribute_count as i32);
             if let Some(stack_map_table_entries) = &self.stack_map_table_entries {
                 let use_stack_map_table = symbol_table.major_version() >= opcodes::V1_6 as i32;

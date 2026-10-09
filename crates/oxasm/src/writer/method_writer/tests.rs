@@ -183,6 +183,7 @@ fn new_method_writer_state(symbol_table: &mut SymbolTable) -> MethodWriterState 
         None,
         &[],
         Compute::Nothing,
+        None,
     )
 }
 

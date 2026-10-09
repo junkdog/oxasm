@@ -770,6 +770,11 @@ impl ClassVisitor for ClassWriter<'_> {
         self.methods.reserve(usize::from(methods_count));
     }
 
+    fn visit_constant_pool_size(&mut self, constant_pool_count: u16, length: u32) {
+        self.symbol_table
+            .reserve(usize::from(constant_pool_count), length as usize);
+    }
+
     fn visit_source(&mut self, file: Option<&JavaStr>, debug: Option<&JavaStr>) {
         if let Some(file) = file {
             self.source_file_index = self.symbol_table.add_constant_utf8(file);
@@ -948,6 +953,10 @@ impl ClassVisitor for ClassWriter<'_> {
             signature,
             exceptions,
             self.compute,
+            // Not in ASM: the label table the previous method released, to reuse its memory.
+            self.methods
+                .last_mut()
+                .and_then(MethodWriterState::released_labels),
         );
         self.methods.push(state);
         Some(Box::new(MethodWriter {

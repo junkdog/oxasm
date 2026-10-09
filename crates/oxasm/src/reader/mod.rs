@@ -583,6 +583,11 @@ impl<'b> ClassReader<'b> {
             &interfaces,
         );
         class_visitor.visit_member_counts(fields_count, methods_count);
+        // The constant pool spans from its first entry, at cp_info_offsets[1] - 1, to the header.
+        class_visitor.visit_constant_pool_size(
+            self.get_item_count() as u16,
+            (self.header - (version_offset + 6)) as u32,
+        );
 
         // Visit the SourceFile and SourceDebugExtension attributes.
         if !parsing_options.contains(ParsingOptions::SKIP_DEBUG)
