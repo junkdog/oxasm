@@ -39,6 +39,7 @@ use std::ops::{Deref, DerefMut, Index, Range, RangeFrom, RangeFull, RangeTo};
 use std::rc::Rc;
 use std::sync::Arc;
 
+pub(crate) use codec::has_nul_or_4_byte_lead;
 pub use compact::JavaCompactStr;
 pub use iter::{CharIndices, Chars, EncodeUtf16};
 pub use pattern::Pattern;

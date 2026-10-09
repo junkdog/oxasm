@@ -185,6 +185,14 @@ const INITIAL_CAPACITY: usize = 256;
 /// 1%).
 const INITIAL_STRINGS_CAPACITY: usize = 1024;
 
+/// The initial capacity of a new [`SymbolTable`]'s entries: those of a class of median size
+/// (growing them from empty made generating a hello world 6% slower).
+const INITIAL_ENTRIES_CAPACITY: usize = 128;
+
+/// The initial capacity, in bytes, of a new [`SymbolTable`]'s constant pool: that of a class of
+/// median size (a `ByteVector`'s default 64 bytes made generating a hello world 7% slower).
+const INITIAL_CONSTANT_POOL_CAPACITY: usize = 2048;
+
 /// A reference to an entry of a [`SymbolTable`]'s arena, or `None`: the entry's index plus one,
 /// so that a link takes 4 bytes and an array of empty buckets is allocated zeroed.
 type Link = Option<NonZeroU32>;
@@ -277,13 +285,13 @@ impl SymbolTable {
             source_id: None,
             major_version: 0,
             class_name: Span::default(),
-            arena: Vec::new(),
+            arena: Vec::with_capacity(INITIAL_ENTRIES_CAPACITY),
             strings: Strings {
                 bytes: Vec::with_capacity(INITIAL_STRINGS_CAPACITY),
             },
             entries: vec![None; INITIAL_CAPACITY],
             constant_pool_count: 1,
-            constant_pool: ByteVector::new(),
+            constant_pool: ByteVector::with_capacity(INITIAL_CONSTANT_POOL_CAPACITY),
             bootstrap_method_count: 0,
             bootstrap_methods: None,
             type_table: Vec::new(),

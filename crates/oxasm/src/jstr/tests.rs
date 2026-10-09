@@ -84,6 +84,40 @@ fn modified_utf8_codec() {
 }
 
 #[test]
+fn nul_or_4_byte_lead_scan_matches_the_byte_test() {
+    // Every byte value (or, under Miri, the boundaries of the byte classes) at every position of
+    // strings of 0 to 24 bytes, which covers the 1-3, 4-7 and 8+ byte paths and the overlapping
+    // last word.
+    let values: Vec<u8> = if cfg!(miri) {
+        vec![0, 1, 0x7f, 0x80, 0xbf, 0xc0, 0xef, 0xf0, 0xf7, 0xff]
+    } else {
+        (0..=255).collect()
+    };
+    for len in 0..=24 {
+        let mut bytes = vec![b'a'; len];
+        assert!(!codec::has_nul_or_4_byte_lead(&bytes), "{len}");
+        for at in 0..len {
+            for &b in &values {
+                bytes[at] = b;
+                assert_eq!(
+                    codec::has_nul_or_4_byte_lead(&bytes),
+                    b == 0 || b >= 0xf0,
+                    "{len} {at} {b:#x}"
+                );
+            }
+            bytes[at] = b'a';
+        }
+    }
+    // A NUL next to bytes that borrow in the word subtraction.
+    assert!(codec::has_nul_or_4_byte_lead(
+        b"\x01\x00\x01\x01\x01\x01\x01\x01"
+    ));
+    assert!(!codec::has_nul_or_4_byte_lead(
+        b"\x01\x01\x01\x01\x01\x01\x01\x01\xef"
+    ));
+}
+
+#[test]
 fn validation_rejects_malformed() {
     for bad in [
         &b"\xff"[..],

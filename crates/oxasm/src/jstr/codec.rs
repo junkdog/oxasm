@@ -18,7 +18,7 @@ impl JavaStr {
     ///
     /// [modified UTF-8]: https://docs.oracle.com/javase/specs/jvms/se25/html/jvms-4.html#jvms-4.4.7
     pub fn from_modified_utf8(bytes: &[u8]) -> Result<Cow<'_, JavaStr>, Utf8Error> {
-        if !bytes.iter().any(|&b| b == 0 || b >= 0xf0)
+        if !has_nul_or_4_byte_lead(bytes)
             && let Ok(s) = std::str::from_utf8(bytes)
         {
             return Ok(Cow::Borrowed(JavaStr::from_str(s)));
@@ -31,7 +31,7 @@ impl JavaStr {
     #[must_use]
     pub fn to_modified_utf8(&self) -> Cow<'_, [u8]> {
         let bytes = self.as_bytes();
-        if !bytes.iter().any(|&b| b == 0 || b >= 0xf0) {
+        if !has_nul_or_4_byte_lead(bytes) {
             return Cow::Borrowed(bytes);
         }
         let mut out = Vec::with_capacity(bytes.len() + bytes.len() / 2);
@@ -112,6 +112,34 @@ impl FromIterator<u16> for JavaString {
             s.push_java(JavaCodePoint(u32::from(u)));
         }
         s
+    }
+}
+
+/// Whether the bytes hold a NUL or a byte of `F0` and above (which starts a 4-byte sequence in
+/// semi-UTF-8, and is invalid in modified UTF-8): the only bytes on which a string's semi-UTF-8
+/// and modified UTF-8 encodings differ. Checks a word at a time, as most class file strings are
+/// only a few words long.
+#[inline]
+pub(crate) fn has_nul_or_4_byte_lead(bytes: &[u8]) -> bool {
+    /// Whether a byte of `w` is NUL or `F0..=FF`.
+    #[inline(always)]
+    fn word(w: u64) -> bool {
+        const LO: u64 = 0x0101_0101_0101_0101;
+        const HI: u64 = 0x8080_8080_8080_8080;
+        // A byte is F0..=FF exactly when the high nibble of its complement is 0.
+        let x = !w & 0xf0f0_f0f0_f0f0_f0f0;
+        // `(v - LO) & !v & HI` is non-zero exactly when `v` has a zero byte.
+        (w.wrapping_sub(LO) & !w | x.wrapping_sub(LO) & !x) & HI != 0
+    }
+    if let Some(last) = bytes.last_chunk::<8>() {
+        let (words, rest) = bytes.as_chunks::<8>();
+        // The rest, if any, is checked with the last 8 bytes, which overlap the last word.
+        words.iter().any(|w| word(u64::from_le_bytes(*w)))
+            || (!rest.is_empty() && word(u64::from_le_bytes(*last)))
+    } else if let (Some(first), Some(last)) = (bytes.first_chunk::<4>(), bytes.last_chunk::<4>()) {
+        word(u64::from(u32::from_le_bytes(*first)) | u64::from(u32::from_le_bytes(*last)) << 32)
+    } else {
+        bytes.iter().any(|&b| b == 0 || b >= 0xf0)
     }
 }
 

@@ -1,7 +1,7 @@
 //! [`ByteVector`]: ASM's `ByteVector`, a growable byte buffer with big endian writers.
 
 use crate::error::WriteError;
-use crate::jstr::JavaStr;
+use crate::jstr::{JavaStr, has_nul_or_4_byte_lead};
 
 /// A dynamically extensible vector of bytes. This class is roughly equivalent to a
 /// `DataOutputStream` on top of a `ByteArrayOutputStream`, but is more efficient.
@@ -173,6 +173,17 @@ impl ByteVector {
     pub fn put_utf8(&mut self, string_value: &JavaStr) -> Result<&mut ByteVector, WriteError> {
         // ASM checks the UTF-16 length first, then the encoded length; the encoded length is at
         // least the UTF-16 length, so the second check covers the first.
+        let bytes = string_value.as_bytes();
+        if !has_nul_or_4_byte_lead(bytes) {
+            // The encoding is the bytes themselves.
+            if bytes.len() > 65535 {
+                return Err(WriteError::Utf8TooLarge);
+            }
+            self.data.reserve(2 + bytes.len());
+            self.put_short(bytes.len() as i32);
+            self.data.extend_from_slice(bytes);
+            return Ok(self);
+        }
         let encoded = string_value.to_modified_utf8();
         if encoded.len() > 65535 {
             return Err(WriteError::Utf8TooLarge);
