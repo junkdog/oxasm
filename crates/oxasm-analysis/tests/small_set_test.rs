@@ -1,4 +1,4 @@
-//! Port of ASM's `SmallSetTest`: unit tests for `SmallSet`.
+//! Port of ASM's `SmallSetTest`: unit tests for `SmallSet`, plus proptests.
 //!
 //! ASM's elements are distinct `Object`s; here they are distinct integers. ASM's `union` returns
 //! one of its operands when it can, and its `equals` is `Set` equality: here sets are compared
@@ -10,8 +10,10 @@
 //!   `UnsupportedOperationException` of `iterator().remove()` cannot be written.
 
 use std::collections::HashSet;
+use std::hash::{BuildHasher, Hash, Hasher};
 
 use oxasm_analysis::SmallSet;
+use proptest::prelude::*;
 
 const ELEMENT1: u32 = 1;
 const ELEMENT2: u32 = 2;
@@ -139,4 +141,58 @@ fn test_iterator_next_no_such_element() {
 
 fn new_small_set(element1: u32, element2: u32) -> SmallSet<u32> {
     SmallSet::singleton(element1).union(&SmallSet::singleton(element2))
+}
+
+// -------------------------------------------------------------------------------------------------
+// Properties: sets of three or more elements against a `HashSet`, with elements whose hashes
+// collide (sets of three or more are sorted by hash).
+// -------------------------------------------------------------------------------------------------
+
+/// An element of only three hashes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Colliding(u8);
+
+impl Hash for Colliding {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (self.0 % 3).hash(state);
+    }
+}
+
+/// A set made by unions of the given groups (each itself made by unions of singletons), and the
+/// same set as a `HashSet`.
+fn build(groups: &[Vec<u8>]) -> (SmallSet<Colliding>, HashSet<u8>) {
+    let set = groups.iter().fold(SmallSet::new(), |set, group| {
+        set.union(&group.iter().map(|&e| Colliding(e)).collect())
+    });
+    (set, groups.iter().flatten().copied().collect())
+}
+
+fn groups() -> impl Strategy<Value = Vec<Vec<u8>>> {
+    prop::collection::vec(prop::collection::vec(0u8..12, 0..8), 1..4)
+}
+
+proptest! {
+    #[test]
+    fn prop_small_set_is_a_set(a in groups(), b in groups()) {
+        let (set_a, model_a) = build(&a);
+        let (set_b, model_b) = build(&b);
+        for (set, model) in [(&set_a, &model_a), (&set_b, &model_b)] {
+            prop_assert_eq!(set.len(), model.len());
+            prop_assert_eq!(&set.iter().map(|e| e.0).collect::<HashSet<u8>>(), model);
+            for e in 0..12 {
+                prop_assert_eq!(set.contains(&Colliding(e)), model.contains(&e));
+            }
+        }
+        prop_assert_eq!(set_a.is_superset(&set_b), model_a.is_superset(&model_b));
+        prop_assert_eq!(set_a == set_b, model_a == model_b);
+        if set_a == set_b {
+            let hash = |set: &SmallSet<Colliding>| rustc_hash::FxBuildHasher.hash_one(set);
+            prop_assert_eq!(hash(&set_a), hash(&set_b));
+        }
+        let union = set_a.union(&set_b);
+        let model_union: HashSet<u8> = model_a.union(&model_b).copied().collect();
+        prop_assert_eq!(union.len(), model_union.len());
+        prop_assert_eq!(union.iter().map(|e| e.0).collect::<HashSet<u8>>(), model_union);
+        prop_assert!(union.is_superset(&set_a) && union.is_superset(&set_b));
+    }
 }
