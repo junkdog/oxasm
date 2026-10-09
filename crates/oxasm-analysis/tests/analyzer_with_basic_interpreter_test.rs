@@ -314,3 +314,71 @@ fn get_method<'a>(class_node: &'a ClassNode, name: &str) -> &'a MethodNode {
         .find(|method_node| method_node.resolve(method_node.name) == name)
         .unwrap()
 }
+
+// -------------------------------------------------------------------------------------------------
+// Not in ASM: the frames of an analysis share one allocation (optimization lead A1), which a frame
+// changed after the analysis must not change for the others.
+// -------------------------------------------------------------------------------------------------
+
+/// The printed frames, `None` for the instructions without one.
+fn printed(frames: &[Option<Frame<BasicValue>>]) -> Vec<Option<String>> {
+    frames
+        .iter()
+        .map(|frame| frame.as_ref().map(ToString::to_string))
+        .collect()
+}
+
+#[test]
+fn frames_changed_after_the_analysis_keep_the_others_unchanged() {
+    let method_node = MethodNodeBuilder::with_maxs(3, 3)
+        .iconst_0()
+        .istore(1)
+        .iconst_0()
+        .iconst_0()
+        .pop()
+        .pop()
+        .vreturn()
+        .build();
+    let mut analyzer = Analyzer::new(BasicInterpreter::new());
+    analyzer.analyze(jstr!(CLASS_NAME), &method_node).unwrap();
+    let frames = analyzer.take_frames();
+    let expected = printed(&frames);
+    assert_eq!(expected[4].as_deref(), Some("RI. II"), "{expected:?}");
+
+    let changes: [fn(&mut Frame<BasicValue>); 6] = [
+        |frame| frame.set_local(0, BasicValue::INT_VALUE),
+        |frame| frame.push(BasicValue::FLOAT_VALUE),
+        |frame| {
+            frame.pop();
+        },
+        |frame| frame.clear_stack(),
+        |frame| frame.set_stack(0, BasicValue::FLOAT_VALUE),
+        |frame| {
+            let mut other = frame.clone();
+            other.set_local(0, BasicValue::INT_VALUE);
+            assert!(frame.merge(&other, &mut BasicInterpreter::new()).unwrap());
+        },
+    ];
+    for (index, change) in changes.iter().enumerate() {
+        // A frame of the analysis, and clones of it made in each way, changed one at a time.
+        let mut changed_frames = frames.clone();
+        let mut clone = frames[4].clone().unwrap();
+        let mut cloned_from = Frame::new(Vec::new(), None);
+        cloned_from.clone_from(frames[4].as_ref().unwrap());
+        let mut initialized = Frame::new(Vec::new(), None);
+        initialized.init(frames[4].as_ref().unwrap());
+        for frame in [
+            changed_frames[4].as_mut().unwrap(),
+            &mut clone,
+            &mut cloned_from,
+            &mut initialized,
+        ] {
+            change(frame);
+            assert_ne!(Some(frame.to_string()), expected[4], "change {index}");
+        }
+        let mut unchanged = printed(&changed_frames);
+        unchanged[4] = expected[4].clone();
+        assert_eq!(unchanged, expected, "change {index}");
+        assert_eq!(printed(&frames), expected, "change {index}");
+    }
+}

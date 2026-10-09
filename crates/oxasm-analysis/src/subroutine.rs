@@ -6,8 +6,8 @@ use oxasm_tree::InsnId;
 /// A method subroutine, which corresponds to the `JSR` instructions jumping to `start`.
 #[derive(Clone, Debug)]
 pub(crate) struct Subroutine {
-    /// The start of this subroutine, `None` for the "main subroutine" (the method's code outside
-    /// of any subroutine) while the subroutines are being found.
+    /// The start of this subroutine. Always set: ASM's `null` start is its "main subroutine",
+    /// which the analyzer does not make (it marks the instructions this one reaches instead).
     pub(crate) start: Option<Label>,
     /// The local variables that are read or written by this subroutine: `locals_used[i]` is
     /// whether local variable `i` is.

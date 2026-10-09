@@ -1,6 +1,8 @@
 //! [`Frame`]: ASM's `Frame`, a symbolic execution stack frame.
 
 use std::fmt;
+use std::ops::{Deref, Range};
+use std::sync::Arc;
 
 use oxasm::opcodes::*;
 use oxasm::{JavaStr, Type, TypeSort};
@@ -26,7 +28,7 @@ pub struct Frame<V> {
     /// The expected return type of the analyzed method, or `None` if it returns `void`.
     return_value: Option<V>,
     /// The local variables, then the operand stack.
-    values: Vec<V>,
+    values: FrameValues<V>,
     /// The number of local variables.
     num_locals: usize,
     /// The maximum number of elements in the operand stack.
@@ -44,7 +46,7 @@ impl<V: Value> Frame<V> {
         let num_locals = locals.len();
         Frame {
             return_value: None,
-            values: locals,
+            values: FrameValues::Owned(locals),
             num_locals,
             max_stack: max_stack.unwrap_or(MAX_STACK_SIZE),
             capacity: num_locals + max_stack.unwrap_or(4),
@@ -53,12 +55,74 @@ impl<V: Value> Frame<V> {
 
     /// Copies the state of the given frame into this frame (ASM's `init`).
     pub fn init(&mut self, frame: &Frame<V>) -> &mut Frame<V> {
-        self.return_value.clone_from(&frame.return_value);
-        self.values.clone_from(&frame.values);
-        self.num_locals = frame.num_locals;
-        self.max_stack = frame.max_stack;
-        self.capacity = self.capacity.max(frame.capacity);
+        self.init_from(&frame.return_value, &frame.values, frame.shape())
+    }
+
+    /// [`init`](Self::init) from the parts of a frame.
+    pub(crate) fn init_from(
+        &mut self,
+        return_value: &Option<V>,
+        values: &[V],
+        shape: FrameShape,
+    ) -> &mut Frame<V> {
+        self.return_value.clone_from(return_value);
+        self.values.assign(values);
+        self.num_locals = shape.num_locals;
+        self.max_stack = shape.max_stack;
+        self.capacity = self.capacity.max(shape.capacity);
         self
+    }
+
+    /// Makes this frame a clone of the frame with the given parts, reusing its storage.
+    pub(crate) fn assign(&mut self, return_value: &Option<V>, values: &[V], shape: FrameShape) {
+        self.init_from(return_value, values, shape);
+        self.capacity = shape.capacity;
+    }
+
+    /// The frame with the given parts.
+    pub(crate) fn from_parts(return_value: Option<V>, values: Vec<V>, shape: FrameShape) -> Self {
+        Frame {
+            return_value,
+            values: FrameValues::Owned(values),
+            num_locals: shape.num_locals,
+            max_stack: shape.max_stack,
+            capacity: shape.capacity,
+        }
+    }
+
+    /// The sizes of this frame.
+    pub(crate) fn shape(&self) -> FrameShape {
+        FrameShape {
+            num_locals: self.num_locals,
+            max_stack: self.max_stack,
+            capacity: self.capacity,
+        }
+    }
+
+    /// The frame with the given parts, whose values are the `range` of `arena`.
+    pub(crate) fn from_shared(
+        return_value: Option<V>,
+        arena: Arc<Vec<V>>,
+        range: Range<usize>,
+        shape: FrameShape,
+    ) -> Self {
+        Frame {
+            return_value,
+            values: FrameValues::Shared { arena, range },
+            num_locals: shape.num_locals,
+            max_stack: shape.max_stack,
+            capacity: shape.capacity,
+        }
+    }
+
+    /// The local variables, then the operand stack.
+    pub(crate) fn values(&self) -> &[V] {
+        &self.values
+    }
+
+    /// The expected return type of the analyzed method, as stored.
+    pub(crate) fn return_value(&self) -> &Option<V> {
+        &self.return_value
     }
 
     /// Sets the expected return type of the analyzed method, `None` if it returns `void` (ASM's
@@ -140,7 +204,7 @@ impl<V: Value> Frame<V> {
                 "Trying to set an inexistant local variable {index}"
             )));
         }
-        self.values[index] = value;
+        self.values.vec_mut()[index] = value;
         Ok(())
     }
 
@@ -168,12 +232,13 @@ impl<V: Value> Frame<V> {
     #[track_caller]
     pub fn set_stack(&mut self, index: usize, value: V) {
         let num_locals = self.num_locals;
-        self.values[num_locals..][index] = value;
+        self.values.vec_mut()[num_locals..][index] = value;
     }
 
     /// Clears the operand stack of this frame (ASM's `clearStack`).
     pub fn clear_stack(&mut self) {
-        self.values.truncate(self.num_locals);
+        let num_locals = self.num_locals;
+        self.values.vec_mut().truncate(num_locals);
     }
 
     /// Pops a value from the operand stack of this frame (ASM's `pop`).
@@ -197,7 +262,7 @@ impl<V: Value> Frame<V> {
                 "Cannot pop operand off an empty stack.",
             ));
         }
-        Ok(self.values.pop().expect("the stack is not empty"))
+        Ok(self.values.vec_mut().pop().expect("the stack is not empty"))
     }
 
     /// Pushes a value onto the operand stack of this frame (ASM's `push`).
@@ -226,7 +291,7 @@ impl<V: Value> Frame<V> {
             }
             self.capacity *= 2;
         }
-        self.values.push(value);
+        self.values.vec_mut().push(value);
         Ok(())
     }
 
@@ -476,9 +541,10 @@ impl<V: Value> Frame<V> {
                 let Insn::MultiANewArray { dims, .. } = insn.insn else {
                     return Err(cast_error(insn, "MultiANewArrayInsnNode"));
                 };
-                let values = self.pop_values(usize::from(dims))?;
-                let value = interpreter.nary_operation(insn, &values)?;
-                self.push_result(value, "naryOperation")?;
+                let start = self.stack_top_start(usize::from(dims))?;
+                let value = interpreter.nary_operation(insn, &self.values[start..]);
+                self.values.vec_mut().truncate(start);
+                self.push_result(value?, "naryOperation")?;
             }
             _ => {
                 return Err(AnalyzerError::new(
@@ -541,31 +607,42 @@ impl<V: Value> Frame<V> {
     {
         let argument_count = Type::try_get_argument_count_of(method_descriptor)
             .map_err(|e| AnalyzerError::runtime(e.message()))?;
-        let mut values = self.pop_values(argument_count)?;
         let opcode = insn.opcode();
-        if opcode != Some(INVOKESTATIC) && opcode != Some(INVOKEDYNAMIC) {
-            values.insert(0, self.try_pop()?);
-        }
-        let return_type = Type::try_get_return_type_of(method_descriptor)
-            .map_err(|e| AnalyzerError::runtime(e.message()))?;
-        let value = interpreter.nary_operation(insn, &values)?;
+        let receiver = usize::from(opcode != Some(INVOKESTATIC) && opcode != Some(INVOKEDYNAMIC));
+        // The receiver, if any, is just below the arguments: the operands are the top of the
+        // stack, in order, which the interpreter reads in place before they are popped.
+        let start = self.stack_top_start(argument_count + receiver)?;
+        let return_type = match Type::try_get_return_type_of(method_descriptor) {
+            Ok(return_type) => return_type,
+            Err(e) => {
+                self.values.vec_mut().truncate(start);
+                return Err(AnalyzerError::runtime(e.message()));
+            }
+        };
+        let value = interpreter.nary_operation(insn, &self.values[start..]);
+        self.values.vec_mut().truncate(start);
+        let value = value?;
         if return_type.get_sort() != TypeSort::Void {
             self.push_result(value, "naryOperation")?;
         }
         Ok(())
     }
 
-    /// Pops `count` values, and returns them from the deepest to the top one.
-    fn pop_values(&mut self, count: usize) -> Result<Vec<V>, AnalyzerError> {
-        let stack_size = self.get_stack_size();
-        if count > stack_size {
-            // Java pops one value at a time: the same error, after popping the whole stack.
+    /// The index in `values` of the deepest of the `count` top stack values, which the caller
+    /// pops by truncating `values` there.
+    ///
+    /// # Errors
+    ///
+    /// If the stack has fewer than `count` values. Java pops one value at a time: the same
+    /// error, after popping the whole stack.
+    fn stack_top_start(&mut self, count: usize) -> Result<usize, AnalyzerError> {
+        if count > self.get_stack_size() {
             self.clear_stack();
             return Err(AnalyzerError::runtime(
                 "Cannot pop operand off an empty stack.",
             ));
         }
-        Ok(self.values.split_off(self.values.len() - count))
+        Ok(self.values.len() - count)
     }
 
     /// Merges the given frame into this frame (ASM's `merge(Frame, Interpreter)`). Returns
@@ -579,31 +656,29 @@ impl<V: Value> Frame<V> {
         I: Interpreter<V = V> + ?Sized,
     {
         if self.get_stack_size() != frame.get_stack_size() {
-            return Err(AnalyzerError::new(None, "Incompatible stack heights"));
+            return Err(incompatible_stack_heights());
         }
-        let mut changed = false;
-        for (value, other) in self.values.iter_mut().zip(&frame.values) {
-            if let Some(merged) = interpreter.merge(value, other)?
-                && merged != *value
-            {
-                *value = merged;
-                changed = true;
-            }
-        }
-        Ok(changed)
+        merge_values(self.values.vec_mut(), &frame.values, interpreter)
     }
 
     /// Merges the given frame into this frame, in the case of a subroutine (ASM's
     /// `merge(Frame, boolean[])`): the operand stacks are not merged, and only the local
     /// variables that the subroutine does not use are. Returns whether this frame changed.
     pub fn merge_subroutine(&mut self, frame: &Frame<V>, locals_used: &[bool]) -> bool {
+        self.merge_subroutine_values(&frame.values, locals_used)
+    }
+
+    /// [`merge_subroutine`](Self::merge_subroutine) with the values of the merged frame.
+    pub(crate) fn merge_subroutine_values(&mut self, values: &[V], locals_used: &[bool]) -> bool {
         let mut changed = false;
+        let num_locals = self.num_locals;
         for ((value, other), &used) in self
             .values
+            .vec_mut()
             .iter_mut()
-            .zip(&frame.values)
+            .zip(values)
             .zip(locals_used)
-            .take(self.num_locals)
+            .take(num_locals)
         {
             if !used && *value != *other {
                 value.clone_from(other);
@@ -620,7 +695,7 @@ impl<V: PartialEq> PartialEq for Frame<V> {
     fn eq(&self, other: &Frame<V>) -> bool {
         self.return_value == other.return_value
             && self.num_locals == other.num_locals
-            && self.values == other.values
+            && *self.values == *other.values
             && self.max_stack == other.max_stack
     }
 }
@@ -638,6 +713,109 @@ impl<V: fmt::Display> fmt::Display for Frame<V> {
         }
         Ok(())
     }
+}
+
+/// The values of a frame: its own, or a span of the values of the frames of an analysis
+/// ([`FrameArena`](crate::frame_arena::FrameArena)), which a frame copies when it changes them.
+enum FrameValues<V> {
+    Owned(Vec<V>),
+    Shared {
+        arena: Arc<Vec<V>>,
+        range: Range<usize>,
+    },
+}
+
+impl<V: Clone> FrameValues<V> {
+    /// The values, made the frame's own.
+    fn vec_mut(&mut self) -> &mut Vec<V> {
+        if let FrameValues::Shared { arena, range } = self {
+            *self = FrameValues::Owned(arena[range.clone()].to_vec());
+        }
+        match self {
+            FrameValues::Owned(values) => values,
+            FrameValues::Shared { .. } => unreachable!("the values were just made owned"),
+        }
+    }
+
+    /// Replaces the values with a copy of `values`, reusing owned storage.
+    fn assign(&mut self, values: &[V]) {
+        match self {
+            FrameValues::Owned(own) => values.clone_into(own),
+            FrameValues::Shared { .. } => *self = FrameValues::Owned(values.to_vec()),
+        }
+    }
+}
+
+impl<V> Deref for FrameValues<V> {
+    type Target = [V];
+
+    fn deref(&self) -> &[V] {
+        match self {
+            FrameValues::Owned(values) => values,
+            FrameValues::Shared { arena, range } => &arena[range.clone()],
+        }
+    }
+}
+
+impl<V: Clone> Clone for FrameValues<V> {
+    fn clone(&self) -> Self {
+        match self {
+            FrameValues::Owned(values) => FrameValues::Owned(values.clone()),
+            FrameValues::Shared { arena, range } => FrameValues::Shared {
+                arena: Arc::clone(arena),
+                range: range.clone(),
+            },
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        match source {
+            FrameValues::Owned(values) => self.assign(values),
+            FrameValues::Shared { .. } => *self = source.clone(),
+        }
+    }
+}
+
+impl<V: fmt::Debug> fmt::Debug for FrameValues<V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
+/// The sizes of a frame: what it has besides its values and return value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct FrameShape {
+    pub(crate) num_locals: usize,
+    pub(crate) max_stack: usize,
+    pub(crate) capacity: usize,
+}
+
+/// The error of a merge of frames with different stack heights.
+pub(crate) fn incompatible_stack_heights() -> AnalyzerError {
+    AnalyzerError::new(None, "Incompatible stack heights")
+}
+
+/// Merges the values of a frame into those of another frame of the same stack height (the loop
+/// of [`Frame::merge`]). Returns whether `values` changed.
+pub(crate) fn merge_values<V, I>(
+    values: &mut [V],
+    other: &[V],
+    interpreter: &mut I,
+) -> Result<bool, AnalyzerError>
+where
+    V: Value,
+    I: Interpreter<V = V> + ?Sized,
+{
+    let mut changed = false;
+    for (value, other) in values.iter_mut().zip(other) {
+        if let Some(merged) = interpreter.merge(value, other)?
+            && merged != *value
+        {
+            *value = merged;
+            changed = true;
+        }
+    }
+    Ok(changed)
 }
 
 /// A value that an interpreter `operation` returned, which must not be `None` (where ASM would

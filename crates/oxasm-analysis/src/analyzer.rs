@@ -8,6 +8,7 @@ use rustc_hash::FxHashMap;
 use crate::basic_interpreter::checked_object_type;
 use crate::error::{AnalyzerError, index_out_of_bounds};
 use crate::frame::{Frame, required};
+use crate::frame_arena::FrameArena;
 use crate::interpreter::{InsnRef, Interpreter};
 use crate::subroutine::Subroutine;
 use crate::value::Value;
@@ -131,6 +132,8 @@ pub struct Analyzer<I: Interpreter, H = ()> {
     /// The exception handlers of the last analyzed method, one list per instruction: indices in
     /// its `try_catch_blocks`.
     handlers: Vec<Vec<usize>>,
+    /// The frames during an analysis, which end up in `frames`.
+    arena: FrameArena<I::V>,
 }
 
 impl<I: Interpreter> Analyzer<I> {
@@ -149,6 +152,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             hooks,
             frames: Vec::new(),
             handlers: Vec::new(),
+            arena: FrameArena::default(),
         }
     }
 
@@ -277,6 +281,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             }
         }
 
+        self.arena.reset(insn_list_size);
         let mut run = Run {
             insn_list,
             insns: insn_list
@@ -295,22 +300,17 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             interpreter: &mut self.interpreter,
             hooks: &mut self.hooks,
             frames: &mut self.frames,
+            arena: &mut self.arena,
+            handler_frame: None,
             handlers: &self.handlers,
             subroutines: vec![None; insn_list_size],
             in_instructions_to_process: vec![false; insn_list_size],
             instructions_to_process: Vec::with_capacity(insn_list_size),
         };
 
-        // Finds the method's subroutines.
-        run.find_subroutines()?;
-
-        // Initializes the data structures for the control flow analysis.
-        let mut current_frame = match run.initial_frame(owner, max_stack) {
-            Ok(frame) => frame,
-            Err(e) if e.is_runtime() => return Err(e.at(0, insn_list.first())),
-            Err(e) => return Err(e),
-        };
-        run.run(&mut current_frame)
+        let result = run.analyze(owner, max_stack);
+        run.arena.finish(run.frames);
+        result
     }
 }
 
@@ -323,7 +323,13 @@ struct Run<'a, I: Interpreter, H> {
     max_locals: usize,
     interpreter: &'a mut I,
     hooks: &'a mut H,
+    /// The analyzer's frames, which the `init` hook gets, and which get the frames of the arena
+    /// at the end.
     frames: &'a mut Vec<Option<Frame<I::V>>>,
+    /// The frames during the analysis.
+    arena: &'a mut FrameArena<I::V>,
+    /// A frame for the exception handlers' merges, kept for its storage.
+    handler_frame: Option<Frame<I::V>>,
     handlers: &'a [Vec<usize>],
     /// The subroutine of each instruction.
     subroutines: Vec<Option<Subroutine>>,
@@ -334,6 +340,20 @@ struct Run<'a, I: Interpreter, H> {
 }
 
 impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
+    /// The analysis, after the exception handlers are recorded.
+    fn analyze(&mut self, owner: &JavaStr, max_stack: Option<usize>) -> Result<(), AnalyzerError> {
+        // Finds the method's subroutines.
+        self.find_subroutines()?;
+
+        // Initializes the data structures for the control flow analysis.
+        let mut current_frame = match self.initial_frame(owner, max_stack) {
+            Ok(frame) => frame,
+            Err(e) if e.is_runtime() => return Err(e.at(0, self.insn_list.first())),
+            Err(e) => return Err(e),
+        };
+        self.run(&mut current_frame)
+    }
+
     /// The index of a label, which must be in the list: where ASM's `indexOf` returns -1 for a
     /// label that is not, the analysis fails as ASM's does when it uses this index.
     fn label_index(&self, label: Label) -> Result<usize, AnalyzerError> {
@@ -352,8 +372,13 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
     ) -> Result<Frame<I::V>, AnalyzerError> {
         let frame = self.compute_initial_frame(owner, max_stack)?;
         self.merge(0, &frame, None)?;
-        self.hooks
-            .init(owner, self.method, self.frames, self.handlers)?;
+        // The hook gets the frames as ASM's `getFrames()`, and may set some.
+        self.arena.export(self.frames);
+        let result = self
+            .hooks
+            .init(owner, self.method, self.frames, self.handlers);
+        self.arena.import(self.frames);
+        result?;
         Ok(frame)
     }
 
@@ -435,13 +460,13 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
             InsnKind::Label | InsnKind::Line | InsnKind::Frame => {
                 // Update the current frame, so it can be used during processing for this
                 // instruction.
-                current_frame.init(self.frame(insn_index));
+                self.arena.init(insn_index, current_frame);
                 self.merge_successor(insn_index, subroutine.as_ref())?;
                 self.hooks.new_control_flow_edge(insn_index, insn_index + 1);
             }
             _ => {
-                current_frame
-                    .init(self.frame(insn_index))
+                self.arena
+                    .init(insn_index, current_frame)
                     .execute(insn, &mut *self.interpreter)?;
                 let opcode = insn_opcode.expect("a JVM instruction");
                 match &insn.insn {
@@ -508,10 +533,9 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                                 .insn_list
                                 .index_of(*caller)
                                 .ok_or_else(|| index_out_of_bounds(-1, self.insn_list.len()))?;
-                            if let Some(frame_before_jsr) = &self.frames[jsr_insn_index] {
+                            if self.arena.is_set(jsr_insn_index) {
                                 self.merge_after_ret(
                                     jsr_insn_index + 1,
-                                    frame_before_jsr.clone(),
                                     current_frame,
                                     jsr_insn_index,
                                     &subroutine.locals_used,
@@ -558,30 +582,53 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
             ) {
                 // Merge the frame *before* this instruction, with its stack cleared and an
                 // exception pushed, with the handler's frame.
-                let mut handler = self.frame(insn_index).clone();
-                handler.clear_stack();
-                let exception_value =
-                    self.interpreter
-                        .new_exception_value(try_catch_block, &handler, &catch_type)?;
-                let exception_value = required(exception_value, "newExceptionValue")?;
-                handler.try_push(exception_value.clone())?;
-                self.merge(handler_index, &handler, subroutine.as_ref())?;
-                // Merge the frame *after* this instruction, with its stack cleared and an
-                // exception pushed, with the handler's frame.
-                let mut handler = current_frame.clone();
-                handler.clear_stack();
-                handler.try_push(exception_value)?;
-                self.merge(handler_index, &handler, subroutine.as_ref())?;
+                let mut handler = self
+                    .handler_frame
+                    .take()
+                    .unwrap_or_else(|| Frame::new(Vec::new(), None));
+                self.arena.clone_into(insn_index, &mut handler);
+                let result = self.merge_handler(
+                    &mut handler,
+                    current_frame,
+                    try_catch_block,
+                    &catch_type,
+                    handler_index,
+                    subroutine.as_ref(),
+                );
+                self.handler_frame = Some(handler);
+                result?;
             }
         }
         Ok(())
     }
 
-    /// The frame at an instruction being processed (which has one).
-    fn frame(&self, insn_index: usize) -> &Frame<I::V> {
-        self.frames[insn_index]
-            .as_ref()
-            .expect("an instruction to process has a frame")
+    /// Merges into the frame of an exception handler `handler`, which holds a clone of the frame
+    /// before the instruction, then `current_frame`, the frame after it: each with its stack
+    /// cleared and an exception pushed.
+    fn merge_handler(
+        &mut self,
+        handler: &mut Frame<I::V>,
+        current_frame: &Frame<I::V>,
+        try_catch_block: &TryCatchBlockNode,
+        catch_type: &Type,
+        handler_index: usize,
+        subroutine: Option<&Subroutine>,
+    ) -> Result<(), AnalyzerError> {
+        handler.clear_stack();
+        let exception_value =
+            self.interpreter
+                .new_exception_value(try_catch_block, handler, catch_type)?;
+        let exception_value = required(exception_value, "newExceptionValue")?;
+        handler.try_push(exception_value.clone())?;
+        self.merge(handler_index, handler, subroutine)?;
+        handler.assign(
+            current_frame.return_value(),
+            current_frame.values(),
+            current_frame.shape(),
+        );
+        handler.clear_stack();
+        handler.try_push(exception_value)?;
+        self.merge(handler_index, handler, subroutine)
     }
 
     /// Merges the frame of a label, line number or frame node into the next instruction.
@@ -591,20 +638,12 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         subroutine: Option<&Subroutine>,
     ) -> Result<(), AnalyzerError> {
         let successor = insn_index + 1;
-        if successor >= self.frames.len() {
-            return Err(index_out_of_bounds(successor, self.frames.len()));
+        if successor >= self.arena.len() {
+            return Err(index_out_of_bounds(successor, self.arena.len()));
         }
-        let (before, after) = self.frames.split_at_mut(successor);
-        let frame = before[insn_index]
-            .as_ref()
-            .expect("an instruction to process has a frame");
-        let changed = match &mut after[0] {
-            slot @ None => {
-                *slot = Some(frame.clone());
-                true
-            }
-            Some(old_frame) => old_frame.merge(frame, &mut *self.interpreter)?,
-        };
+        let changed = self
+            .arena
+            .merge_into_next(insn_index, &mut *self.interpreter)?;
         self.merge_subroutine_and_enqueue(successor, subroutine, changed);
         Ok(())
     }
@@ -618,18 +657,13 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         frame: &Frame<I::V>,
         subroutine: Option<&Subroutine>,
     ) -> Result<(), AnalyzerError> {
-        let length = self.frames.len();
-        let slot = self
-            .frames
-            .get_mut(insn_index)
-            .ok_or_else(|| index_out_of_bounds(insn_index, length))?;
-        let changed = match slot {
-            None => {
-                *slot = Some(frame.clone());
-                true
-            }
-            Some(old_frame) => old_frame.merge(frame, &mut *self.interpreter)?,
-        };
+        let length = self.arena.len();
+        if insn_index >= length {
+            return Err(index_out_of_bounds(insn_index, length));
+        }
+        let changed = self
+            .arena
+            .merge(insn_index, frame, &mut *self.interpreter)?;
         self.merge_subroutine_and_enqueue(insn_index, subroutine, changed);
         Ok(())
     }
@@ -661,31 +695,25 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
     }
 
     /// Merges the frame after a `RET` into the instruction after a `JSR` (ASM's `merge(int,
-    /// Frame, Frame, Subroutine, boolean[])`): `frame_after_ret` is first merged with
-    /// `frame_before_jsr` (the frame of the `JSR` at `jsr_insn_index`, whose subroutine is that
-    /// of the instruction before the `JSR`) for the locals the subroutine does not use.
+    /// Frame, Frame, Subroutine, boolean[])`): `frame_after_ret` is first merged with the frame
+    /// before the `JSR` at `jsr_insn_index` (whose subroutine is that of the instruction before
+    /// the `JSR`) for the locals the subroutine does not use.
     fn merge_after_ret(
         &mut self,
         insn_index: usize,
-        frame_before_jsr: Frame<I::V>,
         frame_after_ret: &mut Frame<I::V>,
         jsr_insn_index: usize,
         locals_used: &[bool],
     ) -> Result<(), AnalyzerError> {
-        frame_after_ret.merge_subroutine(&frame_before_jsr, locals_used);
+        frame_after_ret.merge_subroutine_values(self.arena.values(jsr_insn_index), locals_used);
 
-        let length = self.frames.len();
-        let slot = self
-            .frames
-            .get_mut(insn_index)
-            .ok_or_else(|| index_out_of_bounds(insn_index, length))?;
-        let mut changed = match slot {
-            None => {
-                *slot = Some(frame_after_ret.clone());
-                true
-            }
-            Some(old_frame) => old_frame.merge(frame_after_ret, &mut *self.interpreter)?,
-        };
+        let length = self.arena.len();
+        if insn_index >= length {
+            return Err(index_out_of_bounds(insn_index, length));
+        }
+        let mut changed = self
+            .arena
+            .merge(insn_index, frame_after_ret, &mut *self.interpreter)?;
         if let Some(subroutine_before_jsr) = self.subroutines[jsr_insn_index].clone()
             && let Some(old_subroutine) = &mut self.subroutines[insn_index]
         {
@@ -703,10 +731,12 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
     /// `findSubroutines`).
     fn find_subroutines(&mut self) -> Result<(), AnalyzerError> {
         // For each instruction, compute the subroutine to which it belongs. Follow the main
-        // 'subroutine', and collect the jsr instructions to nested subroutines.
-        let main = Subroutine::new(None, self.max_locals, None);
+        // 'subroutine', and collect the jsr instructions to nested subroutines. ASM stores a copy
+        // of the main 'subroutine' at each instruction it reaches, and clears them at the end;
+        // here the instructions are only marked as reached.
+        let mut reached_by_main = vec![false; self.insns.len()];
         let mut jsr_insns = std::collections::VecDeque::new();
-        self.find_subroutine(0, &main, &mut jsr_insns)?;
+        self.find_subroutine(0, None, &mut reached_by_main, &mut jsr_insns)?;
         // Follow the nested subroutines, and collect their own nested subroutines, until all
         // subroutines are found.
         let mut jsr_subroutines: FxHashMap<Label, Subroutine> = FxHashMap::default();
@@ -716,23 +746,22 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                 None => {
                     let subroutine = Subroutine::new(Some(label), self.max_locals, Some(jsr_insn));
                     let start = java_index_of(self.insn_list, label);
-                    self.find_subroutine(start, &subroutine, &mut jsr_insns)?;
+                    self.find_subroutine(
+                        start,
+                        Some(&subroutine),
+                        &mut reached_by_main,
+                        &mut jsr_insns,
+                    )?;
                     jsr_subroutines.insert(label, subroutine);
                 }
-            }
-        }
-        // Clear the main 'subroutine', which is not a real subroutine (and was used only as an
-        // intermediate step above to find the real ones).
-        for subroutine in &mut self.subroutines {
-            if subroutine.as_ref().is_some_and(|s| s.start.is_none()) {
-                *subroutine = None;
             }
         }
         Ok(())
     }
 
     /// Follows the control flow graph of the method from the instruction at `insn_index`, and
-    /// stores a copy of `subroutine` for each instruction it reaches (ASM's `findSubroutine`).
+    /// stores a copy of `subroutine` for each instruction it reaches, or marks it in
+    /// `reached_by_main` for the main 'subroutine', `None` (ASM's `findSubroutine`).
     /// Jumps to nested subroutines are *not* followed: their instructions are put in
     /// `jsr_insns`, with their target.
     ///
@@ -741,7 +770,8 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
     fn find_subroutine(
         &mut self,
         insn_index: i64,
-        subroutine: &Subroutine,
+        subroutine: Option<&Subroutine>,
+        reached_by_main: &mut [bool],
         jsr_insns: &mut std::collections::VecDeque<(InsnId, Label)>,
     ) -> Result<(), AnalyzerError> {
         let (insn_list, method, handlers) = (self.insn_list, self.method, self.handlers);
@@ -762,10 +792,14 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                     ));
                 }
             };
-            if self.subroutines[current_insn_index].is_some() {
+            if self.subroutines[current_insn_index].is_some() || reached_by_main[current_insn_index]
+            {
                 continue;
             }
-            self.subroutines[current_insn_index] = Some(subroutine.clone());
+            match subroutine {
+                Some(subroutine) => self.subroutines[current_insn_index] = Some(subroutine.clone()),
+                None => reached_by_main[current_insn_index] = true,
+            }
             let current_insn = self.insns[current_insn_index];
 
             // Push the normal successors of currentInsn onto instructionIndicesToProcess.

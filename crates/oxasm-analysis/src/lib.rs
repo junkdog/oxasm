@@ -18,6 +18,7 @@ mod basic_value;
 mod basic_verifier;
 mod error;
 mod frame;
+mod frame_arena;
 mod interpreter;
 mod simple_verifier;
 mod small_set;
