@@ -170,6 +170,15 @@ impl<'s> Interpreter for OriginSourceInterpreter<'s> {
     ) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
         Ok(SourceInterpreter::merge(self.sets, value1, value2))
     }
+
+    /// The merges of `SourceInterpreter`, so its loop over a frame's values too.
+    fn merge_values(
+        &mut self,
+        values: &mut [OriginValue<'s>],
+        other: &[OriginValue<'s>],
+    ) -> Result<bool, AnalyzerError> {
+        Ok(SourceInterpreter::merge_values(self.sets, values, other))
+    }
 }
 
 // -------------------------------------------------------------------------------------------------

@@ -475,19 +475,7 @@ impl<'a> Type<'a> {
     pub(crate) fn get_return_type_offset(
         method_descriptor: &JavaStr,
     ) -> Result<usize, InvalidDescriptor> {
-        let d = method_descriptor.as_bytes();
-        let past_end = |offset| out_of_bounds(method_descriptor, offset);
-        // Skip the first character, which is always a '('.
-        let mut current_offset = char_len(d, 0);
-        // Skip the argument types, one at a each loop iteration.
-        while *d
-            .get(current_offset)
-            .ok_or_else(|| past_end(current_offset))?
-            != b')'
-        {
-            current_offset = skip_argument(d, current_offset).map_err(past_end)?;
-        }
-        Ok(current_offset + 1)
+        argument_count_and_return_type_offset(method_descriptor).map(|(_, offset)| offset)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -654,22 +642,24 @@ impl<'a> Type<'a> {
     pub fn try_get_argument_count_of(
         method_descriptor: impl AsRef<JavaStr>,
     ) -> Result<usize, InvalidDescriptor> {
-        let method_descriptor = method_descriptor.as_ref();
-        let d = method_descriptor.as_bytes();
-        let past_end = |offset| out_of_bounds(method_descriptor, offset);
-        let mut argument_count = 0;
-        // Skip the first character, which is always a '('.
-        let mut current_offset = char_len(d, 0);
-        // Parse the argument types, one at a each loop iteration.
-        while *d
-            .get(current_offset)
-            .ok_or_else(|| past_end(current_offset))?
-            != b')'
-        {
-            current_offset = skip_argument(d, current_offset).map_err(past_end)?;
-            argument_count += 1;
-        }
-        Ok(argument_count)
+        argument_count_and_return_type_offset(method_descriptor.as_ref()).map(|(count, _)| count)
+    }
+
+    /// Returns the number of arguments in the given method descriptor, and its return type: what
+    /// [`try_get_argument_count_of`](Self::try_get_argument_count_of) and
+    /// [`try_get_return_type_of`](Self::try_get_return_type_of) return, with one walk over the
+    /// argument types instead of two (what ASM's `Frame` needs of an invoke instruction).
+    ///
+    /// # Errors
+    ///
+    /// If the descriptor ends before its `)`. Otherwise the count is returned with the return
+    /// type, or with its error (the descriptor ends after the `)`, or the return type is invalid).
+    pub fn try_get_argument_count_and_return_type_of<S: AsRef<JavaStr> + ?Sized>(
+        method_descriptor: &'a S,
+    ) -> Result<(usize, Result<Type<'a>, InvalidDescriptor>), InvalidDescriptor> {
+        let buf = TypeBuf::Borrowed(method_descriptor.as_ref());
+        let (count, offset) = argument_count_and_return_type_offset(buf.as_java_str())?;
+        Ok((count, get_type_internal(&buf, offset, buf.bytes().len())))
     }
 
     /// Returns the size of the arguments and of the return value of methods of this type. This
@@ -921,6 +911,28 @@ fn char_len(d: &[u8], offset: usize) -> usize {
     }
 }
 
+/// The number of argument types of a method descriptor, and the start index of its return type
+/// (ASM's `getArgumentCount` and `getReturnTypeOffset`, which walk the argument types alike).
+fn argument_count_and_return_type_offset(
+    method_descriptor: &JavaStr,
+) -> Result<(usize, usize), InvalidDescriptor> {
+    let d = method_descriptor.as_bytes();
+    let past_end = |offset| out_of_bounds(method_descriptor, offset);
+    let mut argument_count = 0;
+    // Skip the first character, which is always a '('.
+    let mut current_offset = char_len(d, 0);
+    // Skip the argument types, one at each loop iteration.
+    while *d
+        .get(current_offset)
+        .ok_or_else(|| past_end(current_offset))?
+        != b')'
+    {
+        current_offset = skip_argument(d, current_offset).map_err(past_end)?;
+        argument_count += 1;
+    }
+    Ok((argument_count, current_offset + 1))
+}
+
 /// Skips one argument type of a method descriptor starting at `offset`, the way ASM does: any
 /// `[`s, then one character, then (after an `L`) everything up to the next `;`. Fails with the
 /// offset past the end that ASM would read.
@@ -933,11 +945,44 @@ fn skip_argument(d: &[u8], mut offset: usize) -> Result<usize, usize> {
     if c == b'L' {
         // Skip the argument descriptor content. Like ASM's `Math.max(currentOffset,
         // indexOf(';') + 1)`, a missing ';' leaves the offset where it is.
-        if let Some(semi_column) = d[offset..].iter().position(|&b| b == b';') {
+        if let Some(semi_column) = find_semicolon(&d[offset..]) {
             offset += semi_column + 1;
         }
     }
     Ok(offset)
+}
+
+/// The index of the first `;` of `bytes`, if any. Searches a word at a time: the internal names
+/// of descriptors are a few words long.
+#[inline]
+fn find_semicolon(bytes: &[u8]) -> Option<usize> {
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+    const SEMICOLONS: u64 = LO * b';' as u64;
+    /// The index of the first `;` of a word, if any.
+    #[inline(always)]
+    fn word(word: &[u8; 8]) -> Option<usize> {
+        // The bytes of `v` that were `;` are 0. The lowest bit of `(v - LO) & !v & HI` is that
+        // of its first zero byte (a borrow only makes false positives above a zero byte).
+        let v = u64::from_le_bytes(*word) ^ SEMICOLONS;
+        let zeros = v.wrapping_sub(LO) & !v & HI;
+        (zeros != 0).then(|| (zeros.trailing_zeros() / 8) as usize)
+    }
+    let Some(last) = bytes.last_chunk::<8>() else {
+        return bytes.iter().position(|&b| b == b';');
+    };
+    let (words, rest) = bytes.as_chunks::<8>();
+    for (i, w) in words.iter().enumerate() {
+        if let Some(position) = word(w) {
+            return Some(i * 8 + position);
+        }
+    }
+    // The rest, if any, is searched with the last 8 bytes, which overlap the last word (which
+    // has no `;`).
+    if rest.is_empty() {
+        return None;
+    }
+    word(last).map(|position| bytes.len() - 8 + position)
 }
 
 fn argument_types<'a>(buf: &TypeBuf<'a>, base: usize) -> Result<Vec<Type<'a>>, InvalidDescriptor> {
@@ -1085,5 +1130,73 @@ impl fmt::Display for Type<'_> {
 impl fmt::Debug for Type<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Type({:?})", &*self.get_descriptor())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn semicolon_search_matches_the_byte_search() {
+        // A `;` at every position of strings of 0 to 24 bytes, which covers the short path, the
+        // whole words and the overlapping last word; with a second `;` after it, and among bytes
+        // that xor with `;` into 1 (`:`, which borrows from a zero byte below it), into a high bit
+        // only (`0xbb`), or into neither.
+        for len in 0..=24 {
+            for fill in [b'a', b':', b'<', 0xbb, 0xff] {
+                let mut bytes = vec![fill; len];
+                assert_eq!(find_semicolon(&bytes), None, "{len} {fill:#x}");
+                for at in 0..len {
+                    bytes[at] = b';';
+                    assert_eq!(find_semicolon(&bytes), Some(at), "{len} {fill:#x} {at}");
+                    if at + 2 < len {
+                        bytes[at + 2] = b';';
+                        assert_eq!(find_semicolon(&bytes), Some(at), "{len} {fill:#x} {at}+2");
+                        bytes[at + 2] = fill;
+                    }
+                    bytes[at] = fill;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn argument_count_and_return_type_are_those_of_two_walks() {
+        for descriptor in [
+            "()V",
+            "(I)J",
+            "(IJ[[DLjava/lang/String;)Ljava/lang/Object;",
+            "([Ljava/util/Map$Entry;Ljava/lang/invoke/MethodHandles$Lookup;)[[Ljava/lang/Object;",
+            "(Lp\u{e9};Lq;)Lr\u{1f600};",
+            // Malformed: no `)`, nothing after it, invalid or truncated return types, an
+            // argument without its `;`.
+            "",
+            "(",
+            "(I",
+            "(Ljava/lang/String",
+            "()",
+            "(I)",
+            "()X",
+            "()L;",
+            "()[",
+            "(L)V",
+            "(X)V",
+        ] {
+            let d = JavaStr::from_str(descriptor);
+            let fused = Type::try_get_argument_count_and_return_type_of(d);
+            match Type::try_get_argument_count_of(d) {
+                Err(count_error) => assert_eq!(fused, Err(count_error), "{descriptor:?}"),
+                Ok(count) => {
+                    let (fused_count, fused_return_type) = fused.expect(descriptor);
+                    assert_eq!(fused_count, count, "{descriptor:?}");
+                    assert_eq!(
+                        fused_return_type.map(|t| t.get_descriptor().into_owned()),
+                        Type::try_get_return_type_of(d).map(|t| t.get_descriptor().into_owned()),
+                        "{descriptor:?}"
+                    );
+                }
+            }
+        }
     }
 }

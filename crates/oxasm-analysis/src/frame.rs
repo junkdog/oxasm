@@ -583,14 +583,17 @@ impl<V: Value> Frame<V> {
     where
         I: Interpreter<V = V> + ?Sized,
     {
-        let argument_count = Type::try_get_argument_count_of(method_descriptor)
-            .map_err(|e| AnalyzerError::runtime(e.message()))?;
+        // One walk over the argument types; the return type's error, if any, comes after the
+        // operands are popped, as in ASM.
+        let (argument_count, return_type) =
+            Type::try_get_argument_count_and_return_type_of(method_descriptor)
+                .map_err(|e| AnalyzerError::runtime(e.message()))?;
         let opcode = insn.opcode();
         let receiver = usize::from(opcode != Some(INVOKESTATIC) && opcode != Some(INVOKEDYNAMIC));
         // The receiver, if any, is just below the arguments: the operands are the top of the
         // stack, in order, which the interpreter reads in place before they are popped.
         let start = self.stack_top_start(argument_count + receiver)?;
-        let return_type = match Type::try_get_return_type_of(method_descriptor) {
+        let return_type = match return_type {
             Ok(return_type) => return_type,
             Err(e) => {
                 self.values.truncate(start);
@@ -636,7 +639,7 @@ impl<V: Value> Frame<V> {
         if self.get_stack_size() != frame.get_stack_size() {
             return Err(incompatible_stack_heights());
         }
-        merge_values(&mut self.values, &frame.values, interpreter)
+        interpreter.merge_values(&mut self.values, &frame.values)
     }
 
     /// Merges the given frame into this frame, in the case of a subroutine (ASM's
@@ -853,29 +856,6 @@ pub(crate) struct FrameShape {
 /// The error of a merge of frames with different stack heights.
 pub(crate) fn incompatible_stack_heights() -> AnalyzerError {
     AnalyzerError::new(None, "Incompatible stack heights")
-}
-
-/// Merges the values of a frame into those of another frame of the same stack height (the loop
-/// of [`Frame::merge`]). Returns whether `values` changed.
-pub(crate) fn merge_values<V, I>(
-    values: &mut [V],
-    other: &[V],
-    interpreter: &mut I,
-) -> Result<bool, AnalyzerError>
-where
-    V: Value,
-    I: Interpreter<V = V> + ?Sized,
-{
-    let mut changed = false;
-    for (value, other) in values.iter_mut().zip(other) {
-        if let Some(merged) = interpreter.merge(value, other)?
-            && merged != *value
-        {
-            *value = merged;
-            changed = true;
-        }
-    }
-    Ok(changed)
 }
 
 /// A value that an interpreter `operation` returned, which must not be `None` (where ASM would

@@ -173,26 +173,51 @@ impl<'s> SourceInterpreter<'s> {
         value2: &SourceValue<'s, P>,
     ) -> Option<SourceValue<'s, P>> {
         // Most merges are of a value with a copy of itself: inline, and without a call.
-        if value1.size == value2.size && value1.insns.is_identical(&value2.insns) {
+        if is_identical(value1, value2) {
             return None;
         }
-        SourceInterpreter::merge_different(sets, value1, value2)
+        let mut merged = *value1;
+        SourceInterpreter::merge_different(sets, &mut merged, value2).then_some(merged)
     }
 
-    /// [`merge`](Self::merge) of values that are not identical copies.
+    /// [`Interpreter::merge_values`] for the values of a `SourceInterpreter` (or of an
+    /// interpreter whose [`merge`](Interpreter::merge) is [`merge`](Self::merge)): `values[i]`
+    /// becomes the merge of `values[i]` and `other[i]`. Returns whether `values` changed.
+    ///
+    /// A merged value always differs from the old one (it has a smaller size, or more
+    /// producers), so there is no comparison of the two, and most values, which are identical
+    /// copies, cost an inline test.
+    #[inline]
+    pub fn merge_values<P: Producer>(
+        sets: &'s SetArena,
+        values: &mut [SourceValue<'s, P>],
+        other: &[SourceValue<'s, P>],
+    ) -> bool {
+        let mut changed = false;
+        for (value, other) in values.iter_mut().zip(other) {
+            if !is_identical(value, other) {
+                changed |= SourceInterpreter::merge_different(sets, value, other);
+            }
+        }
+        changed
+    }
+
+    /// Merges `value2` into `value1`, which is not an identical copy of it. Returns whether
+    /// `value1` changed.
     #[inline(never)]
     fn merge_different<P: Producer>(
         sets: &'s SetArena,
-        value1: &SourceValue<'s, P>,
+        value1: &mut SourceValue<'s, P>,
         value2: &SourceValue<'s, P>,
-    ) -> Option<SourceValue<'s, P>> {
+    ) -> bool {
         if value1.size <= value2.size && value1.insns.is_superset(&value2.insns) {
-            return None;
+            return false;
         }
-        Some(SourceValue::with_insns(
+        *value1 = SourceValue::with_insns(
             value1.size.min(value2.size),
             value1.insns.union(&value2.insns, sets),
-        ))
+        );
+        true
     }
 }
 
@@ -274,6 +299,22 @@ impl<'s> Interpreter for SourceInterpreter<'s> {
     ) -> Result<Option<SourceValue<'s>>, AnalyzerError> {
         Ok(SourceInterpreter::merge(self.sets, value1, value2))
     }
+
+    #[inline]
+    fn merge_values(
+        &mut self,
+        values: &mut [SourceValue<'s>],
+        other: &[SourceValue<'s>],
+    ) -> Result<bool, AnalyzerError> {
+        Ok(SourceInterpreter::merge_values(self.sets, values, other))
+    }
+}
+
+/// Whether two values are identical copies (`SmallSet::is_identical`): their merge is the
+/// first one.
+#[inline]
+fn is_identical<P: Producer>(value1: &SourceValue<'_, P>, value2: &SourceValue<'_, P>) -> bool {
+    value1.size == value2.size && value1.insns.is_identical(&value2.insns)
 }
 
 /// `type.getSize()`, whose `AssertionError` for a method type is an error here.

@@ -88,6 +88,8 @@ impl Deref for InsnRef<'_> {
 ///   caught.
 /// - **[`merge`](Self::merge) returns `None` when the merged value is `value1`,** which ASM's
 ///   contract requires to be returned as is: this saves a clone.
+/// - **The loop of ASM's `Frame.merge` is [`merge_values`](Self::merge_values),** a provided
+///   method, which an interpreter may override with a cheaper loop of the same result.
 /// - **Extension by delegation.** ASM's stock interpreters are extended by subclassing. Here, they
 ///   expose their operations as inherent methods, so that a wrapper can override some of them and
 ///   delegate the rest (ADR-12).
@@ -268,6 +270,35 @@ pub trait Interpreter {
         value1: &Self::V,
         value2: &Self::V,
     ) -> Result<Option<Self::V>, AnalyzerError>;
+
+    /// Merges the values of a frame into those of another frame of the same stack height (the
+    /// loop of ASM's `Frame.merge`): each value of `values` becomes its [`merge`](Self::merge)
+    /// with the value of `other` at the same index, if that is not equal to it. Returns whether
+    /// `values` changed.
+    ///
+    /// An interpreter may override it with a cheaper loop of the same result: one that skips
+    /// the merges of values it knows to be unchanged by them, or that does not compare a merged
+    /// value with the old one when its merge never returns an equal one.
+    ///
+    /// # Errors
+    ///
+    /// The first error of [`merge`](Self::merge), whose values merged before it stay merged.
+    fn merge_values(
+        &mut self,
+        values: &mut [Self::V],
+        other: &[Self::V],
+    ) -> Result<bool, AnalyzerError> {
+        let mut changed = false;
+        for (value, other) in values.iter_mut().zip(other) {
+            if let Some(merged) = self.merge(value, other)?
+                && merged != *value
+            {
+                *value = merged;
+                changed = true;
+            }
+        }
+        Ok(changed)
+    }
 }
 
 impl<I: Interpreter + ?Sized> Interpreter for &mut I {
@@ -353,5 +384,12 @@ impl<I: Interpreter + ?Sized> Interpreter for &mut I {
         value2: &Self::V,
     ) -> Result<Option<Self::V>, AnalyzerError> {
         (**self).merge(value1, value2)
+    }
+    fn merge_values(
+        &mut self,
+        values: &mut [Self::V],
+        other: &[Self::V],
+    ) -> Result<bool, AnalyzerError> {
+        (**self).merge_values(values, other)
     }
 }

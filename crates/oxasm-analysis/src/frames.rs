@@ -4,7 +4,7 @@ use std::fmt;
 use std::iter::FusedIterator;
 
 use crate::error::AnalyzerError;
-use crate::frame::{Frame, FrameRef, FrameShape, incompatible_stack_heights, merge_values};
+use crate::frame::{Frame, FrameRef, FrameShape, incompatible_stack_heights};
 use crate::interpreter::Interpreter;
 use crate::value::Value;
 
@@ -176,7 +176,7 @@ impl<V: Value> Frames<V> {
         if slot.stack_size() != frame.get_stack_size() {
             return Err(incompatible_stack_heights());
         }
-        merge_values(&mut self.values[slot.range()], frame.values(), interpreter)
+        interpreter.merge_values(&mut self.values[slot.range()], frame.values())
     }
 
     /// Merges the frame at `index` into the frame at `index + 1`, or stores a copy of it there
@@ -211,7 +211,7 @@ impl<V: Value> Frames<V> {
             let (head, tail) = self.values.split_at_mut(source.start);
             (&tail[..source.len], &mut head[target.range()])
         };
-        merge_values(target_values, source_values, interpreter)
+        interpreter.merge_values(target_values, source_values)
     }
 
     /// Copies the frame at `index` into `frame`, as [`Frame::init`] does.
