@@ -283,11 +283,15 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
         // The instructions, and the index of each label and jump target.
         let mut insns = Vec::with_capacity(insn_list_size);
         let mut label_ids = LabelIds::default();
-        let mut has_jumps = false;
+        let (mut has_jumps, mut has_jsr) = (false, false);
         for (id, node) in insn_list.iter_with_ids() {
             match node.insn {
                 Insn::Label(label) => label_ids.add(label),
-                Insn::Jump { .. } => has_jumps = true,
+                Insn::Jump { opcode, .. } => {
+                    has_jumps = true;
+                    has_jsr |= opcode == JSR;
+                }
+                Insn::TableSwitch(_) | Insn::LookupSwitch(_) => has_jumps = true,
                 _ => {}
             }
             insns.push(InsnEntry {
@@ -297,10 +301,22 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             });
         }
         let labels = LabelIndices::new(insn_list, &insns, label_ids);
+        let mut jump_targets = TargetRange::default();
         if has_jumps {
             for entry in &mut insns {
-                if let Insn::Jump { label, .. } = entry.node.insn {
-                    entry.jump_target = labels.index_of(label);
+                match &entry.node.insn {
+                    Insn::Jump { label, .. } => {
+                        entry.jump_target = labels.index_of(*label);
+                        jump_targets.add(entry.jump_target);
+                    }
+                    insn @ (Insn::TableSwitch(_) | Insn::LookupSwitch(_)) => {
+                        let (dflt, switch_labels) = insn.switch_labels().expect("a switch");
+                        jump_targets.add(labels.index_of(dflt));
+                        for &label in switch_labels {
+                            jump_targets.add(labels.index_of(label));
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -329,6 +345,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
                 .map(|try_catch_block| labels.index_of(try_catch_block.handler))
                 .collect(),
             labels,
+            jump_targets,
             method,
             max_locals,
             interpreter: &mut self.interpreter,
@@ -336,7 +353,11 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             frames: &mut self.frames,
             handler_frame: None,
             handlers: &self.handlers,
-            subroutines: vec![None; insn_list_size],
+            subroutines: if has_jsr {
+                vec![None; insn_list_size]
+            } else {
+                Vec::new()
+            },
             in_instructions_to_process: vec![false; insn_list_size],
             instructions_to_process: Vec::with_capacity(insn_list_size),
             current_copy_of: None,
@@ -542,6 +563,35 @@ impl Handlers {
     }
 }
 
+/// The smallest and the largest of a set of instruction indices (-1 for a label not in the
+/// list), or `(i64::MAX, i64::MIN)` for an empty set.
+#[derive(Clone, Copy)]
+struct TargetRange {
+    min: i64,
+    max: i64,
+}
+
+impl Default for TargetRange {
+    fn default() -> Self {
+        TargetRange {
+            min: i64::MAX,
+            max: i64::MIN,
+        }
+    }
+}
+
+impl TargetRange {
+    fn add(&mut self, index: i64) {
+        self.min = self.min.min(index);
+        self.max = self.max.max(index);
+    }
+
+    /// Whether every index of the set is in `0..end`.
+    fn is_within(self, end: usize) -> bool {
+        self.min >= 0 && self.max < end as i64
+    }
+}
+
 /// An instruction of the method being analyzed, without what all its [`InsnRef`]s share.
 #[derive(Clone, Copy)]
 struct InsnEntry<'a> {
@@ -564,6 +614,8 @@ struct Run<'a, I: Interpreter, H> {
     handler_targets: Vec<i64>,
     /// The index of each label.
     labels: LabelIndices<'a>,
+    /// The indices the jump and switch instructions go to.
+    jump_targets: TargetRange,
     method: &'a MethodNode,
     max_locals: usize,
     interpreter: &'a mut I,
@@ -573,7 +625,8 @@ struct Run<'a, I: Interpreter, H> {
     /// A frame for the exception handlers' merges, kept for its storage.
     handler_frame: Option<Frame<I::V>>,
     handlers: &'a Handlers,
-    /// The subroutine of each instruction (few methods have any).
+    /// The subroutine of each instruction (few methods have any); empty if the method has no
+    /// `JSR` instruction, and so no subroutine.
     subroutines: Vec<Option<Box<Subroutine>>>,
     /// Whether each instruction remains to be processed.
     in_instructions_to_process: Vec<bool>,
@@ -743,7 +796,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
     ) -> Result<(), AnalyzerError> {
         let (method, handlers) = (self.method, self.handlers);
         let insn_index = insn.index;
-        let mut subroutine = self.subroutines[insn_index].clone();
+        let mut subroutine = self.subroutines.get(insn_index).cloned().flatten();
         let insn_opcode = insn.opcode();
 
         match insn.kind() {
@@ -1046,25 +1099,35 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         self.current_copy_of = None;
     }
 
+    /// Merges `subroutine` into the subroutine at `insn_index`, and adds the instruction to the
+    /// instructions to process if this, or the merge of its frame (`changed`), changed them.
+    #[inline]
     fn merge_subroutine_and_enqueue(
         &mut self,
         insn_index: usize,
         subroutine: Option<&Subroutine>,
         mut changed: bool,
     ) {
-        match (&mut self.subroutines[insn_index], subroutine) {
-            (slot @ None, Some(subroutine)) => {
-                *slot = Some(Box::new(subroutine.clone()));
-                changed = true;
-            }
-            (Some(old_subroutine), Some(subroutine)) => {
-                changed |= old_subroutine.merge(subroutine);
-            }
-            (_, None) => {}
+        if let Some(subroutine) = subroutine {
+            changed |= self.merge_subroutine(insn_index, subroutine);
         }
         self.enqueue(insn_index, changed);
     }
 
+    /// Merges `subroutine` into the subroutine at `insn_index`, or stores a copy of it there.
+    /// Returns whether the subroutine at that instruction changed.
+    #[inline(never)]
+    fn merge_subroutine(&mut self, insn_index: usize, subroutine: &Subroutine) -> bool {
+        match &mut self.subroutines[insn_index] {
+            slot @ None => {
+                *slot = Some(Box::new(subroutine.clone()));
+                true
+            }
+            Some(old_subroutine) => old_subroutine.merge(subroutine),
+        }
+    }
+
+    #[inline]
     fn enqueue(&mut self, insn_index: usize, changed: bool) {
         if changed && !self.in_instructions_to_process[insn_index] {
             self.in_instructions_to_process[insn_index] = true;
@@ -1103,6 +1166,11 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
     /// Finds the subroutines of the method, and stores them in `subroutines` (ASM's
     /// `findSubroutines`).
     fn find_subroutines(&mut self) -> Result<(), AnalyzerError> {
+        // Without subroutines, the walk below only checks that the control flow cannot fall off
+        // the end of the code.
+        if self.subroutines.is_empty() && self.cannot_fall_off() {
+            return Ok(());
+        }
         // For each instruction, compute the subroutine to which it belongs. Follow the main
         // 'subroutine', and collect the jsr instructions to nested subroutines. ASM stores a copy
         // of the main 'subroutine' at each instruction it reaches, and clears them at the end;
@@ -1132,6 +1200,26 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
             }
         }
         Ok(())
+    }
+
+    /// Whether [`find_subroutine`](Self::find_subroutine)'s walk from instruction 0 can be seen
+    /// not to fail, without it. It fails if it reaches an index outside the code: one of a
+    /// jump, switch or handler target (-1 for a label not in the list), or that after the last
+    /// instruction. The instructions from `tail` on all go on to the next one, and the
+    /// instruction before them does not, so the walk only goes past the end if it starts in
+    /// them or a target is in them; true if neither is possible.
+    fn cannot_fall_off(&self) -> bool {
+        let tail = self
+            .insns
+            .iter()
+            .rposition(|entry| !falls_through(entry.node))
+            .map_or(0, |index| index + 1);
+        tail > 0
+            && self.jump_targets.is_within(tail)
+            && self
+                .handler_targets
+                .iter()
+                .all(|&target| 0 <= target && target < tail as i64)
     }
 
     /// Follows the control flow graph of the method from the instruction at `insn_index`, and
@@ -1169,7 +1257,8 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                     ));
                 }
             };
-            if self.subroutines[current_insn_index].is_some() || reached_by_main[current_insn_index]
+            if reached_by_main[current_insn_index]
+                || matches!(self.subroutines.get(current_insn_index), Some(Some(_)))
             {
                 continue;
             }
@@ -1212,12 +1301,8 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
 
             // Push the next instruction, if the control flow can go from currentInsn to the
             // next.
-            match current_insn.node.opcode() {
-                Some(
-                    GOTO | RET | TABLESWITCH | LOOKUPSWITCH | IRETURN | LRETURN | FRETURN | DRETURN
-                    | ARETURN | RETURN | ATHROW,
-                ) => {}
-                _ => instruction_indices_to_process.push(current_insn_index as i64 + 1),
+            if falls_through(current_insn.node) {
+                instruction_indices_to_process.push(current_insn_index as i64 + 1);
             }
 
             // The recursive call, whose list is the top of the stack.
@@ -1227,6 +1312,26 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         }
         Ok(())
     }
+}
+
+/// Whether the control flow can go from `node` to the next instruction, as ASM's
+/// `findSubroutine` sees it (a `JSR` does).
+fn falls_through(node: &InsnNode) -> bool {
+    !matches!(
+        node.opcode(),
+        Some(
+            GOTO | RET
+                | TABLESWITCH
+                | LOOKUPSWITCH
+                | IRETURN
+                | LRETURN
+                | FRETURN
+                | DRETURN
+                | ARETURN
+                | RETURN
+                | ATHROW
+        )
+    )
 }
 
 /// The index of a label in an instruction list, or -1 if it is not in the list (ASM's

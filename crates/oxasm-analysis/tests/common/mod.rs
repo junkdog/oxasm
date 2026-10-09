@@ -219,6 +219,12 @@ impl MethodNodeBuilder {
         self
     }
 
+    pub fn tableswitch(mut self, min: i32, max: i32, dflt: Label, labels: &[Label]) -> Self {
+        self.method_node
+            .visit_table_switch_insn(min, max, dflt, labels);
+        self
+    }
+
     pub fn trycatch(self, start: Label, end: Label, handler: Label) -> Self {
         self.trycatch_type(start, end, handler, None)
     }

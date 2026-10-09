@@ -1324,6 +1324,94 @@ fn test_get_handlers_after_a_try_catch_block_out_of_the_list() {
     assert_eq!(analyzer.get_handlers(2), &[] as &[usize]);
 }
 
+/// Without `JSR`s, the walk of the main subroutine is skipped when it cannot fall off the end of
+/// the code: these check that its error is still raised for each way to reach the instructions
+/// after the last one that does not go on to the next, and that none is raised for a target
+/// there that is not reachable.
+#[test]
+fn test_analyze_invalid_falloff_by_jump_to_the_end() {
+    let [end_label] = labels();
+    let method_node = MethodNodeBuilder::new()
+        .iconst_0()
+        .ifne(end_label)
+        .vreturn()
+        .label(end_label)
+        .build();
+
+    let message = analyze_error(&mut new_analyzer(), &method_node);
+
+    assert_eq!(message, "Execution can fall off the end of the code");
+}
+
+#[test]
+fn test_analyze_invalid_falloff_by_switch_to_the_end() {
+    let [case_label, end_label] = labels();
+    let method_node = MethodNodeBuilder::new()
+        .iconst_0()
+        .tableswitch(0, 0, case_label, &[end_label])
+        .label(case_label)
+        .vreturn()
+        .label(end_label)
+        .nop()
+        .build();
+
+    let message = analyze_error(&mut new_analyzer(), &method_node);
+
+    assert_eq!(message, "Execution can fall off the end of the code");
+}
+
+#[test]
+fn test_analyze_invalid_falloff_by_switch_to_a_label_not_in_the_list() {
+    let [case_label, outside] = labels();
+    let method_node = MethodNodeBuilder::new()
+        .iconst_0()
+        .tableswitch(0, 0, case_label, &[outside])
+        .label(case_label)
+        .vreturn()
+        .build();
+
+    let message = analyze_error(&mut new_analyzer(), &method_node);
+
+    assert_eq!(message, "Execution can fall off the end of the code");
+}
+
+#[test]
+fn test_analyze_invalid_falloff_by_handler_at_the_end() {
+    let [start_label, end_label, handler_label] = labels();
+    let method_node = MethodNodeBuilder::new()
+        .label(start_label)
+        .nop()
+        .label(end_label)
+        .vreturn()
+        .label(handler_label)
+        .trycatch(start_label, end_label, handler_label)
+        .build();
+
+    let message = analyze_error(&mut new_analyzer(), &method_node);
+
+    assert_eq!(message, "Execution can fall off the end of the code");
+}
+
+#[test]
+fn test_analyze_unreachable_jump_to_the_end() {
+    let [end_label] = labels();
+    let method_node = MethodNodeBuilder::new()
+        .vreturn()
+        .iconst_0()
+        .ifne(end_label)
+        .vreturn()
+        .label(end_label)
+        .build();
+
+    let mut analyzer = new_analyzer();
+    let frames = analyzer
+        .analyze(CLASS_NAME, &method_node)
+        .unwrap_or_else(|error| panic!("{error}"));
+
+    assert!(frames.get(0).is_some());
+    assert!(frames.get(4).is_none());
+}
+
 fn new_analyzer() -> Analyzer<MockInterpreter> {
     Analyzer::new(MockInterpreter)
 }
