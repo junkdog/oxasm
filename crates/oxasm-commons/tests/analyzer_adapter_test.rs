@@ -455,3 +455,46 @@ impl MethodVisitor for AnalyzedFramesInserter<'_> {
         self.analyzer_adapter.visit_maxs(max_stack, 0);
     }
 }
+
+/// oxasm-specific (a `commons` fuzz finding): an object descriptor without a name or `;`, here a
+/// field's, throws Java's `substring` exception, as in ASM, and not a Rust slice panic. So does an
+/// `AALOAD` on an empty array descriptor.
+#[test]
+fn test_truncated_object_descriptor() {
+    let mut analyzer_adapter = AnalyzerAdapter::new(
+        jstr!("pkg/Class"),
+        ACC_PUBLIC | ACC_STATIC,
+        jstr!("m"),
+        jstr!("()V"),
+        None,
+    );
+
+    let message = panic_message(|| {
+        analyzer_adapter.visit_field_insn(GETSTATIC, jstr!("pkg/Class"), jstr!("f"), jstr!("L"));
+    });
+
+    assert_eq!(
+        message,
+        "java.lang.StringIndexOutOfBoundsException: Range [1, 0) out of bounds for length 1"
+    );
+
+    let mut analyzer_adapter = AnalyzerAdapter::new(
+        jstr!("pkg/Class"),
+        ACC_PUBLIC | ACC_STATIC,
+        jstr!("m"),
+        jstr!("()V"),
+        None,
+    );
+    analyzer_adapter.visit_field_insn(GETSTATIC, jstr!("pkg/Class"), jstr!("f"), jstr!("[I"));
+    analyzer_adapter.stack = Some(vec![
+        FrameValue::Object(Cow::Owned(JavaString::new())),
+        FrameValue::Integer,
+    ]);
+
+    let message = panic_message(|| analyzer_adapter.visit_insn(AALOAD));
+
+    assert_eq!(
+        message,
+        "java.lang.StringIndexOutOfBoundsException: Range [1, 0) out of bounds for length 0"
+    );
+}

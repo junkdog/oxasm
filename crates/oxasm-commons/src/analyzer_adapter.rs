@@ -105,13 +105,28 @@ fn object(internal_name: &JavaStr) -> FrameValue<'static> {
 }
 
 /// Java's `s.substring(begin, end)`, in UTF-16 code units.
+///
+/// # Panics
+///
+/// As Java's `StringIndexOutOfBoundsException`, if `begin..end` is not a range of `s` (`"L"` as a
+/// field descriptor gives `substring(1, 0)`).
 fn java_substring(s: &JavaStr, begin: usize, end: usize) -> JavaString {
+    let check = |length: usize| {
+        if begin > end || end > length {
+            panic!(
+                "java.lang.StringIndexOutOfBoundsException: Range [{begin}, {end}) out of bounds \
+                 for length {length}"
+            );
+        }
+    };
     if s.as_bytes().is_ascii() {
+        check(s.len());
         return JavaStr::from_semi_utf8(&s.as_bytes()[begin..end])
             .expect("ASCII")
             .to_owned();
     }
     let units: Vec<u16> = s.encode_utf16().collect();
+    check(units.len());
     JavaString::from_utf16(&units[begin..end])
 }
 
@@ -361,12 +376,6 @@ impl<'a> AnalyzerAdapter<'a> {
                 match value1 {
                     FrameValue::Object(array_descriptor) => {
                         let length = java_length(&array_descriptor);
-                        if length == 0 {
-                            panic!(
-                                "java.lang.StringIndexOutOfBoundsException: Range [1, 0) out of \
-                                 bounds for length 0"
-                            );
-                        }
                         let element_descriptor = java_substring(&array_descriptor, 1, length);
                         self.push_descriptor(&element_descriptor);
                     }
