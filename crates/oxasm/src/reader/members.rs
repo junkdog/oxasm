@@ -8,7 +8,7 @@ use crate::visitor::{
 };
 
 use super::context::Context;
-use super::{ClassReader, ParsingOptions, ReadError, required};
+use super::{ClassReader, CursorCycles, ParsingOptions, ReadError, required};
 
 impl<'b> ClassReader<'b> {
     /// Reads the Module, ModulePackages and ModuleMainClass attributes and visits them.
@@ -170,9 +170,12 @@ impl<'b> ClassReader<'b> {
         // - The non standard attributes, in the order of the ClassFile structure.
         let mut attributes = Vec::new();
 
-        let attributes_count = self.u16_at(current_offset)?;
+        let mut cycles = CursorCycles::new();
+        let mut effects = 0;
+        let mut remaining = self.u16_at(current_offset)?;
         current_offset += 2;
-        for _ in 0..attributes_count {
+        while remaining > 0 {
+            remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
             let attribute_name = self.utf8_at(current_offset)?;
             let attribute_length = self.i32_at(current_offset + 2)?;
@@ -196,6 +199,7 @@ impl<'b> ClassReader<'b> {
                     runtime_invisible_type_annotations_offset = current_offset;
                 }
                 _ => {
+                    effects += 1;
                     attributes.push(self.read_attribute(
                         context.codecs,
                         attribute_name,
@@ -206,6 +210,9 @@ impl<'b> ClassReader<'b> {
                 }
             }
             current_offset += i64::from(attribute_length);
+            if attribute_length <= -6 {
+                remaining = cycles.step_back(current_offset, remaining, effects);
+            }
         }
 
         let Some(mut record_component_visitor) = class_visitor.visit_record_component(
@@ -277,9 +284,12 @@ impl<'b> ClassReader<'b> {
         // - The non standard attributes, in the order of the ClassFile structure.
         let mut attributes = Vec::new();
 
-        let attributes_count = self.u16_at(current_offset)?;
+        let mut cycles = CursorCycles::new();
+        let mut effects = 0;
+        let mut remaining = self.u16_at(current_offset)?;
         current_offset += 2;
-        for _ in 0..attributes_count {
+        while remaining > 0 {
+            remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
             let attribute_name = self.utf8_at(current_offset)?;
             let attribute_length = self.i32_at(current_offset + 2)?;
@@ -317,6 +327,7 @@ impl<'b> ClassReader<'b> {
                     runtime_invisible_type_annotations_offset = current_offset;
                 }
                 _ => {
+                    effects += 1;
                     attributes.push(self.read_attribute(
                         context.codecs,
                         attribute_name,
@@ -327,6 +338,9 @@ impl<'b> ClassReader<'b> {
                 }
             }
             current_offset += i64::from(attribute_length);
+            if attribute_length <= -6 {
+                remaining = cycles.step_back(current_offset, remaining, effects);
+            }
         }
 
         // Visit the field declaration.
@@ -415,9 +429,12 @@ impl<'b> ClassReader<'b> {
         // - The non standard attributes, in the order of the ClassFile structure.
         let mut attributes = Vec::new();
 
-        let attributes_count = self.u16_at(current_offset)?;
+        let mut cycles = CursorCycles::new();
+        let mut effects = 0;
+        let mut remaining = self.u16_at(current_offset)?;
         current_offset += 2;
-        for _ in 0..attributes_count {
+        while remaining > 0 {
+            remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
             let attribute_name = self.utf8_at(current_offset)?;
             let attribute_length = self.i32_at(current_offset + 2)?;
@@ -478,6 +495,7 @@ impl<'b> ClassReader<'b> {
                     method_parameters_offset = current_offset;
                 }
                 _ => {
+                    effects += 1;
                     attributes.push(self.read_attribute(
                         context.codecs,
                         attribute_name,
@@ -488,6 +506,9 @@ impl<'b> ClassReader<'b> {
                 }
             }
             current_offset += i64::from(attribute_length);
+            if attribute_length <= -6 {
+                remaining = cycles.step_back(current_offset, remaining, effects);
+            }
         }
 
         // Visit the method declaration.

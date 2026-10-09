@@ -23,8 +23,8 @@ use crate::visitor::MethodVisitor;
 use super::context::Context;
 use super::frames::{F_APPEND, F_CHOP, F_FULL, F_SAME, F_SAME1};
 use super::{
-    CONSTANT_INTERFACE_METHODREF_TAG, ClassReader, ParsingOptions, ReadError, ReadErrorKind,
-    required,
+    CONSTANT_INTERFACE_METHODREF_TAG, ClassReader, CursorCycles, ParsingOptions, ReadError,
+    ReadErrorKind, required,
 };
 
 /// The name of the attribute of CLDC's preverified classes (ASM's `"StackMap"`).
@@ -548,9 +548,12 @@ impl<'b> ClassReader<'b> {
         let parsing_options = context.parsing_options;
         let skip_debug = parsing_options.contains(ParsingOptions::SKIP_DEBUG);
         let skip_frames = parsing_options.contains(ParsingOptions::SKIP_FRAMES);
-        let attributes_count = self.u16_at(current_offset)?;
+        let mut cycles = CursorCycles::new();
+        let mut effects = 0;
+        let mut remaining = self.u16_at(current_offset)?;
         current_offset += 2;
-        for _ in 0..attributes_count {
+        while remaining > 0 {
+            remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
             let attribute_name = self.utf8_at(current_offset)?;
             let attribute_length = self.i32_at(current_offset + 2)?;
@@ -587,6 +590,7 @@ impl<'b> ClassReader<'b> {
                 }
                 Some(n) if n == constants::LINE_NUMBER_TABLE => {
                     if !skip_debug {
+                        effects += 1;
                         // Parse the attribute to find the corresponding (debug only) labels.
                         let mut current_line_number_table_offset = current_offset;
                         let line_number_table_length =
@@ -606,6 +610,8 @@ impl<'b> ClassReader<'b> {
                     }
                 }
                 Some(n) if n == constants::RUNTIME_VISIBLE_TYPE_ANNOTATIONS => {
+                    // Visits the exception parameters' annotations.
+                    effects += 1;
                     visible_type_annotation_offsets = Some(self.read_type_annotations(
                         method_visitor,
                         context,
@@ -621,6 +627,8 @@ impl<'b> ClassReader<'b> {
                     // assumes that type annotations are ordered by increasing bytecode offset.
                 }
                 Some(n) if n == constants::RUNTIME_INVISIBLE_TYPE_ANNOTATIONS => {
+                    // Visits the exception parameters' annotations.
+                    effects += 1;
                     invisible_type_annotation_offsets = Some(self.read_type_annotations(
                         method_visitor,
                         context,
@@ -658,6 +666,7 @@ impl<'b> ClassReader<'b> {
                     // to this attribute (see the comment above for the StackMapTable attribute).
                 }
                 _ => {
+                    effects += 1;
                     attributes.push(self.read_attribute(
                         context.codecs,
                         attribute_name,
@@ -668,6 +677,9 @@ impl<'b> ClassReader<'b> {
                 }
             }
             current_offset += i64::from(attribute_length);
+            if attribute_length <= -6 {
+                remaining = cycles.step_back(current_offset, remaining, effects);
+            }
         }
         // Javac's tables are mostly in bytecode order already. The sort is stable, so the line
         // numbers of an offset stay in the order they were read.

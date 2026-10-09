@@ -24,6 +24,39 @@ fn read_textify_regressions() {
     assert!(count > 0, "no regression inputs in {}", dir.display());
 }
 
+/// A negative `attribute_length` that moves an attribute loop's cursor back makes the nested
+/// member × attribute loops run up to 4.3 billion times, seconds on these few hundred bytes in
+/// ASM (and minutes in a debug build): the reader skips the cycles that visit nothing.
+#[test]
+fn attribute_cursor_cycles_are_skipped() {
+    let dir = oxasm_testkit::workspace_root().join("fuzz/regressions/read_textify");
+    let start = std::time::Instant::now();
+    let mut count = 0;
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if !path
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("attribute-cursor-cycle-")
+        {
+            continue;
+        }
+        let data = std::fs::read(&path).unwrap();
+        if let Ok(reader) = ClassReader::new(&data) {
+            let mut trace_class_visitor = TraceClassVisitor::new(std::io::sink());
+            assert!(
+                reader
+                    .accept(&mut trace_class_visitor, ParsingOptions::empty())
+                    .is_err()
+            );
+        }
+        count += 1;
+    }
+    assert_eq!(count, 5);
+    assert!(start.elapsed().as_secs() < 10, "{:?}", start.elapsed());
+}
+
 /// The Textifier dump of a class.
 fn textify(class_file: &[u8]) -> Vec<u8> {
     let mut output = Vec::new();

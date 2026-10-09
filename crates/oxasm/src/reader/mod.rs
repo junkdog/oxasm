@@ -36,6 +36,7 @@ mod annotations;
 mod code;
 mod constant_pool;
 mod context;
+mod cycles;
 mod frames;
 mod members;
 
@@ -53,6 +54,7 @@ use crate::visitor::ClassVisitor;
 
 use code::MethodLabels;
 use context::Context;
+use cycles::CursorCycles;
 
 pub use crate::error::{ReadError, ReadErrorKind};
 
@@ -463,7 +465,11 @@ impl<'b> ClassReader<'b> {
 
         let (fields_count, methods_count, mut current_attribute_offset) =
             self.get_member_counts_and_first_attribute_offset()?;
-        for _ in 0..self.u16_at(current_attribute_offset - 2)? {
+        let mut cycles = CursorCycles::new();
+        let mut effects = 0;
+        let mut remaining = self.u16_at(current_attribute_offset - 2)?;
+        while remaining > 0 {
+            remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
             let attribute_name = self.utf8_at(current_attribute_offset)?;
             let attribute_length = self.i32_at(current_attribute_offset + 2)?;
@@ -548,6 +554,7 @@ impl<'b> ClassReader<'b> {
                 // The BootstrapMethods attribute is read in the constructor.
                 Some(n) if n == constants::BOOTSTRAP_METHODS => {}
                 _ => {
+                    effects += 1;
                     attributes.push(self.read_attribute(
                         context.codecs,
                         attribute_name,
@@ -558,6 +565,9 @@ impl<'b> ClassReader<'b> {
                 }
             }
             current_attribute_offset += i64::from(attribute_length);
+            if attribute_length <= -6 {
+                remaining = cycles.step_back(current_attribute_offset, remaining, effects);
+            }
         }
 
         // Visit the class declaration. The minor_version and major_version fields start 6 bytes
@@ -729,25 +739,41 @@ impl<'b> ClassReader<'b> {
         let mut current_offset = self.header + 8 + i64::from(self.u16_at(self.header + 6)?) * 2;
 
         // Read the fields_count field, then skip the 'fields' and 'methods' array fields.
+        // Nothing here has an effect, so every cycle of a cursor is skipped (`CursorCycles`).
         let mut members_counts = [0; 2];
         for count in &mut members_counts {
             let members_count = self.u16_at(current_offset)?;
             *count = members_count;
             current_offset += 2;
-            for _ in 0..members_count {
+            let mut member_cycles = CursorCycles::new();
+            let mut remaining_members = members_count;
+            while remaining_members > 0 {
+                remaining_members -= 1;
+                let member_offset = current_offset;
                 // Invariant: current_offset is the offset of a field_info or method_info
                 // structure. Skip the access_flags, name_index and descriptor_index fields (2
                 // bytes each), and read the attributes_count field.
-                let attributes_count = self.u16_at(current_offset + 6)?;
+                let mut remaining_attributes = self.u16_at(current_offset + 6)?;
                 current_offset += 8;
                 // Skip the 'attributes' array field.
-                for _ in 0..attributes_count {
+                let mut attribute_cycles = CursorCycles::new();
+                while remaining_attributes > 0 {
+                    remaining_attributes -= 1;
                     // Invariant: current_offset is the offset of an attribute_info structure.
                     // Read the attribute_length field (2 bytes after the start of the
                     // attribute_info) and skip this many bytes, plus 6 for the
                     // attribute_name_index and attribute_length fields (yielding the total size
                     // of the attribute_info structure).
-                    current_offset += 6 + i64::from(self.i32_at(current_offset + 2)?);
+                    let attribute_length = self.i32_at(current_offset + 2)?;
+                    current_offset += 6 + i64::from(attribute_length);
+                    if attribute_length <= -6 {
+                        remaining_attributes =
+                            attribute_cycles.step_back(current_offset, remaining_attributes, 0);
+                    }
+                }
+                if current_offset <= member_offset {
+                    remaining_members =
+                        member_cycles.step_back(current_offset, remaining_members, 0);
                 }
             }
         }
