@@ -19,7 +19,7 @@ use crate::source_value::{Producer, SourceValue};
 /// are generic over the [`Producer`] type, so that an extension can record producers that are no
 /// instructions; this interpreter itself records [`InsnId`](oxasm_tree::InsnId)s.
 ///
-/// The sets of three or more producers that its merges make are allocated in a [`SetArena`],
+/// The sets of two or more producers that its merges make are allocated in a [`SetArena`],
 /// which its values borrow for `'s`.
 #[derive(Clone, Copy, Debug)]
 pub struct SourceInterpreter<'s> {
@@ -165,7 +165,7 @@ impl<'s> SourceInterpreter<'s> {
     }
 
     /// ASM's `SourceInterpreter.merge`: the union of the producers, with the smallest size
-    /// (`None` if that is `value1`). A union of three or more producers is allocated in `sets`.
+    /// (`None` if that is `value1`). A union of two or more producers is allocated in `sets`.
     #[inline]
     pub fn merge<P: Producer>(
         sets: &'s SetArena,

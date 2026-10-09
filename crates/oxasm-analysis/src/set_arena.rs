@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::ptr::NonNull;
 
-/// The storage of the [`SmallSet`](crate::SmallSet)s of three or more elements, and so of the
+/// The storage of the [`SmallSet`](crate::SmallSet)s of two or more elements, and so of the
 /// [`SourceValue`](crate::SourceValue)s that hold them: a set borrows its elements from an arena,
 /// which frees them all at once, when it is dropped or [`reset`](Self::reset).
 ///

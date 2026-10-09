@@ -14,19 +14,20 @@ use crate::set_arena::SetArena;
 /// Sets are equal if they have the same elements. Elements iterate in insertion order up to two
 /// elements, in an unspecified order beyond.
 ///
-/// A set of three or more elements is a slice sorted by the elements' hashes, in a [`SetArena`]
-/// that the set borrows for `'s`: its copies share it, as Java's references do, and a set is
-/// `Copy`, with nothing to drop. A union remembers the sets it was made of: an analysis copies its
-/// frames, and merges mostly compare a value with a copy of itself or with one of the sets its
-/// union was made of, which then costs no walk over the elements, and otherwise with a subset,
-/// one merge walk over both slices.
+/// A set of two elements is a pair, and a set of three or more elements a slice sorted by the
+/// elements' hashes, in a [`SetArena`] that the set borrows for `'s`: its copies share it, as
+/// Java's references do, and a set is `Copy`, with nothing to drop, and as small as one element
+/// and a tag (16 bytes for an [`InsnId`](oxasm_tree::InsnId)). A union remembers the sets it was
+/// made of: an analysis copies its frames, and merges mostly compare a value with a copy of itself
+/// or with one of the sets its union was made of, which then costs no walk over the elements, and
+/// otherwise with a subset, one merge walk over both slices.
 pub struct SmallSet<'s, T>(Repr<'s, T>);
 
 enum Repr<'s, T> {
     Empty,
     One(T),
-    /// Two distinct elements.
-    Two(T, T),
+    /// Two distinct elements, in a [`SetArena`], in insertion order.
+    Two(&'s [T; 2]),
     /// At least three elements, in a [`SetArena`].
     Many(&'s Many<'s, T>),
 }
@@ -131,7 +132,7 @@ impl<'s, T: Copy + Eq + Hash> SmallSet<'s, T> {
         SmallSet(Repr::One(element))
     }
 
-    /// The set of the given elements: the union of their singletons, its sets of three or more
+    /// The set of the given elements: the union of their singletons, its sets of two or more
     /// elements in `sets`.
     pub fn from_elements<I: IntoIterator<Item = T>>(
         elements: I,
@@ -162,7 +163,7 @@ impl<'s, T: Copy + Eq + Hash> SmallSet<'s, T> {
         match &self.0 {
             Repr::Empty => false,
             Repr::One(a) => a == element,
-            Repr::Two(a, b) => a == element || b == element,
+            Repr::Two([a, b]) => a == element || b == element,
             Repr::Many(set) => set.contains(hash_of(element), element),
         }
     }
@@ -177,7 +178,7 @@ impl<'s, T: Copy + Eq + Hash> SmallSet<'s, T> {
         match (&self.0, &other.0) {
             (Repr::Empty, Repr::Empty) => true,
             (Repr::One(a), Repr::One(b)) => a == b,
-            (Repr::Two(a, b), Repr::Two(c, d)) => a == c && b == d,
+            (Repr::Two(a), Repr::Two(b)) => std::ptr::eq(*a, *b) || a == b,
             (Repr::Many(a), Repr::Many(b)) => std::ptr::eq(*a, *b),
             _ => false,
         }
@@ -189,7 +190,7 @@ impl<'s, T: Copy + Eq + Hash> SmallSet<'s, T> {
             (_, Repr::Empty) => true,
             (_, Repr::One(b)) => self.contains(b),
             (Repr::Empty | Repr::One(_), _) => false,
-            (_, Repr::Two(c, d)) => self.contains(c) && self.contains(d),
+            (_, Repr::Two([c, d])) => self.contains(c) && self.contains(d),
             (Repr::Two(..), Repr::Many(_)) => false,
             (Repr::Many(a), Repr::Many(b)) => a.is_superset(b),
         }
@@ -200,7 +201,7 @@ impl<'s, T: Copy + Eq + Hash> SmallSet<'s, T> {
         let (inline, many) = match self.0 {
             Repr::Empty => ([None, None], None),
             Repr::One(a) => ([Some(a), None], None),
-            Repr::Two(a, b) => ([Some(a), Some(b)], None),
+            Repr::Two(&[a, b]) => ([Some(a), Some(b)], None),
             Repr::Many(set) => ([None, None], Some(set.elements.iter().map(|&(_, e)| e))),
         };
         inline
@@ -209,14 +210,14 @@ impl<'s, T: Copy + Eq + Hash> SmallSet<'s, T> {
             .chain(many.into_iter().flatten())
     }
 
-    /// The union of this set and `other` (ASM's `union`). A set of three or more elements that
-    /// is neither operand is allocated in `sets`.
+    /// The union of this set and `other` (ASM's `union`). A set of two or more elements that is
+    /// neither operand is allocated in `sets`.
     pub fn union(&self, other: &SmallSet<'s, T>, sets: &'s SetArena) -> SmallSet<'s, T> {
         match (&self.0, &other.0) {
             (_, Repr::Empty) => *self,
             (Repr::Empty, _) => *other,
             (Repr::One(a), Repr::One(b)) if a == b => *self,
-            (Repr::One(a), Repr::One(b)) => SmallSet(Repr::Two(*a, *b)),
+            (Repr::One(a), Repr::One(b)) => SmallSet(Repr::Two(sets.alloc([*a, *b]))),
             _ if self.is_superset(other) => *self,
             _ if other.is_superset(self) => *other,
             _ => {

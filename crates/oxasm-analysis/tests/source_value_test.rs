@@ -5,7 +5,7 @@
 //!   values: like ASM's, a hash depends on the instructions only.
 //!
 //! Not a port: a proptest of `SourceInterpreter::merge_values`, the loop of `Frame.merge` that
-//! the analysis uses for `SourceValue`s.
+//! the analysis uses for `SourceValue`s, and the size of a value (optimization lead A12).
 
 use std::hash::{Hash, Hasher};
 
@@ -17,6 +17,14 @@ use proptest::prelude::*;
 /// A `new InsnNode(Opcodes.NOP)`: an instruction of a list, whose handle a `SourceValue` keeps.
 fn new_nop() -> InsnId {
     InsnList::new().add(Insn::Simple { opcode: NOP })
+}
+
+/// An analysis writes every value of every frame it stores: a set is one element and a tag, its
+/// sets of two or more elements in a `SetArena`.
+#[test]
+fn source_values_are_three_words() {
+    assert_eq!(size_of::<SmallSet<'_, InsnId>>(), 16);
+    assert_eq!(size_of::<SourceValue<'_, InsnId>>(), 24);
 }
 
 #[test]
@@ -70,7 +78,7 @@ fn test_hashcode() {
 // Properties: `SourceInterpreter::merge_values` against ASM's `Frame.merge` loop.
 // -------------------------------------------------------------------------------------------------
 
-/// A producer of a few values, whose sets of three or more are in an arena.
+/// A producer of a few values, whose sets of two or more are in an arena.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Producer(u8);
 

@@ -53,7 +53,7 @@ impl<P: Copy + Eq + Hash + From<InsnId>> Producer for P {}
 ///
 /// Like ASM's `hashCode()`, its hash depends on its producers only.
 ///
-/// A value is `Copy`: its producers, when there are three or more, are borrowed from a
+/// A value is `Copy`: its producers, when there are two or more, are borrowed from a
 /// [`SetArena`](crate::SetArena) for `'s`.
 pub struct SourceValue<'s, P = InsnId> {
     /// The size of this value, in 32 bits words: 1 for `byte`, `boolean`, `char`, `short`,

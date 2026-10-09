@@ -9,7 +9,7 @@
 //! - `testIterator_remove` is dropped: `SmallSet` is immutable, so the
 //!   `UnsupportedOperationException` of `iterator().remove()` cannot be written.
 //!
-//! A union of three or more elements is allocated in a [`SetArena`]: the ported tests leak one
+//! A union of two or more elements is allocated in a [`SetArena`]: the ported tests leak one
 //! each ([`sets`]), the proptest makes one per case.
 
 use std::collections::HashSet;
