@@ -204,11 +204,21 @@ impl Block {
     }
 }
 
+/// A free slot of [`LabelTable::slots`].
+const NO_BLOCK: BlockId = BlockId::MAX;
+/// The number of slots of a [`LabelTable`] that has not reserved any.
+const MIN_SLOTS: usize = 16;
+
 /// The labels of a method writer, and the control flow graph of its basic blocks.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct LabelTable {
-    /// The index in `blocks` of each label seen.
-    index: FxHashMap<Label, BlockId>,
+    /// The index in `blocks` of the labels seen, direct-mapped on the low bits of their id: a
+    /// power of two number of slots, at most half full, [`NO_BLOCK`] where free. The labels of a
+    /// method mostly have consecutive ids (a class reader creates them one after the other), so
+    /// they rarely share a slot. The block of a slot tells whether it holds the label looked up.
+    slots: Vec<BlockId>,
+    /// The index in `blocks` of the labels whose slot another label took first.
+    overflow: FxHashMap<Label, BlockId>,
     /// The state of each label seen.
     blocks: Vec<Block>,
     /// The frames of the basic blocks (ASM's `Frame` objects that labels refer to).
@@ -221,17 +231,57 @@ pub(crate) struct LabelTable {
 impl LabelTable {
     /// Reserves room for `additional` more labels.
     pub(crate) fn reserve(&mut self, additional: usize) {
-        self.index.reserve(additional);
         self.blocks.reserve(additional);
+        self.reserve_slots(self.blocks.len().saturating_add(additional));
+    }
+
+    /// Makes `slots` at least twice as large as the given number of labels, and maps the labels
+    /// seen again if it grows.
+    fn reserve_slots(&mut self, labels: usize) {
+        let slots = labels
+            .saturating_mul(2)
+            .max(MIN_SLOTS)
+            .checked_next_power_of_two()
+            .unwrap_or(usize::MAX / 2 + 1);
+        if slots <= self.slots.len() {
+            return;
+        }
+        self.slots.clear();
+        self.slots.resize(slots, NO_BLOCK);
+        self.overflow.clear();
+        let mask = slots - 1;
+        for (id, block) in self.blocks.iter().enumerate() {
+            let slot = &mut self.slots[block.label.id() as usize & mask];
+            if *slot == NO_BLOCK {
+                *slot = id as BlockId;
+            } else {
+                self.overflow.insert(block.label, id as BlockId);
+            }
+        }
+    }
+
+    /// The slot of the given label (`slots` must not be empty).
+    #[inline]
+    fn slot(&self, label: Label) -> usize {
+        label.id() as usize & (self.slots.len() - 1)
     }
 
     /// The index of the state of the given label, created if needed.
     pub(crate) fn id(&mut self, label: Label) -> BlockId {
-        let next = self.blocks.len() as BlockId;
-        let id = *self.index.entry(label).or_insert(next);
-        if id == next {
-            self.blocks.push(Block::new(label));
+        if let Some(id) = self.find(label) {
+            return id;
         }
+        let id = self.blocks.len() as BlockId;
+        if self.blocks.len() >= self.slots.len() / 2 {
+            self.reserve_slots(self.blocks.len() + 1);
+        }
+        let slot = self.slot(label);
+        if self.slots[slot] == NO_BLOCK {
+            self.slots[slot] = id;
+        } else {
+            self.overflow.insert(label, id);
+        }
+        self.blocks.push(Block::new(label));
         id
     }
 
@@ -242,13 +292,23 @@ impl LabelTable {
     }
 
     /// The index of the state of the given label, if seen.
+    #[inline]
     pub(crate) fn find(&self, label: Label) -> Option<BlockId> {
-        self.index.get(&label).copied()
+        if self.slots.is_empty() {
+            return None;
+        }
+        match self.slots[self.slot(label)] {
+            // A label goes to `overflow` only when its slot is taken, and slots stay taken.
+            NO_BLOCK => None,
+            id if self.blocks[id as usize].label == label => Some(id),
+            _ if self.overflow.is_empty() => None,
+            _ => self.overflow.get(&label).copied(),
+        }
     }
 
     /// The state of the given label, if seen.
     pub(crate) fn block(&self, label: Label) -> Option<&Block> {
-        self.index.get(&label).map(|&i| &self.blocks[i as usize])
+        self.find(label).map(|i| &self.blocks[i as usize])
     }
 
     /// The state of the label of the given index.
@@ -599,5 +659,49 @@ impl LabelTable {
             .next_list_element
             .take()
             .unwrap_or(EMPTY_LIST)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    /// Labels with consecutive ids, and labels whose ids share their low bits (they collide at
+    /// every table size up to 1024 slots), in and out of order, with or without the debug only
+    /// flag, map to the same block as in a hash map, before and after the slots grow.
+    #[test]
+    fn labels_map_to_their_blocks() {
+        let collides = |label: &Label| label.id().is_multiple_of(1024);
+        let mut labels = Vec::new();
+        while labels.iter().filter(|l| collides(l)).count() < 8 {
+            labels.push(Label::new());
+        }
+        let colliding = labels.iter().copied().filter(collides);
+        let consecutive = labels[100..400].iter().rev().copied();
+        let mut order: Vec<Label> = colliding.chain(consecutive).collect();
+        order.extend(order.clone().iter().map(|l| l.with_debug_only(true)));
+        for reserved in [None, Some(4), Some(1000)] {
+            let mut table = LabelTable::default();
+            if let Some(reserved) = reserved {
+                table.reserve(reserved);
+            }
+            let mut model = HashMap::new();
+            for &label in &order {
+                let next = BlockId::try_from(model.len()).unwrap();
+                let expected = *model.entry(label).or_insert(next);
+                assert_eq!(table.id(label), expected, "{label:?}, {reserved:?}");
+                assert_eq!(table.get(expected).label, label);
+            }
+            for &label in &order {
+                assert_eq!(table.find(label), model.get(&label).copied());
+            }
+            assert!(!table.overflow.is_empty(), "some labels collide");
+            for &label in labels[400..500].iter().filter(|l| !collides(l)) {
+                assert_eq!(table.find(label), None);
+                assert!(table.block(label).is_none());
+            }
+        }
     }
 }
