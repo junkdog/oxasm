@@ -442,6 +442,7 @@ version = "0.0.0"
 dependencies = [
  "criterion",
  "oxasm",
+ "oxasm-analysis",
  "oxasm-tree",
 ]
 

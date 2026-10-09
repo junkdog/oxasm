@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 oxasm.workspace = true
 oxasm-tree.workspace = true
+oxasm-analysis.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

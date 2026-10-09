@@ -1933,6 +1933,37 @@ public final class Oracle {
               return check;
             };
       }
+      case "analyze_basic", "analyze_source" -> {
+        List<ClassNode> classNodes = new ArrayList<>();
+        for (byte[] classFile : classes) {
+          ClassNode classNode = new ClassNode();
+          new ClassReader(classFile).accept(classNode, 0);
+          classNodes.add(classNode);
+        }
+        boolean source = scenario.equals("analyze_source");
+        pass =
+            () -> {
+              long check = 0;
+              for (ClassNode classNode : classNodes) {
+                for (MethodNode method : classNode.methods) {
+                  Analyzer<?> analyzer =
+                      source
+                          ? new Analyzer<>(new SourceInterpreter())
+                          : new Analyzer<>(new BasicInterpreter());
+                  try {
+                    for (Frame<?> frame : analyzer.analyze(classNode.name, method)) {
+                      if (frame != null) {
+                        ++check;
+                      }
+                    }
+                  } catch (AnalyzerException e) {
+                    // A method whose analysis fails counts no frames, as on oxasm's side.
+                  }
+                }
+              }
+              return check;
+            };
+      }
       default -> throw new UsageException("unknown --scenario " + scenario);
     }
     for (int i = 0; i < warmup + iterations; ++i) {

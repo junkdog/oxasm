@@ -18,7 +18,7 @@
 mod visitors;
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use oxasm::opcodes::{
     ACC_PUBLIC, ACC_STATIC, ALOAD, GETSTATIC, INVOKESPECIAL, INVOKEVIRTUAL, RETURN, V1_1,
@@ -27,6 +27,7 @@ use oxasm::{
     ClassHierarchy, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, Constant, Interner,
     JavaStr, JavaString, MapHierarchy, ParsingOptions, Type, jstr,
 };
+use oxasm_analysis::{Analyzer, BasicInterpreter, Interpreter, SourceInterpreter};
 use oxasm_tree::ClassNode;
 
 use crate::visitors::{CollectTypes, Counter};
@@ -72,10 +73,16 @@ pub enum Scenario {
     TypeArgumentsAndReturn,
     /// `TypeBenchmark.getArgumentsAndReturnSizeFromDescriptor`.
     TypeSizes,
+    /// No ASM benchmark: every method of the pack's classes, read into `ClassNode`s beforehand,
+    /// analyzed with a new `Analyzer` of a `BasicInterpreter` (ADR-12's P4 measure). The check
+    /// value counts the frames, a method whose analysis fails counting none.
+    AnalyzeBasic,
+    /// As `analyze_basic`, with a `SourceInterpreter`.
+    AnalyzeSource,
 }
 
 impl Scenario {
-    pub const ALL: [Scenario; 13] = [
+    pub const ALL: [Scenario; 15] = [
         Scenario::ClassInfo,
         Scenario::Read,
         Scenario::ReadTree,
@@ -89,6 +96,8 @@ impl Scenario {
         Scenario::TypeGet,
         Scenario::TypeArgumentsAndReturn,
         Scenario::TypeSizes,
+        Scenario::AnalyzeBasic,
+        Scenario::AnalyzeSource,
     ];
 
     pub fn name(self) -> &'static str {
@@ -106,6 +115,8 @@ impl Scenario {
             Scenario::TypeGet => "type_get",
             Scenario::TypeArgumentsAndReturn => "type_arguments_and_return",
             Scenario::TypeSizes => "type_sizes",
+            Scenario::AnalyzeBasic => "analyze_basic",
+            Scenario::AnalyzeSource => "analyze_source",
         }
     }
 
@@ -140,14 +151,16 @@ impl Scenario {
     }
 }
 
-/// What a scenario runs on: the classes of a pack, the hierarchy for computing frames, and the
-/// descriptors of the `type_*` scenarios, collected from the classes as `TypeBenchmark` does.
+/// What a scenario runs on: the classes of a pack, the hierarchy for computing frames, the
+/// descriptors of the `type_*` scenarios, collected from the classes as `TypeBenchmark` does,
+/// and the trees of the `analyze_*` scenarios, read on first use.
 #[derive(Debug)]
 pub struct Fixture {
     pub classes: Vec<Vec<u8>>,
     pub hierarchy: Option<MapHierarchy>,
     descriptors: Vec<JavaString>,
     method_descriptors: Vec<JavaString>,
+    trees: OnceLock<Vec<ClassNode>>,
 }
 
 impl Fixture {
@@ -165,6 +178,7 @@ impl Fixture {
             hierarchy,
             descriptors: Vec::new(),
             method_descriptors: Vec::new(),
+            trees: OnceLock::new(),
         };
         for (index, class) in fixture.classes.iter().enumerate() {
             let mut collect = CollectTypes {
@@ -180,6 +194,21 @@ impl Fixture {
 
     fn hierarchy(&self) -> Option<&dyn ClassHierarchy> {
         self.hierarchy.as_ref().map(|h| h as &dyn ClassHierarchy)
+    }
+
+    /// The classes read into `ClassNode`s, each with its own interner (as `new ClassNode()`).
+    ///
+    /// # Panics
+    ///
+    /// If a class is malformed.
+    pub fn trees(&self) -> &[ClassNode] {
+        self.trees.get_or_init(|| {
+            self.classes
+                .iter()
+                .enumerate()
+                .map(|(index, class)| tree(class).unwrap_or_else(|e| panic!("class {index}: {e}")))
+                .collect()
+        })
     }
 }
 
@@ -252,6 +281,11 @@ pub fn run(scenario: Scenario, fixture: &Fixture) -> u64 {
             let interner = Arc::new(Interner::new());
             sum_classes(fixture, |class| read_tree(class, Some(&interner)))
         }
+        Scenario::AnalyzeBasic | Scenario::AnalyzeSource => fixture
+            .trees()
+            .iter()
+            .map(|class_node| analyze(scenario, class_node))
+            .fold(0u64, u64::wrapping_add),
         _ => sum_classes(fixture, |class| {
             run_class(scenario, class, fixture.hierarchy())
         }),
@@ -336,6 +370,7 @@ pub fn run_class(
             Ok(class_writer.to_bytes().map_err(write_error)?.len() as u64)
         }
         Scenario::GenerateHelloWorld => Ok(generate_hello_world().len() as u64),
+        Scenario::AnalyzeBasic | Scenario::AnalyzeSource => Ok(analyze(scenario, &tree(class)?)),
         Scenario::TypeGet | Scenario::TypeArgumentsAndReturn | Scenario::TypeSizes => {
             let mut descriptors = Vec::new();
             let mut method_descriptors = Vec::new();
@@ -374,6 +409,35 @@ fn read_tree(class: &[u8], interner: Option<&Arc<Interner>>) -> Result<u64, Stri
         .map(|m| m.instructions.len())
         .sum();
     Ok((class_node.fields.len() + class_node.methods.len() + instructions) as u64)
+}
+
+/// The class read into a `ClassNode` with a new interner.
+fn tree(class: &[u8]) -> Result<ClassNode, String> {
+    let mut class_node = ClassNode::with_interner(Arc::default());
+    ClassReader::new(class)
+        .and_then(|r| r.accept(&mut class_node, ParsingOptions::empty()))
+        .map_err(|e| e.to_string())?;
+    Ok(class_node)
+}
+
+/// Analyzes every method of the class with the interpreter of an `analyze_*` scenario, and
+/// returns the number of frames (none for a method whose analysis fails).
+fn analyze(scenario: Scenario, class_node: &ClassNode) -> u64 {
+    fn frames<I: Interpreter>(class_node: &ClassNode, interpreter: impl Fn() -> I) -> u64 {
+        let owner = class_node.resolve(class_node.name);
+        let mut frames = 0;
+        for method in &class_node.methods {
+            let mut analyzer = Analyzer::new(interpreter());
+            if let Ok(result) = analyzer.analyze(owner, method) {
+                frames += result.iter().flatten().count() as u64;
+            }
+        }
+        frames
+    }
+    match scenario {
+        Scenario::AnalyzeSource => frames(class_node, || SourceInterpreter),
+        _ => frames(class_node, || BasicInterpreter),
+    }
 }
 
 /// `AsmGenerator.generateClass`.
