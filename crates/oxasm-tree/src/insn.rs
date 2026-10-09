@@ -357,6 +357,39 @@ impl Insn {
         }
     }
 
+    /// Whether this instruction owns heap memory (a box, or a [`SymConstant::Dynamic`]): the
+    /// others have no drop glue, which lets an [`InsnList`](crate::InsnList) drop only these.
+    pub(crate) fn owns_memory(&self) -> bool {
+        match self {
+            Insn::Simple { .. }
+            | Insn::Int { .. }
+            | Insn::Var { .. }
+            | Insn::Type { .. }
+            | Insn::Field { .. }
+            | Insn::Method { .. }
+            | Insn::Jump { .. }
+            | Insn::Label(_)
+            | Insn::Iinc { .. }
+            | Insn::MultiANewArray { .. }
+            | Insn::Line { .. } => false,
+            Insn::Ldc(constant) => match constant {
+                SymConstant::Integer(_)
+                | SymConstant::Float(_)
+                | SymConstant::Long(_)
+                | SymConstant::Double(_)
+                | SymConstant::String(_)
+                | SymConstant::Type(_)
+                | SymConstant::MethodType(_)
+                | SymConstant::Handle(_) => false,
+                SymConstant::Dynamic(_) => true,
+            },
+            Insn::InvokeDynamic(_)
+            | Insn::TableSwitch(_)
+            | Insn::LookupSwitch(_)
+            | Insn::Frame(_) => true,
+        }
+    }
+
     /// The label of this instruction, if it is a label node.
     pub fn as_label(&self) -> Option<Label> {
         match self {
@@ -473,6 +506,13 @@ impl Insn {
         }
     }
 }
+
+// The fields of the instructions that `owns_memory` says own none.
+const _: () = assert!(
+    !std::mem::needs_drop::<Sym>()
+        && !std::mem::needs_drop::<Label>()
+        && !std::mem::needs_drop::<SymHandle>()
+);
 
 /// An instruction of an [`InsnList`](crate::InsnList): an [`Insn`] and the type annotations of
 /// the instruction (ASM's `AbstractInsnNode`).

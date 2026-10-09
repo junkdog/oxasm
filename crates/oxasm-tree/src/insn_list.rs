@@ -3,6 +3,7 @@
 
 use std::cell::Cell;
 use std::fmt;
+use std::mem::ManuallyDrop;
 use std::ops::{Index, IndexMut};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -100,7 +101,9 @@ struct Positions {
 pub struct InsnList {
     /// The id in the handles of this list.
     id: u32,
-    slots: Vec<Slot>,
+    /// The arena. Its slots have no drop glue: dropping the list drops only the nodes that own
+    /// memory (see the `Drop` impl).
+    slots: Vec<ManuallyDrop<Slot>>,
     /// The free slots.
     free: Vec<u32>,
     first: u32,
@@ -524,12 +527,12 @@ impl InsnList {
                 .ok()
                 .filter(|&slot| slot != NIL)
                 .expect("too many instructions in an InsnList");
-            self.slots.push(Slot {
+            self.slots.push(ManuallyDrop::new(Slot {
                 generation: 0,
                 previous: NIL,
                 next: NIL,
                 node: Some(node),
-            });
+            }));
             slot
         }
     }
@@ -567,7 +570,7 @@ impl InsnList {
 
     /// Unlinks the given slot.
     fn unlink(&mut self, slot: u32) {
-        let Slot { previous, next, .. } = self.slots[slot as usize];
+        let Slot { previous, next, .. } = *self.slots[slot as usize];
         if previous == NIL {
             self.first = next;
         } else {
@@ -652,6 +655,23 @@ impl InsnList {
 impl Default for InsnList {
     fn default() -> InsnList {
         InsnList::new()
+    }
+}
+
+/// Drops the nodes that own memory. Most instructions own none, and the slots are
+/// `ManuallyDrop`, so the others cost a test of their variant instead of a call to the drop glue
+/// of each slot (T3 in oxasm-optimization.md).
+impl Drop for InsnList {
+    fn drop(&mut self) {
+        for slot in &mut self.slots {
+            if slot
+                .node
+                .as_ref()
+                .is_some_and(|node| node.insn.owns_memory())
+            {
+                slot.node = None;
+            }
+        }
     }
 }
 

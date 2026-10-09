@@ -13,8 +13,12 @@
 //! - `testResetLabels` is dropped: labels are plain ids with no per-writer state (ADR-03), and
 //!   `resetLabels` is gone.
 
-use oxasm::{Interner, Label, MethodVisitor};
-use oxasm_tree::{Insn, InsnId, InsnList, InsnNode};
+use oxasm::opcodes::HandleKind;
+use oxasm::{FrameKind, Interner, Label, MethodVisitor};
+use oxasm_tree::{
+    FrameNode, Insn, InsnId, InsnList, InsnNode, SymConstant, SymConstantDynamic, SymFrameValue,
+    SymHandle,
+};
 use proptest::prelude::*;
 
 /// ASM's `new InsnNode(opcode)`.
@@ -1203,6 +1207,79 @@ fn int(tag: i32) -> Insn {
         opcode: oxasm::opcodes::BIPUSH,
         operand: tag,
     }
+}
+
+/// One instruction of each kind that owns memory, then a plain one: a box (indy, both switches,
+/// a frame) or a dynamic constant.
+fn insns_owning_memory(interner: &Interner) -> Vec<Insn> {
+    let sym = |s: &str| interner.intern(s);
+    let bsm = SymHandle {
+        tag: HandleKind::InvokeStatic,
+        owner: sym("C"),
+        name: sym("bsm"),
+        desc: sym("()V"),
+        is_interface: false,
+    };
+    let dynamic = SymConstantDynamic {
+        name: sym("d"),
+        desc: sym("I"),
+        bsm,
+        bsm_args: vec![SymConstant::Integer(1)],
+    };
+    vec![
+        Insn::invoke_dynamic_insn(
+            sym("m"),
+            sym("()V"),
+            bsm,
+            vec![SymConstant::String(sym("s"))],
+        ),
+        Insn::table_switch_insn(0, 1, Label::new(), vec![Label::new(), Label::new()]),
+        Insn::lookup_switch_insn(Label::new(), vec![3], vec![Label::new()]),
+        Insn::frame(FrameNode::new(
+            FrameKind::Full,
+            &[SymFrameValue::Integer],
+            &[],
+        )),
+        Insn::Ldc(SymConstant::Dynamic(Box::new(dynamic))),
+        Insn::Simple { opcode: 0 },
+    ]
+}
+
+/// oxasm-specific: a list drops the memory of its instructions however they leave it: when it is
+/// dropped or cleared, or by removal, replacement or a move to another list (T3 in
+/// oxasm-optimization.md: the list's slots have no drop glue, and its `Drop` frees the
+/// instructions that own memory; Miri reports a leak).
+#[test]
+fn instructions_owning_memory_are_dropped() {
+    let interner = Interner::new();
+    let filled = || {
+        let mut insn_list = InsnList::new();
+        let ids: Vec<InsnId> = insns_owning_memory(&interner)
+            .into_iter()
+            .map(|insn| insn_list.add(insn))
+            .collect();
+        (insn_list, ids)
+    };
+
+    let (dropped, _) = filled();
+    drop(dropped);
+
+    let (mut cleared, _) = filled();
+    cleared.clear();
+    assert!(cleared.is_empty());
+
+    let (mut edited, ids) = filled();
+    drop(edited.remove(ids[0]));
+    drop(edited.set(ids[1], Insn::Simple { opcode: 0 }));
+    edited.node_mut(ids[2]).unwrap().insn = Insn::Simple { opcode: 0 };
+    let (mut moved, _) = filled();
+    edited.add_list(&mut moved);
+    assert!(moved.is_empty());
+    assert_eq!(edited.len(), 11);
+    let (mut reused, ids) = filled();
+    reused.remove(ids[3]);
+    reused.add(insns_owning_memory(&interner).swap_remove(3));
+    drop((edited, reused));
 }
 
 proptest! {
