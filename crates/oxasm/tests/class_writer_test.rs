@@ -1087,6 +1087,54 @@ fn test_read_and_write_large_method_new_instance() {
     }
 }
 
+/// A class writer whose member counts hint is replaced: by the given counts, or by none.
+struct MemberCountsHint {
+    counts: Option<(u16, u16)>,
+    class_writer: ClassWriter<'static>,
+}
+
+impl ClassVisitor for MemberCountsHint {
+    fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
+        Some(&mut self.class_writer)
+    }
+
+    fn visit_member_counts(&mut self, _: u16, _: u16) {
+        if let Some((fields_count, methods_count)) = self.counts {
+            self.class_writer
+                .visit_member_counts(fields_count, methods_count);
+        }
+    }
+}
+
+/// oxasm-specific: the member counts hint only sizes the class writer's member storage: with
+/// the reader's hint, none, or wrong ones, every class is written the same.
+#[test]
+fn test_visit_member_counts_is_only_a_hint() {
+    for &class in PrecompiledClass::ALL {
+        let write = |counts: Option<(u16, u16)>| {
+            let mut hinted = MemberCountsHint {
+                counts,
+                class_writer: ClassWriter::new(ClassWriterFlags::empty()),
+            };
+            ClassReader::new(class.bytes())
+                .unwrap()
+                .accept(&mut hinted, ParsingOptions::empty())
+                .unwrap();
+            hinted.class_writer.to_bytes().unwrap()
+        };
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+        ClassReader::new(class.bytes())
+            .unwrap()
+            .accept(&mut class_writer, ParsingOptions::empty())
+            .unwrap();
+        let expected = class_writer.to_bytes().unwrap();
+
+        for counts in [None, Some((0, 0)), Some((1, 0)), Some((u16::MAX, u16::MAX))] {
+            assert!(write(counts) == expected, "{class}, hint {counts:?}");
+        }
+    }
+}
+
 // -------------------------------------------------------------------------------------------------
 // Adapters
 // -------------------------------------------------------------------------------------------------

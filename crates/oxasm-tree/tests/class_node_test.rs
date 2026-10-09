@@ -267,3 +267,41 @@ impl ClassVisitor for RemoveMembersClassVisitor<'_> {
         None
     }
 }
+
+/// Records the member counts hint.
+#[derive(Default)]
+struct MemberCounts(Option<(u16, u16)>);
+
+impl ClassVisitor for MemberCounts {
+    fn visit_member_counts(&mut self, fields_count: u16, methods_count: u16) {
+        self.0 = Some((fields_count, methods_count));
+    }
+}
+
+/// oxasm-specific: a class node visits its number of fields and methods, as the class reader
+/// does (W12 in oxasm-optimization.md: a writer sizes its member storage from it).
+#[test]
+fn test_accept_visits_the_member_counts() {
+    for &class in PrecompiledClass::ALL {
+        let mut read = MemberCounts::default();
+        ClassReader::new(class.bytes())
+            .unwrap()
+            .accept(&mut read, ParsingOptions::empty())
+            .unwrap();
+        let mut class_node = read_class_node(class);
+        let mut accepted = MemberCounts::default();
+
+        class_node.accept(&mut accepted);
+        assert_eq!(accepted.0, read.0, "{class}");
+
+        // The counts of the node's members, not those it was read with.
+        class_node.methods.pop();
+        class_node.accept(&mut accepted);
+        assert_eq!(
+            accepted.0,
+            read.0
+                .map(|(fields, methods)| (fields, methods.saturating_sub(1))),
+            "{class}"
+        );
+    }
+}

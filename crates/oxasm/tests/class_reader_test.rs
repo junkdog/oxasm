@@ -637,3 +637,82 @@ fn test_class_reader_is_send_and_sync() {
         }
     });
 }
+
+/// Records the member counts hint, and the members visited.
+#[derive(Default)]
+struct MemberCounts {
+    visited: bool,
+    hint: Option<(u16, u16)>,
+    fields: u16,
+    methods: u16,
+}
+
+impl ClassVisitor for MemberCounts {
+    fn visit(
+        &mut self,
+        _: u32,
+        _: u32,
+        _: &JavaStr,
+        _: Option<&JavaStr>,
+        _: Option<&JavaStr>,
+        _: &[&JavaStr],
+    ) {
+        self.visited = true;
+    }
+
+    fn visit_member_counts(&mut self, fields_count: u16, methods_count: u16) {
+        assert!(self.visited && self.hint.is_none(), "one hint, after visit");
+        assert_eq!(
+            (self.fields, self.methods),
+            (0, 0),
+            "a hint before the members"
+        );
+        self.hint = Some((fields_count, methods_count));
+    }
+
+    fn visit_field<'a>(
+        &'a mut self,
+        _: u32,
+        _: &JavaStr,
+        _: &JavaStr,
+        _: Option<&JavaStr>,
+        _: Option<&oxasm::Constant<'_>>,
+    ) -> Option<Box<dyn FieldVisitor + 'a>> {
+        self.fields += 1;
+        None
+    }
+
+    fn visit_method<'a>(
+        &'a mut self,
+        _: u32,
+        _: &JavaStr,
+        _: &JavaStr,
+        _: Option<&JavaStr>,
+        _: &[&JavaStr],
+    ) -> Option<Box<dyn MethodVisitor + 'a>> {
+        self.methods += 1;
+        None
+    }
+}
+
+/// oxasm-specific: a reader visits the number of fields and methods once, after the header and
+/// before the members (W12 in oxasm-optimization.md: a writer or a tree sizes its member storage
+/// from it).
+#[test]
+fn test_accept_visits_the_member_counts() {
+    for &class in PrecompiledClass::ALL {
+        let mut member_counts = MemberCounts::default();
+
+        reader(class)
+            .accept(&mut member_counts, ParsingOptions::empty())
+            .unwrap();
+
+        let MemberCounts {
+            hint,
+            fields,
+            methods,
+            ..
+        } = member_counts;
+        assert_eq!(hint, Some((fields, methods)), "{class}");
+    }
+}

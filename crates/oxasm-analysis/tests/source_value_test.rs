@@ -51,8 +51,13 @@ fn test_hashcode() {
         hash(&SourceValue::<InsnId>::new(1)),
         hash(&SourceValue::<InsnId>::new(2))
     );
+    // Not the first instruction of a list: in the process's first list, that id is all zeros,
+    // which Fx hashes to 0, the empty set's hash.
+    let mut list = InsnList::new();
+    list.add(Insn::Simple { opcode: NOP });
+    let nop = list.add(Insn::Simple { opcode: NOP });
     assert_ne!(
         hash(&SourceValue::<InsnId>::new(1)),
-        hash(&SourceValue::of(1, new_nop()))
+        hash(&SourceValue::of(1, nop))
     );
 }

@@ -172,6 +172,10 @@ impl ClassNode {
             resolve_opt(self.super_name),
             &resolve_all(interner, &self.interfaces),
         );
+        class_visitor.visit_member_counts(
+            u16::try_from(self.fields.len()).unwrap_or(u16::MAX),
+            u16::try_from(self.methods.len()).unwrap_or(u16::MAX),
+        );
         // Visit the source.
         if self.source_file.is_some() || self.source_debug.is_some() {
             class_visitor.visit_source(
@@ -250,6 +254,11 @@ impl ClassVisitor for ClassNode {
         self.signature = strings.intern_opt(signature);
         self.super_name = strings.intern_opt(super_name);
         self.interfaces = interfaces.iter().map(|&i| strings.intern(i)).collect();
+    }
+
+    fn visit_member_counts(&mut self, fields_count: u16, methods_count: u16) {
+        self.fields.reserve(usize::from(fields_count));
+        self.methods.reserve(usize::from(methods_count));
     }
 
     fn visit_source(&mut self, source: Option<&JavaStr>, debug: Option<&JavaStr>) {
