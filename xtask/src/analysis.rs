@@ -12,7 +12,7 @@ use std::io::Write;
 use oxasm::opcodes::ACC_INTERFACE;
 use oxasm::{ClassHierarchy, ClassReader, JavaString, ParsingOptions, Type};
 use oxasm_analysis::{
-    Analyzer, BasicInterpreter, BasicValue, BasicVerifier, Interpreter, SimpleVerifier,
+    Analyzer, BasicInterpreter, BasicValue, BasicVerifier, Interpreter, SetArena, SimpleVerifier,
     SourceInterpreter, SourceValue,
 };
 use oxasm_tree::{ClassNode, InsnList, MethodNode};
@@ -41,6 +41,8 @@ pub fn analyze(
         .accept(&mut class_node, options)
         .map_err(|e| e.to_string())?;
     let mut text = Vec::new();
+    // The sets of the class's source values (`Interp::Source`).
+    let sets = SetArena::new();
     for method in &class_node.methods {
         text.extend_from_slice(method.resolve(method.name).as_bytes());
         text.extend_from_slice(method.resolve(method.desc).as_bytes());
@@ -69,8 +71,8 @@ pub fn analyze(
                 analyze_method(
                     &class_node,
                     method,
-                    SourceInterpreter,
-                    |value: &SourceValue, out: &mut Vec<u8>| source(insns, value, out),
+                    SourceInterpreter::new(&sets),
+                    |value: &SourceValue<'_>, out: &mut Vec<u8>| source(insns, value, out),
                     &mut text,
                 )?;
             }
@@ -83,7 +85,7 @@ fn basic(value: &BasicValue, out: &mut Vec<u8>) {
     out.extend_from_slice(value.to_java_string().as_bytes());
 }
 
-fn source(insns: &InsnList, value: &SourceValue, out: &mut Vec<u8>) {
+fn source(insns: &InsnList, value: &SourceValue<'_>, out: &mut Vec<u8>) {
     let mut indices: Vec<i64> = value
         .insns
         .iter()

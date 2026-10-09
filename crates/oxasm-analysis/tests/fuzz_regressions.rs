@@ -6,7 +6,8 @@ use std::sync::Arc;
 use oxasm::opcodes::ACC_INTERFACE;
 use oxasm::{ClassReader, ObjectHierarchy, ParsingOptions, Type};
 use oxasm_analysis::{
-    Analyzer, BasicInterpreter, BasicVerifier, Interpreter, SimpleVerifier, SourceInterpreter,
+    Analyzer, BasicInterpreter, BasicVerifier, Interpreter, SetArena, SimpleVerifier,
+    SourceInterpreter,
 };
 use oxasm_tree::ClassNode;
 
@@ -35,7 +36,8 @@ fn analyze_regressions() {
                 let _ = reader.accept(&mut class_node, ParsingOptions::empty());
                 analyze_all(&class_node, || BasicInterpreter);
                 analyze_all(&class_node, || BasicVerifier);
-                analyze_all(&class_node, || SourceInterpreter);
+                let sets = SetArena::new();
+                analyze_all(&class_node, || SourceInterpreter::new(&sets));
                 analyze_all(&class_node, || {
                     let resolve = |sym| Type::get_object_type(class_node.resolve(sym));
                     SimpleVerifier::for_class(

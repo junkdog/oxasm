@@ -31,7 +31,7 @@ use std::sync::Arc;
 use oxasm::opcodes::CHECKCAST;
 use oxasm::{ClassReader, Interner, JavaStr, JavaString, ParsingOptions, Type};
 use oxasm_analysis::{
-    Analyzer, AnalyzerError, InsnRef, Interpreter, SourceInterpreter, SourceValue,
+    Analyzer, AnalyzerError, InsnRef, Interpreter, SetArena, SourceInterpreter, SourceValue,
 };
 use oxasm_tree::{ClassNode, InsnId, InsnList, MethodNode};
 use oxasm_util::printer::text_to_java_string;
@@ -61,17 +61,20 @@ impl From<InsnId> for Origin {
 }
 
 /// The values of [`OriginSourceInterpreter`]: `SourceValue`s whose producers may be parameters.
-type OriginValue = SourceValue<Origin>;
+type OriginValue<'s> = SourceValue<'s, Origin>;
 
 /// sift's `OriginSourceInterpreter`: "an instruction that doesn't change the value isn't its
 /// producer", and "a value the caller produced needs a producer too". It overrides three
-/// operations of `SourceInterpreter`, and delegates the others.
-struct OriginSourceInterpreter;
+/// operations of `SourceInterpreter`, and delegates the others. Its merges allocate their sets
+/// of three or more producers in `sets`.
+struct OriginSourceInterpreter<'s> {
+    sets: &'s SetArena,
+}
 
-impl Interpreter for OriginSourceInterpreter {
-    type V = OriginValue;
+impl<'s> Interpreter for OriginSourceInterpreter<'s> {
+    type V = OriginValue<'s>;
 
-    fn new_value(&mut self, ty: Option<&Type>) -> Result<Option<OriginValue>, AnalyzerError> {
+    fn new_value(&mut self, ty: Option<&Type>) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
         SourceInterpreter::new_value(ty)
     }
 
@@ -81,14 +84,17 @@ impl Interpreter for OriginSourceInterpreter {
         _is_instance_method: bool,
         local: usize,
         ty: &Type,
-    ) -> Result<Option<OriginValue>, AnalyzerError> {
+    ) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
         Ok(Some(SourceValue::of(
             ty.get_size(),
             Origin::Parameter(local),
         )))
     }
 
-    fn new_operation(&mut self, insn: InsnRef<'_>) -> Result<Option<OriginValue>, AnalyzerError> {
+    fn new_operation(
+        &mut self,
+        insn: InsnRef<'_>,
+    ) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
         SourceInterpreter::new_operation(insn).map(Some)
     }
 
@@ -96,12 +102,12 @@ impl Interpreter for OriginSourceInterpreter {
     fn copy_operation(
         &mut self,
         insn: InsnRef<'_>,
-        value: &OriginValue,
-    ) -> Result<OriginValue, AnalyzerError> {
+        value: &OriginValue<'s>,
+    ) -> Result<OriginValue<'s>, AnalyzerError> {
         Ok(if value.insns.is_empty() {
             SourceInterpreter::copy_operation(insn, value)
         } else {
-            value.clone()
+            *value
         })
     }
 
@@ -109,10 +115,10 @@ impl Interpreter for OriginSourceInterpreter {
     fn unary_operation(
         &mut self,
         insn: InsnRef<'_>,
-        value: &OriginValue,
-    ) -> Result<Option<OriginValue>, AnalyzerError> {
+        value: &OriginValue<'s>,
+    ) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
         if insn.opcode() == Some(CHECKCAST) && !value.insns.is_empty() {
-            return Ok(Some(value.clone()));
+            return Ok(Some(*value));
         }
         SourceInterpreter::unary_operation(insn, value).map(Some)
     }
@@ -120,9 +126,9 @@ impl Interpreter for OriginSourceInterpreter {
     fn binary_operation(
         &mut self,
         insn: InsnRef<'_>,
-        value1: &OriginValue,
-        value2: &OriginValue,
-    ) -> Result<Option<OriginValue>, AnalyzerError> {
+        value1: &OriginValue<'s>,
+        value2: &OriginValue<'s>,
+    ) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
         Ok(Some(SourceInterpreter::binary_operation(
             insn, value1, value2,
         )))
@@ -131,10 +137,10 @@ impl Interpreter for OriginSourceInterpreter {
     fn ternary_operation(
         &mut self,
         insn: InsnRef<'_>,
-        value1: &OriginValue,
-        value2: &OriginValue,
-        value3: &OriginValue,
-    ) -> Result<Option<OriginValue>, AnalyzerError> {
+        value1: &OriginValue<'s>,
+        value2: &OriginValue<'s>,
+        value3: &OriginValue<'s>,
+    ) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
         Ok(Some(SourceInterpreter::ternary_operation(
             insn, value1, value2, value3,
         )))
@@ -143,26 +149,26 @@ impl Interpreter for OriginSourceInterpreter {
     fn nary_operation(
         &mut self,
         insn: InsnRef<'_>,
-        values: &[OriginValue],
-    ) -> Result<Option<OriginValue>, AnalyzerError> {
+        values: &[OriginValue<'s>],
+    ) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
         SourceInterpreter::nary_operation(insn, values).map(Some)
     }
 
     fn return_operation(
         &mut self,
         _insn: InsnRef<'_>,
-        _value: &OriginValue,
-        _expected: Option<&OriginValue>,
+        _value: &OriginValue<'s>,
+        _expected: Option<&OriginValue<'s>>,
     ) -> Result<(), AnalyzerError> {
         Ok(())
     }
 
     fn merge(
         &mut self,
-        value1: &OriginValue,
-        value2: &OriginValue,
-    ) -> Result<Option<OriginValue>, AnalyzerError> {
-        Ok(SourceInterpreter::merge(value1, value2))
+        value1: &OriginValue<'s>,
+        value2: &OriginValue<'s>,
+    ) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
+        Ok(SourceInterpreter::merge(self.sets, value1, value2))
     }
 }
 
@@ -611,7 +617,8 @@ fn analyze_method(
     method: &MethodNode,
     out: &mut Vec<u8>,
 ) -> Result<(), String> {
-    let mut analyzer = Analyzer::new(OriginSourceInterpreter);
+    let sets = SetArena::new();
+    let mut analyzer = Analyzer::new(OriginSourceInterpreter { sets: &sets });
     let frames = match analyzer.analyze(class_node.resolve(class_node.name), method) {
         Ok(frames) => frames,
         Err(e) => {
@@ -660,7 +667,7 @@ fn analyze_method(
 }
 
 /// `size{sorted insn indices,p<slot>...}`.
-fn origin(insns: &InsnList, value: &OriginValue, out: &mut Vec<u8>) {
+fn origin(insns: &InsnList, value: &OriginValue<'_>, out: &mut Vec<u8>) {
     let mut indices = Vec::new();
     let mut slots = Vec::new();
     for producer in value.insns.iter() {

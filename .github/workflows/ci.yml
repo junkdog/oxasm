@@ -37,8 +37,8 @@ jobs:
 
   miri:
     # ADR-18: every module containing `unsafe` runs its tests under Miri. Today that is jstr, the
-    # reader's string cache, the `Sym` interner, `Type`'s method descriptors and oxasm-util's
-    # CheckSignatureAdapter.
+    # reader's string cache, the `Sym` interner, `Type`'s method descriptors, oxasm-util's
+    # CheckSignatureAdapter and oxasm-analysis's SetArena.
     name: miri (unsafe modules)
     runs-on: ubuntu-latest
     env:
@@ -58,6 +58,7 @@ jobs:
       - run: cargo miri test -p oxasm --lib sym
       - run: cargo miri test -p oxasm --test type_test
       - run: cargo miri test -p oxasm-util --test check_signature_adapter_test
+      - run: cargo miri test -p oxasm-analysis --lib set_arena
 
   oracle:
     name: oracle

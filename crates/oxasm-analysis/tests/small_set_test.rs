@@ -8,11 +8,14 @@
 //!   `NoSuchElementException`.
 //! - `testIterator_remove` is dropped: `SmallSet` is immutable, so the
 //!   `UnsupportedOperationException` of `iterator().remove()` cannot be written.
+//!
+//! A union of three or more elements is allocated in a [`SetArena`]: the ported tests leak one
+//! each ([`sets`]), the proptest makes one per case.
 
 use std::collections::HashSet;
 use std::hash::{BuildHasher, Hash, Hasher};
 
-use oxasm_analysis::SmallSet;
+use oxasm_analysis::{SetArena, SmallSet};
 use proptest::prelude::*;
 
 const ELEMENT1: u32 = 1;
@@ -20,9 +23,14 @@ const ELEMENT2: u32 = 2;
 const ELEMENT3: u32 = 3;
 const ELEMENT4: u32 = 4;
 
+/// An arena for the sets of a test, which lives as long as the test process.
+fn sets() -> &'static SetArena {
+    Box::leak(Box::new(SetArena::new()))
+}
+
 /// ASM's `Set.of(...)` equality: the same elements.
 #[track_caller]
-fn assert_set_of(set: &SmallSet<u32>, elements: &[u32]) {
+fn assert_set_of(set: &SmallSet<'_, u32>, elements: &[u32]) {
     let expected: HashSet<u32> = elements.iter().copied().collect();
     assert_eq!(set.iter().collect::<HashSet<u32>>(), expected);
     assert_eq!(set.len(), expected.len());
@@ -33,8 +41,8 @@ fn test_union_one_element_empty_set() {
     let set1 = SmallSet::singleton(ELEMENT1);
     let set2 = SmallSet::new();
 
-    let union1 = set1.union(&set2);
-    let union2 = set2.union(&set1);
+    let union1 = set1.union(&set2, sets());
+    let union2 = set2.union(&set1, sets());
 
     assert_eq!(set1, union1);
     assert_eq!(set1, union2);
@@ -45,8 +53,8 @@ fn test_union_one_element_one_element() {
     let set1 = SmallSet::singleton(ELEMENT1);
     let set2 = SmallSet::singleton(ELEMENT1);
 
-    let union1 = set1.union(&set2);
-    let union2 = set2.union(&set1);
+    let union1 = set1.union(&set2, sets());
+    let union2 = set2.union(&set1, sets());
 
     assert_eq!(union1, union2);
     assert_set_of(&union1, &[ELEMENT1]);
@@ -57,8 +65,8 @@ fn test_union_one_element_two_elements_super_set() {
     let set1 = new_small_set(ELEMENT1, ELEMENT2);
     let set2 = SmallSet::singleton(ELEMENT1);
 
-    let union1 = set1.union(&set2);
-    let union2 = set2.union(&set1);
+    let union1 = set1.union(&set2, sets());
+    let union2 = set2.union(&set1, sets());
 
     assert_eq!(union1, union2);
     assert_set_of(&union1, &[ELEMENT1, ELEMENT2]);
@@ -69,8 +77,8 @@ fn test_union_two_elements_two_elements_equal_sets() {
     let set1 = new_small_set(ELEMENT1, ELEMENT2);
     let set2 = new_small_set(ELEMENT2, ELEMENT1);
 
-    let union1 = set1.union(&set2);
-    let union2 = set2.union(&set1);
+    let union1 = set1.union(&set2, sets());
+    let union2 = set2.union(&set1, sets());
 
     assert_eq!(union1, union2);
     assert_set_of(&union1, &[ELEMENT1, ELEMENT2]);
@@ -81,8 +89,8 @@ fn test_union_two_elements_one_element_distinct_sets() {
     let set1 = new_small_set(ELEMENT1, ELEMENT2);
     let set2 = SmallSet::singleton(ELEMENT3);
 
-    let union1 = set1.union(&set2);
-    let union2 = set2.union(&set1);
+    let union1 = set1.union(&set2, sets());
+    let union2 = set2.union(&set1, sets());
 
     assert_eq!(union1, union2);
     assert_set_of(&union1, &[ELEMENT1, ELEMENT2, ELEMENT3]);
@@ -93,8 +101,8 @@ fn test_union_two_elements_two_elements_distinc_sets() {
     let set1 = new_small_set(ELEMENT1, ELEMENT2);
     let set2 = new_small_set(ELEMENT3, ELEMENT4);
 
-    let union1 = set1.union(&set2);
-    let union2 = set2.union(&set1);
+    let union1 = set1.union(&set2, sets());
+    let union2 = set2.union(&set1, sets());
 
     assert_eq!(union1, union2);
     assert_set_of(&union1, &[ELEMENT1, ELEMENT2, ELEMENT3, ELEMENT4]);
@@ -139,8 +147,8 @@ fn test_iterator_next_no_such_element() {
 // testIterator_remove: dropped, SmallSet is immutable (ASM's iterator().remove() throws
 // UnsupportedOperationException).
 
-fn new_small_set(element1: u32, element2: u32) -> SmallSet<u32> {
-    SmallSet::singleton(element1).union(&SmallSet::singleton(element2))
+fn new_small_set(element1: u32, element2: u32) -> SmallSet<'static, u32> {
+    SmallSet::singleton(element1).union(&SmallSet::singleton(element2), sets())
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -160,9 +168,12 @@ impl Hash for Colliding {
 
 /// A set made by unions of the given groups (each itself made by unions of singletons), and the
 /// same set as a `HashSet`.
-fn build(groups: &[Vec<u8>]) -> (SmallSet<Colliding>, HashSet<u8>) {
+fn build<'s>(groups: &[Vec<u8>], sets: &'s SetArena) -> (SmallSet<'s, Colliding>, HashSet<u8>) {
     let set = groups.iter().fold(SmallSet::new(), |set, group| {
-        set.union(&group.iter().map(|&e| Colliding(e)).collect())
+        set.union(
+            &SmallSet::from_elements(group.iter().map(|&e| Colliding(e)), sets),
+            sets,
+        )
     });
     (set, groups.iter().flatten().copied().collect())
 }
@@ -174,8 +185,9 @@ fn groups() -> impl Strategy<Value = Vec<Vec<u8>>> {
 proptest! {
     #[test]
     fn prop_small_set_is_a_set(a in groups(), b in groups()) {
-        let (set_a, model_a) = build(&a);
-        let (set_b, model_b) = build(&b);
+        let sets = SetArena::new();
+        let (set_a, model_a) = build(&a, &sets);
+        let (set_b, model_b) = build(&b, &sets);
         for (set, model) in [(&set_a, &model_a), (&set_b, &model_b)] {
             prop_assert_eq!(set.len(), model.len());
             prop_assert_eq!(&set.iter().map(|e| e.0).collect::<HashSet<u8>>(), model);
@@ -186,10 +198,10 @@ proptest! {
         prop_assert_eq!(set_a.is_superset(&set_b), model_a.is_superset(&model_b));
         prop_assert_eq!(set_a == set_b, model_a == model_b);
         if set_a == set_b {
-            let hash = |set: &SmallSet<Colliding>| rustc_hash::FxBuildHasher.hash_one(set);
+            let hash = |set: &SmallSet<'_, Colliding>| rustc_hash::FxBuildHasher.hash_one(set);
             prop_assert_eq!(hash(&set_a), hash(&set_b));
         }
-        let union = set_a.union(&set_b);
+        let union = set_a.union(&set_b, &sets);
         let model_union: HashSet<u8> = model_a.union(&model_b).copied().collect();
         prop_assert_eq!(union.len(), model_union.len());
         prop_assert_eq!(union.iter().map(|e| e.0).collect::<HashSet<u8>>(), model_union);

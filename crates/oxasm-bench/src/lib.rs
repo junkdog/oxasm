@@ -27,7 +27,7 @@ use oxasm::{
     ClassHierarchy, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, Constant, Interner,
     JavaStr, JavaString, MapHierarchy, ParsingOptions, Type, jstr,
 };
-use oxasm_analysis::{Analyzer, BasicInterpreter, Interpreter, SourceInterpreter};
+use oxasm_analysis::{Analyzer, BasicInterpreter, Interpreter, SetArena, SourceInterpreter};
 use oxasm_tree::ClassNode;
 
 use crate::visitors::{CollectTypes, Counter};
@@ -435,7 +435,11 @@ fn analyze(scenario: Scenario, class_node: &ClassNode) -> u64 {
         frames
     }
     match scenario {
-        Scenario::AnalyzeSource => frames(class_node, || SourceInterpreter),
+        Scenario::AnalyzeSource => {
+            // The class's sets of three or more producers, freed with it (Java's GC frees ASM's).
+            let sets = SetArena::new();
+            frames(class_node, || SourceInterpreter::new(&sets))
+        }
         _ => frames(class_node, || BasicInterpreter),
     }
 }

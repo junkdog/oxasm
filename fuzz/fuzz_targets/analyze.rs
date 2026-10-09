@@ -14,8 +14,8 @@ use libfuzzer_sys::fuzz_target;
 use oxasm::opcodes::ACC_INTERFACE;
 use oxasm::{ClassReader, ObjectHierarchy, ParsingOptions, Type};
 use oxasm_analysis::{
-    Analyzer, AnalyzerError, BasicInterpreter, BasicVerifier, Interpreter, SimpleVerifier,
-    SourceInterpreter,
+    Analyzer, AnalyzerError, BasicInterpreter, BasicVerifier, Interpreter, SetArena,
+    SimpleVerifier, SourceInterpreter,
 };
 use oxasm_tree::{ClassNode, MethodNode};
 
@@ -39,6 +39,7 @@ fuzz_target!(|data: &[u8]| {
     };
     let mut class_node = ClassNode::with_interner(Arc::default());
     let _ = reader.accept(&mut class_node, ParsingOptions::empty());
+    let sets = SetArena::new();
     for method in &class_node.methods {
         let slots = usize::from(method.max_locals) + usize::from(method.max_stack);
         if method.instructions.len().saturating_mul(slots) > MAX_FRAME_SLOTS {
@@ -46,7 +47,7 @@ fuzz_target!(|data: &[u8]| {
         }
         check(&class_node, method, BasicInterpreter);
         check(&class_node, method, BasicVerifier);
-        check(&class_node, method, SourceInterpreter);
+        check(&class_node, method, SourceInterpreter::new(&sets));
         let resolve = |sym| Type::get_object_type(class_node.resolve(sym));
         let verifier = SimpleVerifier::for_class(
             resolve(class_node.name),

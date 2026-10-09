@@ -13,13 +13,13 @@ use std::sync::Arc;
 use common::MethodNodeBuilder;
 use oxasm::opcodes::*;
 use oxasm::{ClassReader, Label, ParsingOptions, jstr};
-use oxasm_analysis::{Analyzer, SourceInterpreter};
+use oxasm_analysis::{Analyzer, SetArena, SourceInterpreter};
 use oxasm_testkit::PrecompiledClass;
 use oxasm_tree::{ClassNode, InsnId};
 
 #[test]
 fn test_constructor() {
-    let _ = SourceInterpreter::new();
+    let _ = SourceInterpreter::new(&SetArena::new());
     // ASM: assertThrows(IllegalStateException.class, () -> new SourceInterpreter() {}) -
     // dropped, there is no subclassing (ADR-09).
 }
@@ -33,7 +33,8 @@ fn test_analyze_source_interpreter() {
             .unwrap()
             .accept(&mut class_node, ParsingOptions::empty())
             .unwrap();
-        let mut analyzer = Analyzer::new(SourceInterpreter::new());
+        let sets = SetArena::new();
+        let mut analyzer = Analyzer::new(SourceInterpreter::new(&sets));
 
         for method_node in &class_node.methods {
             if let Err(e) = analyzer.analyze(class_node.resolve(class_node.name), method_node) {
@@ -73,7 +74,8 @@ fn test_analyze_dupx2_producers() {
         .vreturn()
         .build();
 
-    let mut analyzer = Analyzer::new(SourceInterpreter::new());
+    let sets = SetArena::new();
+    let mut analyzer = Analyzer::new(SourceInterpreter::new(&sets));
     analyzer.analyze(jstr!("C"), &method_node).unwrap();
 
     let first_opcode = |opcode: u8| -> InsnId {

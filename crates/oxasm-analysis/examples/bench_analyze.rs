@@ -3,7 +3,7 @@
 //! <dir> <basic|source>`.
 
 use oxasm::{ClassReader, ParsingOptions};
-use oxasm_analysis::{Analyzer, BasicInterpreter, Interpreter, SourceInterpreter};
+use oxasm_analysis::{Analyzer, BasicInterpreter, Interpreter, SetArena, SourceInterpreter};
 use oxasm_tree::ClassNode;
 
 fn walk(dir: &std::path::Path, out: &mut Vec<Vec<u8>>) {
@@ -51,9 +51,11 @@ fn main() {
         .collect();
     for iteration in 0..15 {
         let start = std::time::Instant::now();
+        // The source values' sets of this iteration, freed at its end.
+        let sets = SetArena::new();
         let frames = match interpreter.as_str() {
             "basic" => analyze_all(&classes, || BasicInterpreter),
-            "source" => analyze_all(&classes, || SourceInterpreter),
+            "source" => analyze_all(&classes, || SourceInterpreter::new(&sets)),
             other => panic!("unknown interpreter {other}"),
         };
         if iteration >= 10 {

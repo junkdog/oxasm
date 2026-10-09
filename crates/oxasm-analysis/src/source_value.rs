@@ -1,5 +1,6 @@
 //! [`SourceValue`]: ASM's `SourceValue`.
 
+use std::fmt;
 use std::hash::Hash;
 
 use oxasm_tree::InsnId;
@@ -51,18 +52,20 @@ impl<P: Copy + Eq + Hash + From<InsnId>> Producer for P {}
 /// The producers are [`InsnId`]s by default, or any other [`Producer`].
 ///
 /// Like ASM's `hashCode()`, its hash depends on its producers only.
-#[derive(Clone, Debug)]
-pub struct SourceValue<P = InsnId> {
+///
+/// A value is `Copy`: its producers, when there are three or more, are borrowed from a
+/// [`SetArena`](crate::SetArena) for `'s`.
+pub struct SourceValue<'s, P = InsnId> {
     /// The size of this value, in 32 bits words: 1 for `byte`, `boolean`, `char`, `short`,
     /// `int`, `float`, object and array types, and 2 for `long` and `double`.
     pub size: usize,
     /// The instructions (or other producers) that can produce this value.
-    pub insns: SmallSet<P>,
+    pub insns: SmallSet<'s, P>,
 }
 
-impl<P: Producer> SourceValue<P> {
+impl<'s, P: Producer> SourceValue<'s, P> {
     /// A value of the given size, produced by nothing.
-    pub fn new(size: usize) -> SourceValue<P> {
+    pub fn new(size: usize) -> SourceValue<'s, P> {
         SourceValue {
             size,
             insns: SmallSet::new(),
@@ -70,7 +73,7 @@ impl<P: Producer> SourceValue<P> {
     }
 
     /// A value of the given size, produced by `insn`.
-    pub fn of(size: usize, insn: P) -> SourceValue<P> {
+    pub fn of(size: usize, insn: P) -> SourceValue<'s, P> {
         SourceValue {
             size,
             insns: SmallSet::singleton(insn),
@@ -78,26 +81,44 @@ impl<P: Producer> SourceValue<P> {
     }
 
     /// A value of the given size, produced by the producers of `insns`.
-    pub fn with_insns(size: usize, insns: SmallSet<P>) -> SourceValue<P> {
+    pub fn with_insns(size: usize, insns: SmallSet<'s, P>) -> SourceValue<'s, P> {
         SourceValue { size, insns }
     }
 }
 
-impl<P: Producer> PartialEq for SourceValue<P> {
-    fn eq(&self, other: &SourceValue<P>) -> bool {
+impl<P: Copy> Clone for SourceValue<'_, P> {
+    #[inline]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<P: Copy> Copy for SourceValue<'_, P> {}
+
+impl<P: Producer + fmt::Debug> fmt::Debug for SourceValue<'_, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SourceValue")
+            .field("size", &self.size)
+            .field("insns", &self.insns)
+            .finish()
+    }
+}
+
+impl<P: Producer> PartialEq for SourceValue<'_, P> {
+    fn eq(&self, other: &Self) -> bool {
         self.size == other.size && self.insns == other.insns
     }
 }
 
-impl<P: Producer> Eq for SourceValue<P> {}
+impl<P: Producer> Eq for SourceValue<'_, P> {}
 
-impl<P: Producer> Hash for SourceValue<P> {
+impl<P: Producer> Hash for SourceValue<'_, P> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.insns.hash(state);
     }
 }
 
-impl<P: Producer> Value for SourceValue<P> {
+impl<P: Producer> Value for SourceValue<'_, P> {
     fn get_size(&self) -> usize {
         self.size
     }
