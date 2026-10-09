@@ -261,6 +261,7 @@ impl<'b> ClassReader<'b> {
 
     /// ASM's `readUTF8`: the `CONSTANT_Utf8` entry whose index is at `offset`, or `None` if
     /// `offset` or this index is 0.
+    #[inline]
     pub(crate) fn utf8_at(&self, offset: i64) -> Result<Option<&JavaStr>, ReadError> {
         let constant_pool_entry_index = self.u16_at(offset)?;
         if offset == 0 || constant_pool_entry_index == 0 {
@@ -271,7 +272,38 @@ impl<'b> ClassReader<'b> {
 
     /// ASM's `readUtf(int, char[])`: the `CONSTANT_Utf8` entry of the given index, decoded on
     /// first use.
+    #[inline]
     pub(crate) fn utf(&self, constant_pool_entry_index: usize) -> Result<&JavaStr, ReadError> {
+        // The common case, a string borrowed from the class file, stays inline: the rest is
+        // out of line, so that this path does not pay for its registers.
+        if let Some(cell) = self.constant_utf8_values.get(constant_pool_entry_index) {
+            let state = cell.load(Ordering::Acquire);
+            if state & UTF8_BORROWED != 0 {
+                return Ok(self.borrowed_utf(state));
+            }
+        }
+        self.utf_out_of_line(constant_pool_entry_index)
+    }
+
+    /// The string of a `constant_utf8_values` entry borrowed from the class file.
+    #[inline(always)]
+    fn borrowed_utf(&self, state: u64) -> &'b JavaStr {
+        let offset = (state & 0xFFFF_FFFF) as usize;
+        let length = ((state >> 32) & 0xFFFF) as usize;
+        let bytes = &self.class_file[offset..offset + length];
+        // SAFETY: the entry was stored by `utf_out_of_line`, from a string that `read_utf`
+        // borrowed from these bytes, so they are valid UTF-8.
+        unsafe { JavaStr::from_semi_utf8_unchecked(bytes) }
+    }
+
+    /// [`ClassReader::utf`], out of line: for an entry that is not a borrowed string already,
+    /// and for callers that read each entry once (e.g. a constant pool copy), which would
+    /// mostly miss the inline path.
+    #[inline(never)]
+    pub(crate) fn utf_out_of_line(
+        &self,
+        constant_pool_entry_index: usize,
+    ) -> Result<&JavaStr, ReadError> {
         let Some(cell) = self.constant_utf8_values.get(constant_pool_entry_index) else {
             return Err(ReadError::new(
                 0,
@@ -280,12 +312,7 @@ impl<'b> ClassReader<'b> {
         };
         let state = cell.load(Ordering::Acquire);
         if state & UTF8_BORROWED != 0 {
-            let offset = (state & 0xFFFF_FFFF) as usize;
-            let length = ((state >> 32) & 0xFFFF) as usize;
-            let bytes = &self.class_file[offset..offset + length];
-            // SAFETY: the entry was stored below, from a string that `read_utf` borrowed from
-            // these bytes, so they are valid UTF-8.
-            return Ok(unsafe { JavaStr::from_semi_utf8_unchecked(bytes) });
+            return Ok(self.borrowed_utf(state));
         }
         if state == UTF8_DECODED {
             // The release store of UTF8_DECODED happened after both cells were initialized.

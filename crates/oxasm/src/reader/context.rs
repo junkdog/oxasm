@@ -1,7 +1,5 @@
 //! [`Context`]: ASM's `Context`, the information about a class being parsed in a class reader.
 
-use rustc_hash::FxHashMap;
-
 use crate::attribute::AttributeCodec;
 use crate::constant::FrameValue;
 use crate::jstr::JavaStr;
@@ -31,9 +29,10 @@ pub(super) struct Context<'a> {
     /// which a label is needed have a non `None` associated label). Empty until the first Code
     /// attribute (ASM's `null`).
     pub(super) current_method_labels: Vec<Option<Label>>,
-    /// The source line numbers of the labels of the current method, by bytecode offset (ASM's
-    /// `Label.lineNumber` and `Label.otherLineNumbers`), in the order they were read.
-    pub(super) current_method_line_numbers: FxHashMap<usize, Vec<u16>>,
+    /// The `(start_pc, line_number)` entries of the current method's line number tables (ASM's
+    /// `Label.lineNumber` and `Label.otherLineNumbers`), sorted by `start_pc` once read, and in
+    /// the order they were read for each `start_pc`.
+    pub(super) current_method_line_numbers: Vec<(u16, u16)>,
 
     // Information about the current type annotation target, i.e. the one read in the current
     // (or latest) call to `read_type_annotation_target`.
@@ -93,7 +92,7 @@ impl<'a> Context<'a> {
             current_method_name: None,
             current_method_descriptor: None,
             current_method_labels: Vec::new(),
-            current_method_line_numbers: FxHashMap::default(),
+            current_method_line_numbers: Vec::new(),
             current_type_annotation_target: 0,
             current_type_annotation_target_path: None,
             current_local_variable_annotation_range_starts: Vec::new(),

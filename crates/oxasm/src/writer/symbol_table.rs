@@ -531,7 +531,8 @@ impl SymbolTable {
         if let Some(&Some(span)) = spans.get(index) {
             return Ok(span);
         }
-        let span = self.push_str(class_reader.utf(index)?);
+        // Each entry is read once here, so the reader's cache rarely has it.
+        let span = self.push_str(class_reader.utf_out_of_line(index)?);
         if let Some(slot) = spans.get_mut(index) {
             *slot = Some(span);
         }

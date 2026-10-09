@@ -28,15 +28,25 @@ use super::{
 /// The name of the attribute of CLDC's preverified classes (ASM's `"StackMap"`).
 const STACK_MAP: &JavaStr = crate::jstr!("StackMap");
 
+/// The error of a bytecode offset outside of the method code.
+#[cold]
+fn invalid_bytecode_offset(bytecode_offset: i64) -> ReadError {
+    ReadError::new(0, ReadErrorKind::InvalidBytecodeOffset(bytecode_offset))
+}
+
 /// `labels[bytecode_offset]`, which must exist.
+#[inline]
 fn label_slot(
     bytecode_offset: i64,
     labels: &mut [Option<Label>],
 ) -> Result<&mut Option<Label>, ReadError> {
-    usize::try_from(bytecode_offset)
+    match usize::try_from(bytecode_offset)
         .ok()
         .and_then(|i| labels.get_mut(i))
-        .ok_or_else(|| ReadError::new(0, ReadErrorKind::InvalidBytecodeOffset(bytecode_offset)))
+    {
+        Some(slot) => Ok(slot),
+        None => Err(invalid_bytecode_offset(bytecode_offset)),
+    }
 }
 
 /// Returns the label corresponding to the given bytecode offset. The default implementation of
@@ -50,13 +60,15 @@ pub(super) fn read_label(
 }
 
 /// Creates a label without the `FLAG_DEBUG_ONLY` flag set, for the given bytecode offset. The
-/// label is created with a call to [`read_label`] and its `FLAG_DEBUG_ONLY` flag is cleared.
+/// label is created as with [`read_label`] and its `FLAG_DEBUG_ONLY` flag is cleared.
+#[inline]
 pub(super) fn create_label(
     bytecode_offset: i64,
     labels: &mut [Option<Label>],
 ) -> Result<Label, ReadError> {
-    let label = read_label(bytecode_offset, labels)?.with_debug_only(false);
-    *label_slot(bytecode_offset, labels)? = Some(label);
+    let slot = label_slot(bytecode_offset, labels)?;
+    let label = slot.get_or_insert_with(Label::new).with_debug_only(false);
+    *slot = Some(label);
     Ok(label)
 }
 
@@ -73,11 +85,203 @@ fn create_debug_label(bytecode_offset: i64, labels: &mut [Option<Label>]) -> Res
 
 /// `labels[bytecode_offset]` in the second pass, where the first pass created every label that
 /// an instruction refers to.
+#[inline]
 fn label_at(bytecode_offset: i64, labels: &[Option<Label>]) -> Result<Label, ReadError> {
-    usize::try_from(bytecode_offset)
+    match usize::try_from(bytecode_offset)
         .ok()
         .and_then(|i| labels.get(i).copied().flatten())
-        .ok_or_else(|| ReadError::new(0, ReadErrorKind::InvalidBytecodeOffset(bytecode_offset)))
+    {
+        Some(label) => Ok(label),
+        None => Err(invalid_bytecode_offset(bytecode_offset)),
+    }
+}
+
+// The kinds of instructions of the first pass over the code (`FIRST_PASS_KINDS`): 1 to 5 is the
+// length of an instruction that refers to no label, 0 an invalid opcode.
+const FIRST_PASS_JUMP: u8 = 6;
+const FIRST_PASS_ASM_JUMP: u8 = 7;
+const FIRST_PASS_WIDE_JUMP: u8 = 8;
+const FIRST_PASS_WIDE: u8 = 9;
+const FIRST_PASS_TABLESWITCH: u8 = 10;
+const FIRST_PASS_LOOKUPSWITCH: u8 = 11;
+
+/// The kind of each opcode in the first pass over the code, which only looks for the labels
+/// (ASM's switch, as a table the loop indexes).
+const FIRST_PASS_KINDS: [u8; 256] = {
+    const fn kind(opcode: u8) -> u8 {
+        match opcode {
+            NOP..=DCONST_1
+            | IALOAD..=SALOAD
+            | IASTORE..=SASTORE
+            | POP..=SWAP
+            | IADD..=LXOR
+            | I2L..=I2S
+            | LCMP..=DCMPG
+            | IRETURN..=RETURN
+            | ARRAYLENGTH
+            | ATHROW
+            | MONITORENTER
+            | MONITOREXIT
+            | ILOAD_0..=ALOAD_3
+            | ISTORE_0..=ASTORE_3 => 1,
+            IFEQ..=IF_ACMPNE | GOTO | JSR | IFNULL | IFNONNULL => FIRST_PASS_JUMP,
+            ASM_IFEQ..=ASM_JSR | ASM_IFNULL | ASM_IFNONNULL => FIRST_PASS_ASM_JUMP,
+            GOTO_W | JSR_W | ASM_GOTO_W => FIRST_PASS_WIDE_JUMP,
+            WIDE => FIRST_PASS_WIDE,
+            TABLESWITCH => FIRST_PASS_TABLESWITCH,
+            LOOKUPSWITCH => FIRST_PASS_LOOKUPSWITCH,
+            ILOAD..=ALOAD | ISTORE..=ASTORE | RET | BIPUSH | NEWARRAY | LDC => 2,
+            SIPUSH
+            | LDC_W
+            | LDC2_W
+            | GETSTATIC..=INVOKESTATIC
+            | NEW
+            | ANEWARRAY
+            | CHECKCAST
+            | INSTANCEOF
+            | IINC => 3,
+            INVOKEINTERFACE | INVOKEDYNAMIC => 5,
+            MULTIANEWARRAY => 4,
+            _ => 0,
+        }
+    }
+    let mut kinds = [0; 256];
+    let mut opcode = 0;
+    while opcode < 256 {
+        kinds[opcode] = kind(opcode as u8);
+        opcode += 1;
+    }
+    kinds
+};
+
+/// How the second pass over the code visits an instruction: the arms of ASM's switch.
+#[derive(Clone, Copy)]
+enum InsnKind {
+    Invalid,
+    Insn,
+    LoadN,
+    StoreN,
+    Jump,
+    WideJump,
+    AsmJump,
+    AsmGotoW,
+    Wide,
+    TableSwitch,
+    LookupSwitch,
+    Var,
+    Int8,
+    Int16,
+    Ldc,
+    LdcW,
+    Member,
+    InvokeDynamic,
+    Type,
+    Iinc,
+    MultiANewArray,
+}
+
+/// The kind of each opcode in the second pass over the code (ASM's switch, as a table the loop
+/// indexes).
+const SECOND_PASS_KINDS: [InsnKind; 256] = {
+    const fn kind(opcode: u8) -> InsnKind {
+        match opcode {
+            NOP..=DCONST_1
+            | IALOAD..=SALOAD
+            | IASTORE..=SASTORE
+            | POP..=SWAP
+            | IADD..=LXOR
+            | I2L..=I2S
+            | LCMP..=DCMPG
+            | IRETURN..=RETURN
+            | ARRAYLENGTH
+            | ATHROW
+            | MONITORENTER
+            | MONITOREXIT => InsnKind::Insn,
+            ILOAD_0..=ALOAD_3 => InsnKind::LoadN,
+            ISTORE_0..=ASTORE_3 => InsnKind::StoreN,
+            IFEQ..=IF_ACMPNE | GOTO | JSR | IFNULL | IFNONNULL => InsnKind::Jump,
+            GOTO_W | JSR_W => InsnKind::WideJump,
+            ASM_IFEQ..=ASM_JSR | ASM_IFNULL | ASM_IFNONNULL => InsnKind::AsmJump,
+            ASM_GOTO_W => InsnKind::AsmGotoW,
+            WIDE => InsnKind::Wide,
+            TABLESWITCH => InsnKind::TableSwitch,
+            LOOKUPSWITCH => InsnKind::LookupSwitch,
+            ILOAD..=ALOAD | ISTORE..=ASTORE | RET => InsnKind::Var,
+            BIPUSH | NEWARRAY => InsnKind::Int8,
+            SIPUSH => InsnKind::Int16,
+            LDC => InsnKind::Ldc,
+            LDC_W | LDC2_W => InsnKind::LdcW,
+            GETSTATIC..=INVOKEINTERFACE => InsnKind::Member,
+            INVOKEDYNAMIC => InsnKind::InvokeDynamic,
+            NEW | ANEWARRAY | CHECKCAST | INSTANCEOF => InsnKind::Type,
+            IINC => InsnKind::Iinc,
+            MULTIANEWARRAY => InsnKind::MultiANewArray,
+            _ => InsnKind::Invalid,
+        }
+    }
+    let mut kinds = [InsnKind::Invalid; 256];
+    let mut opcode = 0;
+    while opcode < 256 {
+        kinds[opcode] = kind(opcode as u8);
+        opcode += 1;
+    }
+    kinds
+};
+
+/// The instructions of a method: the class file from the start of its code array (the operands
+/// of the last instruction may extend past the array). Reads take bytecode offsets and fail like
+/// the [`ClassReader`]'s, at the same class file offset, but stay inline and in `usize`.
+#[derive(Clone, Copy)]
+struct Bytecode<'b> {
+    /// The class file, from the first byte of the code array.
+    bytes: &'b [u8],
+    /// The class file offset of the code array.
+    start: usize,
+}
+
+impl Bytecode<'_> {
+    /// The `N` bytes at `bytecode_offset`.
+    #[inline(always)]
+    fn bytes_at<const N: usize>(&self, bytecode_offset: usize) -> Result<[u8; N], ReadError> {
+        match self
+            .bytes
+            .get(bytecode_offset..)
+            .and_then(<[u8]>::first_chunk::<N>)
+        {
+            Some(bytes) => Ok(*bytes),
+            None => Err(self.unexpected_end(bytecode_offset)),
+        }
+    }
+
+    #[cold]
+    fn unexpected_end(&self, bytecode_offset: usize) -> ReadError {
+        ReadError::at(self.start + bytecode_offset, ReadErrorKind::UnexpectedEnd)
+    }
+
+    #[inline(always)]
+    fn u8_at(&self, bytecode_offset: usize) -> Result<u8, ReadError> {
+        Ok(self.bytes_at::<1>(bytecode_offset)?[0])
+    }
+
+    #[inline(always)]
+    fn i8_at(&self, bytecode_offset: usize) -> Result<i8, ReadError> {
+        Ok(self.u8_at(bytecode_offset)? as i8)
+    }
+
+    #[inline(always)]
+    fn u16_at(&self, bytecode_offset: usize) -> Result<u16, ReadError> {
+        Ok(u16::from_be_bytes(self.bytes_at(bytecode_offset)?))
+    }
+
+    #[inline(always)]
+    fn i16_at(&self, bytecode_offset: usize) -> Result<i16, ReadError> {
+        Ok(i16::from_be_bytes(self.bytes_at(bytecode_offset)?))
+    }
+
+    #[inline(always)]
+    fn i32_at(&self, bytecode_offset: usize) -> Result<i32, ReadError> {
+        Ok(i32::from_be_bytes(self.bytes_at(bytecode_offset)?))
+    }
 }
 
 /// The number of elements of a Java array whose size comes from the class file, if it can be
@@ -124,7 +328,6 @@ impl<'b> ClassReader<'b> {
 
         // Read the bytecode 'code' array to create a label for each referenced instruction.
         let bytecode_start_offset = current_offset;
-        let bytecode_end_offset = current_offset + code_length;
         // `new Label[codeLength + 1]`.
         let labels_length = usize::try_from(code_length + 1).map_err(|_| {
             ReadError::new(
@@ -132,122 +335,99 @@ impl<'b> ClassReader<'b> {
                 ReadErrorKind::InvalidLength(code_length),
             )
         })?;
+        // The code array is in the class file (checked above), so its offsets are `usize`s. A
+        // code_length of -1 (`new Label[0]`) has no instruction, as in ASM's loops.
+        let bytecode_length = usize::try_from(code_length).unwrap_or(0);
+        let code = Bytecode {
+            bytes: &self.class_file[bytecode_start_offset as usize..],
+            start: bytecode_start_offset as usize,
+        };
         method_visitor.visit_code_length(u32::try_from(code_length).unwrap_or(0));
         context.current_method_labels.clear();
         context.current_method_labels.resize(labels_length, None);
         context.current_method_line_numbers.clear();
         let labels = &mut context.current_method_labels;
-        while current_offset < bytecode_end_offset {
-            let bytecode_offset = current_offset - bytecode_start_offset;
-            let opcode = self.u8_at(current_offset)?;
-            match opcode {
-                NOP..=DCONST_1
-                | IALOAD..=SALOAD
-                | IASTORE..=SASTORE
-                | POP..=SWAP
-                | IADD..=LXOR
-                | I2L..=I2S
-                | LCMP..=DCMPG
-                | IRETURN..=RETURN
-                | ARRAYLENGTH
-                | ATHROW
-                | MONITORENTER
-                | MONITOREXIT
-                | ILOAD_0..=ALOAD_3
-                | ISTORE_0..=ASTORE_3 => {
-                    current_offset += 1;
+        // The bytecode offset of the current instruction.
+        let mut pc: usize = 0;
+        while pc < bytecode_length {
+            let bytecode_offset = pc as i64;
+            let opcode = code.u8_at(pc)?;
+            match FIRST_PASS_KINDS[usize::from(opcode)] {
+                length @ 1..=5 => {
+                    pc += usize::from(length);
                 }
-                IFEQ..=IF_ACMPNE | GOTO | JSR | IFNULL | IFNONNULL => {
-                    let branch = i64::from(self.i16_at(current_offset + 1)?);
+                FIRST_PASS_JUMP => {
+                    let branch = i64::from(code.i16_at(pc + 1)?);
                     create_label(bytecode_offset + branch, labels)?;
-                    current_offset += 3;
+                    pc += 3;
                 }
-                ASM_IFEQ..=ASM_JSR | ASM_IFNULL | ASM_IFNONNULL => {
-                    let branch = i64::from(self.u16_at(current_offset + 1)?);
+                FIRST_PASS_ASM_JUMP => {
+                    let branch = i64::from(code.u16_at(pc + 1)?);
                     create_label(bytecode_offset + branch, labels)?;
-                    current_offset += 3;
+                    pc += 3;
                 }
-                GOTO_W | JSR_W | ASM_GOTO_W => {
-                    let branch = i64::from(self.i32_at(current_offset + 1)?);
+                FIRST_PASS_WIDE_JUMP => {
+                    let branch = i64::from(code.i32_at(pc + 1)?);
                     create_label(bytecode_offset + branch, labels)?;
-                    current_offset += 5;
+                    pc += 5;
                 }
-                WIDE => match self.u8_at(current_offset + 1)? {
+                FIRST_PASS_WIDE => match code.u8_at(pc + 1)? {
                     ILOAD..=ALOAD | ISTORE..=ASTORE | RET => {
-                        current_offset += 4;
+                        pc += 4;
                     }
                     IINC => {
-                        current_offset += 6;
+                        pc += 6;
                     }
                     wide_opcode => {
-                        return Err(ReadError::new(
-                            current_offset + 1,
+                        return Err(ReadError::at(
+                            code.start + pc + 1,
                             ReadErrorKind::InvalidWideOpcode(wide_opcode),
                         ));
                     }
                 },
-                TABLESWITCH => {
+                FIRST_PASS_TABLESWITCH => {
                     // Skip 0 to 3 padding bytes.
-                    current_offset += 4 - (bytecode_offset & 3);
+                    pc += 4 - (pc & 3);
                     // Read the default label and the number of table entries.
-                    let default = i64::from(self.i32_at(current_offset)?);
+                    let default = i64::from(code.i32_at(pc)?);
                     create_label(bytecode_offset + default, labels)?;
-                    let high = self.i32_at(current_offset + 8)?;
-                    let low = self.i32_at(current_offset + 4)?;
+                    let high = code.i32_at(pc + 8)?;
+                    let low = code.i32_at(pc + 4)?;
                     let mut num_table_entries = high.wrapping_sub(low).wrapping_add(1);
-                    current_offset += 12;
+                    pc += 12;
                     // Read the table labels.
                     while num_table_entries > 0 {
                         num_table_entries -= 1;
-                        let branch = i64::from(self.i32_at(current_offset)?);
+                        let branch = i64::from(code.i32_at(pc)?);
                         create_label(bytecode_offset + branch, labels)?;
-                        current_offset += 4;
+                        pc += 4;
                     }
                 }
-                LOOKUPSWITCH => {
+                FIRST_PASS_LOOKUPSWITCH => {
                     // Skip 0 to 3 padding bytes.
-                    current_offset += 4 - (bytecode_offset & 3);
+                    pc += 4 - (pc & 3);
                     // Read the default label and the number of switch cases.
-                    let default = i64::from(self.i32_at(current_offset)?);
+                    let default = i64::from(code.i32_at(pc)?);
                     create_label(bytecode_offset + default, labels)?;
-                    let mut num_switch_cases = self.i32_at(current_offset + 4)?;
-                    current_offset += 8;
+                    let mut num_switch_cases = code.i32_at(pc + 4)?;
+                    pc += 8;
                     // Read the switch labels.
                     while num_switch_cases > 0 {
                         num_switch_cases -= 1;
-                        let branch = i64::from(self.i32_at(current_offset + 4)?);
+                        let branch = i64::from(code.i32_at(pc + 4)?);
                         create_label(bytecode_offset + branch, labels)?;
-                        current_offset += 8;
+                        pc += 8;
                     }
                 }
-                ILOAD..=ALOAD | ISTORE..=ASTORE | RET | BIPUSH | NEWARRAY | LDC => {
-                    current_offset += 2;
-                }
-                SIPUSH
-                | LDC_W
-                | LDC2_W
-                | GETSTATIC..=INVOKESTATIC
-                | NEW
-                | ANEWARRAY
-                | CHECKCAST
-                | INSTANCEOF
-                | IINC => {
-                    current_offset += 3;
-                }
-                INVOKEINTERFACE | INVOKEDYNAMIC => {
-                    current_offset += 5;
-                }
-                MULTIANEWARRAY => {
-                    current_offset += 4;
-                }
                 _ => {
-                    return Err(ReadError::new(
-                        current_offset,
+                    return Err(ReadError::at(
+                        code.start + pc,
                         ReadErrorKind::InvalidOpcode(opcode),
                     ));
                 }
             }
         }
+        current_offset = bytecode_start_offset + pc as i64;
 
         // Read the 'exception_table_length' and 'exception_table' field to create a label for
         // each referenced instruction, and to make method_visitor visit the corresponding try
@@ -346,9 +526,7 @@ impl<'b> ClassReader<'b> {
                             )?;
                             context
                                 .current_method_line_numbers
-                                .entry(usize::from(start_pc))
-                                .or_default()
-                                .push(line_number);
+                                .push((start_pc, line_number));
                         }
                     }
                 }
@@ -415,6 +593,12 @@ impl<'b> ClassReader<'b> {
                 }
             }
             current_offset += i64::from(attribute_length);
+        }
+        // Javac's tables are mostly in bytecode order already. The sort is stable, so the line
+        // numbers of an offset stay in the order they were read.
+        let line_numbers = &mut context.current_method_line_numbers;
+        if !line_numbers.is_sorted_by_key(|&(start_pc, _)| start_pc) {
+            line_numbers.sort_by_key(|&(start_pc, _)| start_pc);
         }
 
         // Initialize the context fields related to stack map frames, and generate the first
@@ -487,8 +671,15 @@ impl<'b> ClassReader<'b> {
         let mut current_invisible_type_annotation_bytecode_offset = self
             .get_type_annotation_bytecode_offset(invisible_type_annotation_offsets.as_deref(), 0)?;
 
+        // Whether the instructions have type annotations to visit.
+        let has_insn_annotations = visible_type_annotation_offsets.is_some()
+            || invisible_type_annotation_offsets.is_some();
+
         // Whether a F_INSERT stack map frame must be inserted before the current instruction.
         let mut insert_frame = false;
+
+        // The index of the next line number entry to visit, at its start_pc.
+        let mut line_number_index = 0;
 
         // The delta to subtract from a goto_w or jsr_w opcode to get the corresponding goto or
         // jsr opcode, or 0 if goto_w and jsr_w must be left unchanged (i.e. when expanding ASM
@@ -499,26 +690,26 @@ impl<'b> ClassReader<'b> {
             WIDE_JUMP_OPCODE_DELTA
         };
 
-        current_offset = bytecode_start_offset;
-        while current_offset < bytecode_end_offset {
-            let current_bytecode_offset = current_offset - bytecode_start_offset;
+        pc = 0;
+        while pc < bytecode_length {
+            let current_bytecode_offset = pc as i64;
+            // The class file offset of the instruction.
+            let current_offset = bytecode_start_offset + current_bytecode_offset;
 
             // Visit the label and the line number(s) for this bytecode offset, if any.
             let labels = &context.current_method_labels;
-            if let Some(current_label) = labels
-                .get(current_bytecode_offset as usize)
-                .copied()
-                .flatten()
-            {
+            if let Some(current_label) = labels.get(pc).copied().flatten() {
                 method_visitor.visit_label(current_label);
-                if !skip_debug
-                    && let Some(line_numbers) = context
-                        .current_method_line_numbers
-                        .get(&(current_bytecode_offset as usize))
+                // Skip the entries of offsets that are not an instruction's, which ASM's
+                // readCode never visits either.
+                let line_numbers = &context.current_method_line_numbers;
+                while let Some(&(start_pc, line_number)) = line_numbers.get(line_number_index)
+                    && usize::from(start_pc) <= pc
                 {
-                    for &line_number in line_numbers {
+                    if usize::from(start_pc) == pc {
                         method_visitor.visit_line_number(line_number, current_label);
                     }
+                    line_number_index += 1;
                 }
             }
 
@@ -559,46 +750,35 @@ impl<'b> ClassReader<'b> {
 
             // Visit the instruction at this bytecode offset.
             let labels = &context.current_method_labels;
-            let opcode = self.u8_at(current_offset)?;
-            match opcode {
-                NOP..=DCONST_1
-                | IALOAD..=SALOAD
-                | IASTORE..=SASTORE
-                | POP..=SWAP
-                | IADD..=LXOR
-                | I2L..=I2S
-                | LCMP..=DCMPG
-                | IRETURN..=RETURN
-                | ARRAYLENGTH
-                | ATHROW
-                | MONITORENTER
-                | MONITOREXIT => {
+            let opcode = code.u8_at(pc)?;
+            match SECOND_PASS_KINDS[usize::from(opcode)] {
+                InsnKind::Insn => {
                     method_visitor.visit_insn(opcode);
-                    current_offset += 1;
+                    pc += 1;
                 }
-                ILOAD_0..=ALOAD_3 => {
+                InsnKind::LoadN => {
                     let opcode = opcode - ILOAD_0;
                     method_visitor.visit_var_insn(ILOAD + (opcode >> 2), u16::from(opcode & 0x3));
-                    current_offset += 1;
+                    pc += 1;
                 }
-                ISTORE_0..=ASTORE_3 => {
+                InsnKind::StoreN => {
                     let opcode = opcode - ISTORE_0;
                     method_visitor.visit_var_insn(ISTORE + (opcode >> 2), u16::from(opcode & 0x3));
-                    current_offset += 1;
+                    pc += 1;
                 }
-                IFEQ..=IF_ACMPNE | GOTO | JSR | IFNULL | IFNONNULL => {
-                    let branch = i64::from(self.i16_at(current_offset + 1)?);
+                InsnKind::Jump => {
+                    let branch = i64::from(code.i16_at(pc + 1)?);
                     let label = label_at(current_bytecode_offset + branch, labels)?;
                     method_visitor.visit_jump_insn(opcode, label);
-                    current_offset += 3;
+                    pc += 3;
                 }
-                GOTO_W | JSR_W => {
-                    let branch = i64::from(self.i32_at(current_offset + 1)?);
+                InsnKind::WideJump => {
+                    let branch = i64::from(code.i32_at(pc + 1)?);
                     let label = label_at(current_bytecode_offset + branch, labels)?;
                     method_visitor.visit_jump_insn(opcode - wide_jump_opcode_delta, label);
-                    current_offset += 5;
+                    pc += 5;
                 }
-                ASM_IFEQ..=ASM_JSR | ASM_IFNULL | ASM_IFNONNULL => {
+                InsnKind::AsmJump => {
                     // A forward jump with an offset > 32767. In this case we automatically
                     // replace ASM_GOTO with GOTO_W, ASM_JSR with JSR_W and ASM_IFxxx <l> with
                     // IFNOTxxx <L> GOTO_W <l> L:..., where IFNOTxxx is the "opposite" opcode of
@@ -611,7 +791,7 @@ impl<'b> ClassReader<'b> {
                     } else {
                         opcode - ASM_IFNULL_OPCODE_DELTA
                     };
-                    let branch = i64::from(self.u16_at(current_offset + 1)?);
+                    let branch = i64::from(code.u16_at(pc + 1)?);
                     let target = label_at(current_bytecode_offset + branch, labels)?;
                     if opcode == GOTO || opcode == JSR {
                         // Replace GOTO with GOTO_W and JSR with JSR_W.
@@ -636,98 +816,96 @@ impl<'b> ClassReader<'b> {
                         // insert a frame here.
                         insert_frame = true;
                     }
-                    current_offset += 3;
+                    pc += 3;
                 }
-                ASM_GOTO_W => {
+                InsnKind::AsmGotoW => {
                     // Replace ASM_GOTO_W with GOTO_W.
-                    let branch = i64::from(self.i32_at(current_offset + 1)?);
+                    let branch = i64::from(code.i32_at(pc + 1)?);
                     let label = label_at(current_bytecode_offset + branch, labels)?;
                     method_visitor.visit_jump_insn(GOTO_W, label);
                     // The instruction just after is a jump target (because ASM_GOTO_W is used in
                     // patterns IFNOTxxx <L> ASM_GOTO_W <l> L:..., see MethodWriter), so we need
                     // to insert a frame here.
                     insert_frame = true;
-                    current_offset += 5;
+                    pc += 5;
                 }
-                WIDE => {
-                    let opcode = self.u8_at(current_offset + 1)?;
+                InsnKind::Wide => {
+                    let opcode = code.u8_at(pc + 1)?;
                     if opcode == IINC {
-                        method_visitor.visit_iinc_insn(
-                            self.u16_at(current_offset + 2)?,
-                            self.i16_at(current_offset + 4)?,
-                        );
-                        current_offset += 6;
+                        method_visitor.visit_iinc_insn(code.u16_at(pc + 2)?, code.i16_at(pc + 4)?);
+                        pc += 6;
                     } else {
-                        method_visitor.visit_var_insn(opcode, self.u16_at(current_offset + 2)?);
-                        current_offset += 4;
+                        method_visitor.visit_var_insn(opcode, code.u16_at(pc + 2)?);
+                        pc += 4;
                     }
                 }
-                TABLESWITCH => {
+                InsnKind::TableSwitch => {
                     // Skip 0 to 3 padding bytes.
-                    current_offset += 4 - (current_bytecode_offset & 3);
+                    pc += 4 - (pc & 3);
                     // Read the instruction.
-                    let default = i64::from(self.i32_at(current_offset)?);
+                    let default = i64::from(code.i32_at(pc)?);
                     let default_label = label_at(current_bytecode_offset + default, labels)?;
-                    let low = self.i32_at(current_offset + 4)?;
-                    let high = self.i32_at(current_offset + 8)?;
-                    current_offset += 12;
+                    let low = code.i32_at(pc + 4)?;
+                    let high = code.i32_at(pc + 8)?;
+                    pc += 12;
                     let length = high.wrapping_sub(low).wrapping_add(1);
-                    let mut table =
-                        Vec::with_capacity(array_capacity(self, length, 4, current_offset)?);
+                    let mut table = Vec::with_capacity(array_capacity(
+                        self,
+                        length,
+                        4,
+                        bytecode_start_offset + pc as i64,
+                    )?);
                     for _ in 0..length {
-                        let branch = i64::from(self.i32_at(current_offset)?);
+                        let branch = i64::from(code.i32_at(pc)?);
                         table.push(label_at(current_bytecode_offset + branch, labels)?);
-                        current_offset += 4;
+                        pc += 4;
                     }
                     method_visitor.visit_table_switch_insn(low, high, default_label, &table);
                 }
-                LOOKUPSWITCH => {
+                InsnKind::LookupSwitch => {
                     // Skip 0 to 3 padding bytes.
-                    current_offset += 4 - (current_bytecode_offset & 3);
+                    pc += 4 - (pc & 3);
                     // Read the instruction.
-                    let default = i64::from(self.i32_at(current_offset)?);
+                    let default = i64::from(code.i32_at(pc)?);
                     let default_label = label_at(current_bytecode_offset + default, labels)?;
-                    let num_pairs = self.i32_at(current_offset + 4)?;
-                    current_offset += 8;
-                    let capacity = array_capacity(self, num_pairs, 8, current_offset)?;
+                    let num_pairs = code.i32_at(pc + 4)?;
+                    pc += 8;
+                    let capacity =
+                        array_capacity(self, num_pairs, 8, bytecode_start_offset + pc as i64)?;
                     let mut keys = Vec::with_capacity(capacity);
                     let mut values = Vec::with_capacity(capacity);
                     for _ in 0..num_pairs {
-                        keys.push(self.i32_at(current_offset)?);
-                        let branch = i64::from(self.i32_at(current_offset + 4)?);
+                        keys.push(code.i32_at(pc)?);
+                        let branch = i64::from(code.i32_at(pc + 4)?);
                         values.push(label_at(current_bytecode_offset + branch, labels)?);
-                        current_offset += 8;
+                        pc += 8;
                     }
                     method_visitor.visit_lookup_switch_insn(default_label, &keys, &values);
                 }
-                ILOAD..=ALOAD | ISTORE..=ASTORE | RET => {
-                    method_visitor
-                        .visit_var_insn(opcode, u16::from(self.u8_at(current_offset + 1)?));
-                    current_offset += 2;
+                InsnKind::Var => {
+                    method_visitor.visit_var_insn(opcode, u16::from(code.u8_at(pc + 1)?));
+                    pc += 2;
                 }
-                BIPUSH | NEWARRAY => {
-                    method_visitor
-                        .visit_int_insn(opcode, i32::from(self.i8_at(current_offset + 1)?));
-                    current_offset += 2;
+                InsnKind::Int8 => {
+                    method_visitor.visit_int_insn(opcode, i32::from(code.i8_at(pc + 1)?));
+                    pc += 2;
                 }
-                SIPUSH => {
-                    method_visitor
-                        .visit_int_insn(opcode, i32::from(self.i16_at(current_offset + 1)?));
-                    current_offset += 3;
+                InsnKind::Int16 => {
+                    method_visitor.visit_int_insn(opcode, i32::from(code.i16_at(pc + 1)?));
+                    pc += 3;
                 }
-                LDC => {
-                    let index = usize::from(self.u8_at(current_offset + 1)?);
+                InsnKind::Ldc => {
+                    let index = usize::from(code.u8_at(pc + 1)?);
                     method_visitor.visit_ldc_insn(&self.const_at(index)?);
-                    current_offset += 2;
+                    pc += 2;
                 }
-                LDC_W | LDC2_W => {
-                    let index = usize::from(self.u16_at(current_offset + 1)?);
+                InsnKind::LdcW => {
+                    let index = usize::from(code.u16_at(pc + 1)?);
                     method_visitor.visit_ldc_insn(&self.const_at(index)?);
-                    current_offset += 3;
+                    pc += 3;
                 }
-                GETSTATIC..=INVOKEINTERFACE => {
-                    let cp_info_offset =
-                        self.cp_info_offset(usize::from(self.u16_at(current_offset + 1)?))?;
+                InsnKind::Member => {
+                    let cp_info_offset = self.cp_info_offset(usize::from(code.u16_at(pc + 1)?))?;
                     let name_and_type_cp_info_offset =
                         self.cp_info_offset(usize::from(self.u16_at(cp_info_offset + 2)?))?;
                     let owner = self.read_class_at(cp_info_offset)?;
@@ -750,14 +928,13 @@ impl<'b> ClassReader<'b> {
                         );
                     }
                     if opcode == INVOKEINTERFACE {
-                        current_offset += 5;
+                        pc += 5;
                     } else {
-                        current_offset += 3;
+                        pc += 3;
                     }
                 }
-                INVOKEDYNAMIC => {
-                    let cp_info_offset =
-                        self.cp_info_offset(usize::from(self.u16_at(current_offset + 1)?))?;
+                InsnKind::InvokeDynamic => {
+                    let cp_info_offset = self.cp_info_offset(usize::from(code.u16_at(pc + 1)?))?;
                     let name_and_type_cp_info_offset =
                         self.cp_info_offset(usize::from(self.u16_at(cp_info_offset + 2)?))?;
                     let name = self.utf8_at(name_and_type_cp_info_offset)?;
@@ -786,30 +963,30 @@ impl<'b> ClassReader<'b> {
                         &handle,
                         &bootstrap_method_arguments,
                     );
-                    current_offset += 5;
+                    pc += 5;
                 }
-                NEW | ANEWARRAY | CHECKCAST | INSTANCEOF => {
+                InsnKind::Type => {
                     let type_ = self.read_class_at(current_offset + 1)?;
                     method_visitor.visit_type_insn(opcode, required(type_, current_offset + 1)?);
-                    current_offset += 3;
+                    pc += 3;
                 }
-                IINC => {
+                InsnKind::Iinc => {
                     method_visitor.visit_iinc_insn(
-                        u16::from(self.u8_at(current_offset + 1)?),
-                        i16::from(self.i8_at(current_offset + 2)?),
+                        u16::from(code.u8_at(pc + 1)?),
+                        i16::from(code.i8_at(pc + 2)?),
                     );
-                    current_offset += 3;
+                    pc += 3;
                 }
-                MULTIANEWARRAY => {
+                InsnKind::MultiANewArray => {
                     let descriptor = self.read_class_at(current_offset + 1)?;
                     method_visitor.visit_multi_a_new_array_insn(
                         required(descriptor, current_offset + 1)?,
-                        self.u8_at(current_offset + 3)?,
+                        code.u8_at(pc + 3)?,
                     );
-                    current_offset += 4;
+                    pc += 4;
                 }
                 // The first pass rejected the other opcodes (ASM: AssertionError).
-                _ => {
+                InsnKind::Invalid => {
                     return Err(ReadError::new(
                         current_offset,
                         ReadErrorKind::InvalidOpcode(opcode),
@@ -819,51 +996,53 @@ impl<'b> ClassReader<'b> {
 
             // Visit the runtime visible instruction annotations, if any, then the invisible
             // ones.
-            for (offsets, index, bytecode_offset, visible) in [
-                (
-                    visible_type_annotation_offsets.as_deref(),
-                    &mut current_visible_type_annotation_index,
-                    &mut current_visible_type_annotation_bytecode_offset,
-                    true,
-                ),
-                (
-                    invisible_type_annotation_offsets.as_deref(),
-                    &mut current_invisible_type_annotation_index,
-                    &mut current_invisible_type_annotation_bytecode_offset,
-                    false,
-                ),
-            ] {
-                while let Some(offsets) = offsets
-                    && *index < offsets.len()
-                    && i64::from(*bytecode_offset) <= current_bytecode_offset
-                {
-                    if i64::from(*bytecode_offset) == current_bytecode_offset {
-                        // Parse the target_type, target_info and target_path fields.
-                        let mut current_annotation_offset =
-                            self.read_type_annotation_target(context, offsets[*index])?;
-                        // Parse the type_index field.
-                        let annotation_descriptor = self.utf8_at(current_annotation_offset)?;
-                        let annotation_descriptor =
-                            required(annotation_descriptor, current_annotation_offset)?;
-                        current_annotation_offset += 2;
-                        // Parse num_element_value_pairs and element_value_pairs and visit these
-                        // values.
-                        let mut annotation_visitor = method_visitor.visit_insn_annotation(
-                            TypeReference::new(context.current_type_annotation_target),
-                            context.current_type_annotation_target_path.as_ref(),
-                            annotation_descriptor,
-                            visible,
-                        );
-                        self.read_element_values(
-                            annotation_visitor.as_deref_mut(),
-                            current_annotation_offset,
-                            /* named= */ true,
-                            0,
-                        )?;
+            if has_insn_annotations {
+                for (offsets, index, bytecode_offset, visible) in [
+                    (
+                        visible_type_annotation_offsets.as_deref(),
+                        &mut current_visible_type_annotation_index,
+                        &mut current_visible_type_annotation_bytecode_offset,
+                        true,
+                    ),
+                    (
+                        invisible_type_annotation_offsets.as_deref(),
+                        &mut current_invisible_type_annotation_index,
+                        &mut current_invisible_type_annotation_bytecode_offset,
+                        false,
+                    ),
+                ] {
+                    while let Some(offsets) = offsets
+                        && *index < offsets.len()
+                        && i64::from(*bytecode_offset) <= current_bytecode_offset
+                    {
+                        if i64::from(*bytecode_offset) == current_bytecode_offset {
+                            // Parse the target_type, target_info and target_path fields.
+                            let mut current_annotation_offset =
+                                self.read_type_annotation_target(context, offsets[*index])?;
+                            // Parse the type_index field.
+                            let annotation_descriptor = self.utf8_at(current_annotation_offset)?;
+                            let annotation_descriptor =
+                                required(annotation_descriptor, current_annotation_offset)?;
+                            current_annotation_offset += 2;
+                            // Parse num_element_value_pairs and element_value_pairs and visit these
+                            // values.
+                            let mut annotation_visitor = method_visitor.visit_insn_annotation(
+                                TypeReference::new(context.current_type_annotation_target),
+                                context.current_type_annotation_target_path.as_ref(),
+                                annotation_descriptor,
+                                visible,
+                            );
+                            self.read_element_values(
+                                annotation_visitor.as_deref_mut(),
+                                current_annotation_offset,
+                                /* named= */ true,
+                                0,
+                            )?;
+                        }
+                        *index += 1;
+                        *bytecode_offset =
+                            self.get_type_annotation_bytecode_offset(Some(offsets), *index)?;
                     }
-                    *index += 1;
-                    *bytecode_offset =
-                        self.get_type_annotation_bytecode_offset(Some(offsets), *index)?;
                 }
             }
         }

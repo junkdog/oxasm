@@ -4,13 +4,16 @@
 //! the T0 corpus instead. The `Api` dimension is gone (ADR-09), so every class is readable by
 //! every visitor.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 
 use oxasm::error::ReadErrorKind;
-use oxasm::opcodes::{ACC_ABSTRACT, ACC_SUPER, V_PREVIEW, V1_1};
+use oxasm::opcodes::{
+    ACC_ABSTRACT, ACC_PUBLIC, ACC_STATIC, ACC_SUPER, NOP, RETURN, V_PREVIEW, V1_1,
+};
 use oxasm::{
-    AnnotationVisitor, ClassReader, ClassVisitor, FieldVisitor, JavaStr, MethodVisitor,
-    ModuleVisitor, ParsingOptions, RecordComponentVisitor, TypePath, TypeReference,
+    AnnotationVisitor, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, FieldVisitor,
+    JavaStr, Label, MethodVisitor, ModuleVisitor, ParsingOptions, RecordComponentVisitor, TypePath,
+    TypeReference, jstr,
 };
 use oxasm_testkit::{InvalidClass, PrecompiledClass};
 
@@ -715,4 +718,134 @@ fn test_accept_visits_the_member_counts() {
         } = member_counts;
         assert_eq!(hint, Some((fields, methods)), "{class}");
     }
+}
+
+/// Records the labels, line numbers and instructions of the methods a reader visits.
+#[derive(Default)]
+struct LineNumberEvents(RefCell<Vec<String>>);
+
+impl ClassVisitor for LineNumberEvents {
+    fn visit_method<'a>(
+        &'a mut self,
+        _: u32,
+        _: &JavaStr,
+        _: &JavaStr,
+        _: Option<&JavaStr>,
+        _: &[&JavaStr],
+    ) -> Option<Box<dyn MethodVisitor + 'a>> {
+        Some(Box::new(&*self))
+    }
+}
+
+impl MethodVisitor for &LineNumberEvents {
+    fn visit_label(&mut self, _: Label) {
+        self.0.borrow_mut().push("label".into());
+    }
+
+    fn visit_line_number(&mut self, line: u16, _: Label) {
+        self.0.borrow_mut().push(format!("line {line}"));
+    }
+
+    fn visit_insn(&mut self, opcode: u8) {
+        self.0.borrow_mut().push(format!("insn {opcode}"));
+    }
+}
+
+/// oxasm-specific: the line numbers of an offset are visited after its label, in the order of
+/// the LineNumberTable, whatever the order of the offsets in it; one at the end of the code is
+/// not visited, as in ASM (R3 in oxasm-optimization.md: the reader sorts the entries by offset).
+#[test]
+fn test_accept_visits_the_line_numbers_in_table_order() {
+    let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+    class_writer.visit(
+        V1_1,
+        ACC_PUBLIC,
+        jstr!("C"),
+        None,
+        Some(jstr!("java/lang/Object")),
+        &[],
+    );
+    {
+        let mut method_visitor = class_writer
+            .visit_method(ACC_STATIC, jstr!("m"), jstr!("()V"), None, &[])
+            .unwrap();
+        let [label0, label1, label2, end] = [(); 4].map(|()| Label::new());
+        method_visitor.visit_code();
+        method_visitor.visit_label(label0);
+        method_visitor.visit_insn(NOP);
+        method_visitor.visit_label(label1);
+        method_visitor.visit_line_number(30, label1);
+        method_visitor.visit_insn(NOP);
+        method_visitor.visit_label(label2);
+        method_visitor.visit_line_number(10, label0);
+        method_visitor.visit_line_number(31, label1);
+        method_visitor.visit_line_number(20, label2);
+        method_visitor.visit_insn(RETURN);
+        method_visitor.visit_label(end);
+        method_visitor.visit_line_number(99, end);
+        method_visitor.visit_line_number(32, label1);
+        method_visitor.visit_maxs(0, 0);
+        method_visitor.visit_end();
+    }
+    class_writer.visit_end();
+    let class_file = class_writer.to_bytes().unwrap();
+    let mut events = LineNumberEvents::default();
+
+    ClassReader::new(&class_file)
+        .unwrap()
+        .accept(&mut events, ParsingOptions::empty())
+        .unwrap();
+
+    assert_eq!(
+        events.0.into_inner(),
+        [
+            "label", "line 10", "insn 0", "label", "line 30", "line 31", "line 32", "insn 0",
+            "label", "line 20", "insn 177", "label",
+        ]
+    );
+}
+
+/// oxasm-specific: a code_length of -1 is ASM's `new Label[0]`, a method without instructions.
+/// The code's first byte is then read as the exception table, whose first entry fails on
+/// `labels[0]`, as in ASM and before R1 in oxasm-optimization.md (the `roundtrip` fuzz corpus
+/// found that R1's code reader took -1 for a huge length).
+#[test]
+fn test_accept_code_length_minus_one() {
+    let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+    class_writer.visit(
+        V1_1,
+        ACC_PUBLIC,
+        jstr!("C"),
+        None,
+        Some(jstr!("java/lang/Object")),
+        &[],
+    );
+    {
+        let mut method_visitor = class_writer
+            .visit_method(ACC_STATIC, jstr!("m"), jstr!("()V"), None, &[])
+            .unwrap();
+        method_visitor.visit_code();
+        method_visitor.visit_insn(RETURN);
+        method_visitor.visit_maxs(0, 0);
+        method_visitor.visit_end();
+    }
+    class_writer.visit_end();
+    let mut class_file = class_writer.to_bytes().unwrap();
+    // max_stack 0, max_locals 0, code_length 1, RETURN.
+    let code = [0, 0, 0, 0, 0, 0, 0, 1, RETURN];
+    let code_offset = class_file
+        .windows(code.len())
+        .position(|bytes| bytes == code)
+        .unwrap();
+    class_file[code_offset + 4..code_offset + 8].copy_from_slice(&(-1i32).to_be_bytes());
+
+    let error = ClassReader::new(&class_file)
+        .unwrap()
+        .accept(
+            &mut ClassWriter::new(ClassWriterFlags::empty()),
+            ParsingOptions::empty(),
+        )
+        .unwrap_err();
+
+    assert_eq!(error.kind, ReadErrorKind::InvalidBytecodeOffset(0));
 }
