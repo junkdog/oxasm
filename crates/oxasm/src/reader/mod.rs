@@ -39,6 +39,7 @@ mod context;
 mod frames;
 mod members;
 
+use std::cell::Cell;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -86,8 +87,33 @@ bitflags::bitflags! {
     }
 }
 
-/// The source of the reader ids, which the method copy optimization compares (ADR-08).
+/// The source of the reader ids, which the method copy optimization compares (ADR-08): the start
+/// of the next block of [`READER_ID_BLOCK`] ids.
 static NEXT_READER_ID: AtomicU64 = AtomicU64::new(1);
+
+/// The number of reader ids a thread takes from [`NEXT_READER_ID`] at once, so that threads
+/// reading classes in parallel don't all write its cache line (like label ids).
+const READER_ID_BLOCK: u64 = 1 << 8;
+
+thread_local! {
+    /// The next reader id of this thread's block and the end of the block (`0..0` at first).
+    static READER_IDS: Cell<(u64, u64)> = const { Cell::new((0, 0)) };
+}
+
+/// A reader id that no other reader of the process has.
+fn next_reader_id() -> u64 {
+    READER_IDS.with(|ids| {
+        let (next, end) = ids.get();
+        if next < end {
+            ids.set((next + 1, end));
+            next
+        } else {
+            let start = NEXT_READER_ID.fetch_add(READER_ID_BLOCK, Ordering::Relaxed);
+            ids.set((start + 1, start + READER_ID_BLOCK));
+            start
+        }
+    })
+}
 
 /// A parser to make a [`ClassVisitor`] visit a `ClassFile` structure, as defined in the Java
 /// Virtual Machine Specification (JVMS). This class parses the `ClassFile` content and calls the
@@ -170,7 +196,7 @@ impl<'b> ClassReader<'b> {
             constant_dynamic_values: Box::default(),
             bootstrap_method_offsets: None,
             max_string_length: 0,
-            id: NEXT_READER_ID.fetch_add(1, Ordering::Relaxed),
+            id: next_reader_id(),
         };
         // Check the class' major_version. This field is after the magic and minor_version
         // fields, which use 4 and 2 bytes respectively.

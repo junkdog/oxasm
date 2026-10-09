@@ -1,5 +1,6 @@
 //! [`Label`]: a position in the bytecode of a method (ADR-03).
 
+use std::cell::Cell;
 use std::fmt;
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,18 +27,49 @@ pub struct Label(NonZeroU64);
 /// The bit of a label value that holds ASM's `FLAG_DEBUG_ONLY`.
 const DEBUG_ONLY: u64 = 1 << 63;
 
+/// The number of ids a thread takes from [`NEXT_LABEL_ID`] at once. The blocks are
+/// `k * ID_BLOCK + 1 ..= (k + 1) * ID_BLOCK`, so a thread's ids stay consecutive modulo
+/// `ID_BLOCK` from one block to the next (a direct-mapped table of up to `ID_BLOCK` slots, like
+/// the method writer's, sees no collisions between the labels a thread creates in a row).
+const ID_BLOCK: u64 = 1 << 12;
+
+/// The start of the next block of ids.
 static NEXT_LABEL_ID: AtomicU64 = AtomicU64::new(1);
 
+thread_local! {
+    /// The next id of this thread's block and the end of the block (`0..0` before its first
+    /// label): one global `fetch_add` per [`ID_BLOCK`] labels instead of one per label.
+    static LABEL_IDS: Cell<(u64, u64)> = const { Cell::new((0, 0)) };
+}
+
+/// Takes a new block of ids for this thread and returns its first id.
+#[cold]
+fn next_id_block(ids: &Cell<(u64, u64)>) -> u64 {
+    let start = NEXT_LABEL_ID.fetch_add(ID_BLOCK, Ordering::Relaxed);
+    assert!(start < DEBUG_ONLY - ID_BLOCK, "2^63 labels created");
+    ids.set((start + 1, start + ID_BLOCK));
+    start
+}
+
 impl Label {
-    /// Creates a new label, distinct from every label created before.
+    /// Creates a new label, distinct from every label created before (by any thread).
     #[allow(clippy::new_without_default)] // a default would be a fresh label, which is surprising
+    #[inline]
     #[must_use]
     pub fn new() -> Label {
-        let id = NEXT_LABEL_ID.fetch_add(1, Ordering::Relaxed);
-        Label(NonZeroU64::new(id).expect("2^64 labels created"))
+        let id = LABEL_IDS.with(|ids| {
+            let (next, end) = ids.get();
+            if next < end {
+                ids.set((next + 1, end));
+                next
+            } else {
+                next_id_block(ids)
+            }
+        });
+        Label(NonZeroU64::new(id).expect("label ids start at 1"))
     }
 
-    /// The id of this label: unique in the process, increasing in creation order.
+    /// The id of this label: unique in the process, increasing in creation order within a thread.
     #[inline]
     #[must_use]
     pub fn id(self) -> u64 {
@@ -139,10 +171,31 @@ mod tests {
     }
 
     #[test]
+    fn a_threads_ids_are_consecutive_modulo_the_block_size() {
+        // Another thread takes blocks in between, so the blocks of this one need not be adjacent.
+        let ids: Vec<u64> = std::thread::scope(|s| {
+            s.spawn(|| (0..ID_BLOCK).for_each(|_| _ = Label::new()));
+            s.spawn(|| (0..3 * ID_BLOCK).map(|_| Label::new().id()).collect())
+                .join()
+                .unwrap()
+        });
+        for pair in ids.windows(2) {
+            assert!(pair[0] < pair[1]);
+            assert_eq!((pair[0] + 1) % ID_BLOCK, pair[1] % ID_BLOCK);
+        }
+    }
+
+    #[test]
     fn labels_are_unique_across_threads() {
         let ids: Vec<u64> = std::thread::scope(|s| {
             let handles: Vec<_> = (0..4)
-                .map(|_| s.spawn(|| (0..1000).map(|_| Label::new().id()).collect::<Vec<_>>()))
+                .map(|_| {
+                    s.spawn(|| {
+                        (0..3 * ID_BLOCK)
+                            .map(|_| Label::new().id())
+                            .collect::<Vec<_>>()
+                    })
+                })
                 .collect();
             handles
                 .into_iter()

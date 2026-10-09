@@ -1,6 +1,7 @@
 //! [`InsnList`]: ASM's `InsnList`, a doubly linked list of instructions, here backed by an arena
 //! with generational handles ([`InsnId`]) instead of node identity (ADR-11).
 
+use std::cell::Cell;
 use std::fmt;
 use std::ops::{Index, IndexMut};
 use std::sync::OnceLock;
@@ -15,12 +16,33 @@ use crate::insn::{InsnNode, InsnTypeAnnotations};
 const NIL: u32 = u32::MAX;
 
 /// The source of list ids: each list (and each [`InsnList::clear`]) takes the next one, so that
-/// the handles of a list never designate a node of another list. It wraps after 2^32 lists,
-/// which only matters for a handle kept across that many lists.
+/// the handles of a list never designate a node of another list. It is the start of the next
+/// block of [`LIST_ID_BLOCK`] ids, and wraps after 2^32 ids, which only matters for a handle kept
+/// across that many lists.
 static NEXT_LIST_ID: AtomicU32 = AtomicU32::new(0);
 
+/// The number of list ids a thread takes from [`NEXT_LIST_ID`] at once, so that threads making
+/// trees in parallel don't all write its cache line (like label ids).
+const LIST_ID_BLOCK: u32 = 1 << 8;
+
+thread_local! {
+    /// The next list id of this thread's block, and the number of ids left in it.
+    static LIST_IDS: Cell<(u32, u32)> = const { Cell::new((0, 0)) };
+}
+
+/// The id of a new list (or of a cleared one).
 fn next_list_id() -> u32 {
-    NEXT_LIST_ID.fetch_add(1, Ordering::Relaxed)
+    LIST_IDS.with(|ids| {
+        let (next, left) = ids.get();
+        if left > 0 {
+            ids.set((next.wrapping_add(1), left - 1));
+            next
+        } else {
+            let start = NEXT_LIST_ID.fetch_add(LIST_ID_BLOCK, Ordering::Relaxed);
+            ids.set((start.wrapping_add(1), LIST_ID_BLOCK - 1));
+            start
+        }
+    })
 }
 
 /// A handle to an instruction of an [`InsnList`] (what ASM does with the identity of an
