@@ -86,8 +86,9 @@ fn test_analyze_dupx2_producers() {
     };
     let first_pop = first_opcode(POP);
     let dupx2 = first_opcode(DUP_X2);
-    let frame = analyzer.get_frames()[method_node.instructions.index_of(first_pop).unwrap()]
-        .as_ref()
+    let frame = analyzer
+        .get_frames()
+        .get(method_node.instructions.index_of(first_pop).unwrap())
         .unwrap();
     // Check if all source values have the DUP_X2 as a producer
     let source_value1 = frame.get_stack(frame.get_stack_size() - 4);

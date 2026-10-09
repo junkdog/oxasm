@@ -20,7 +20,7 @@ use common::MethodNodeBuilder;
 use oxasm::opcodes::*;
 use oxasm::{ClassReader, Label, ParsingOptions, Type, jstr};
 use oxasm_analysis::{
-    Analyzer, AnalyzerError, AnalyzerHooks, BasicInterpreter, BasicValue, Frame, InsnRef,
+    Analyzer, AnalyzerError, AnalyzerHooks, BasicInterpreter, BasicValue, Frame, Frames, InsnRef,
     Interpreter,
 };
 use oxasm_testkit::PrecompiledClass;
@@ -300,7 +300,7 @@ fn test_analyze_merge_with_jsr_reachable_from_two_different_paths() {
 
     assert_eq!(
         "RIR..... ",
-        analyzer.get_frames()[104].as_ref().unwrap().to_string()
+        analyzer.get_frames().get(104).unwrap().to_string()
     );
 }
 
@@ -313,20 +313,20 @@ fn get_method<'a>(class_node: &'a ClassNode, name: &str) -> &'a MethodNode {
 }
 
 // -------------------------------------------------------------------------------------------------
-// Not in ASM: the frames of an analysis share one allocation (optimization lead A1), which a frame
-// changed after the analysis must not change for the others.
+// Not in ASM: the frames are a view of the analysis's own storage (optimization lead A5), and a
+// frame of one's own is a copy.
 // -------------------------------------------------------------------------------------------------
 
 /// The printed frames, `None` for the instructions without one.
-fn printed(frames: &[Option<Frame<BasicValue>>]) -> Vec<Option<String>> {
+fn printed(frames: &Frames<BasicValue>) -> Vec<Option<String>> {
     frames
         .iter()
-        .map(|frame| frame.as_ref().map(ToString::to_string))
+        .map(|frame| frame.map(|frame| frame.to_string()))
         .collect()
 }
 
 #[test]
-fn frames_changed_after_the_analysis_keep_the_others_unchanged() {
+fn frames_are_a_view_and_copies_of_them_are_independent() {
     let method_node = MethodNodeBuilder::with_maxs(3, 3)
         .iconst_0()
         .istore(1)
@@ -337,11 +337,39 @@ fn frames_changed_after_the_analysis_keep_the_others_unchanged() {
         .vreturn()
         .build();
     let mut analyzer = Analyzer::new(BasicInterpreter::new());
-    analyzer.analyze(jstr!(CLASS_NAME), &method_node).unwrap();
-    let frames = analyzer.take_frames();
-    let expected = printed(&frames);
+    let frames = analyzer.analyze(jstr!(CLASS_NAME), &method_node).unwrap();
+    assert_eq!(frames.len(), method_node.instructions.len());
+    assert_eq!(frames.iter().len(), frames.len());
+    assert!(frames.get(frames.len()).is_none());
+    let expected = printed(frames);
     assert_eq!(expected[4].as_deref(), Some("RI. II"), "{expected:?}");
+    assert_eq!(
+        frames
+            .iter()
+            .rev()
+            .map(|f| f.map(|f| f.to_string()))
+            .collect::<Vec<_>>(),
+        expected.iter().rev().cloned().collect::<Vec<_>>()
+    );
 
+    // The frames as `Frame`s, equal to the view's.
+    let owned = frames.to_vec();
+    assert_eq!(owned.len(), frames.len());
+    for (frame, owned) in frames.iter().zip(&owned) {
+        match (frame, owned) {
+            (Some(frame), Some(owned)) => {
+                assert_eq!(frame, *owned);
+                assert_eq!(frame.to_string(), owned.to_string());
+                assert_eq!(frame.get_locals(), owned.get_locals());
+                assert_eq!(frame.get_max_stack_size(), owned.get_max_stack_size());
+                assert_eq!(frame, owned.as_frame_ref());
+            }
+            (None, None) => {}
+            _ => panic!("{frame:?} against {owned:?}"),
+        }
+    }
+
+    // A copy, changed in each way, leaves the frames unchanged.
     let changes: [fn(&mut Frame<BasicValue>); 6] = [
         |frame| frame.set_local(0, BasicValue::INT_VALUE),
         |frame| frame.push(BasicValue::FLOAT_VALUE),
@@ -357,25 +385,20 @@ fn frames_changed_after_the_analysis_keep_the_others_unchanged() {
         },
     ];
     for (index, change) in changes.iter().enumerate() {
-        // A frame of the analysis, and clones of it made in each way, changed one at a time.
-        let mut changed_frames = frames.clone();
-        let mut clone = frames[4].clone().unwrap();
-        let mut cloned_from = Frame::new(Vec::new(), None);
-        cloned_from.clone_from(frames[4].as_ref().unwrap());
-        let mut initialized = Frame::new(Vec::new(), None);
-        initialized.init(frames[4].as_ref().unwrap());
-        for frame in [
-            changed_frames[4].as_mut().unwrap(),
-            &mut clone,
-            &mut cloned_from,
-            &mut initialized,
-        ] {
-            change(frame);
-            assert_ne!(Some(frame.to_string()), expected[4], "change {index}");
-        }
-        let mut unchanged = printed(&changed_frames);
-        unchanged[4] = expected[4].clone();
-        assert_eq!(unchanged, expected, "change {index}");
-        assert_eq!(printed(&frames), expected, "change {index}");
+        let mut copy = frames.get(4).unwrap().to_frame();
+        change(&mut copy);
+        assert_ne!(Some(copy.to_string()), expected[4], "change {index}");
+        assert_ne!(copy, frames.get(4).unwrap(), "change {index}");
+        assert_eq!(printed(frames), expected, "change {index}");
     }
+
+    // Frames taken out of the analyzer outlive its next analysis.
+    let taken = analyzer.take_frames();
+    assert!(analyzer.get_frames().is_empty());
+    let other = MethodNodeBuilder::with_maxs(1, 1).vreturn().build();
+    assert_eq!(
+        analyzer.analyze(jstr!(CLASS_NAME), &other).unwrap().len(),
+        1
+    );
+    assert_eq!(printed(&taken), expected);
 }

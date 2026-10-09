@@ -9,7 +9,7 @@ use oxasm::{
     AnnotationVisitor, Attribute, ClassWriterFlags, FrameKind, Handle, HandleKind, Interner,
     JavaStr, JavaString, Label, MethodVisitor, TypePath, TypeReference, TypeSort,
 };
-use oxasm_analysis::{Analyzer, AnalyzerHooks, BasicValue, BasicVerifier, Frame};
+use oxasm_analysis::{Analyzer, AnalyzerHooks, BasicValue, BasicVerifier, Frames};
 use oxasm_tree::MethodNode;
 
 use crate::check::CheckAnnotationAdapter;
@@ -194,7 +194,7 @@ fn analyze<H: AnalyzerHooks<BasicValue>>(
 /// method's, as ASM sees them.
 pub(crate) fn print_analyzer_result(
     method: &MethodNode,
-    frames: &[Option<Frame<BasicValue>>],
+    frames: &Frames<BasicValue>,
     max_stack: i64,
     max_locals: i64,
     out: &mut JavaString,
@@ -210,7 +210,7 @@ pub(crate) fn print_analyzer_result(
             .accept_insn(id, method.interner(), &mut trace_method_visitor);
 
         let mut string_builder = JavaString::new();
-        match frames.get(i).and_then(Option::as_ref) {
+        match frames.get(i) {
             None => string_builder.push('?'),
             Some(frame) => {
                 for j in 0..frame.get_locals() {

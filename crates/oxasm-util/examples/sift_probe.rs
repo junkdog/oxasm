@@ -634,7 +634,7 @@ fn analyze_method(
             .accept_insn(id, method.interner(), &mut trace_method_visitor);
         let insn_text = text_to_java_string(&trace_method_visitor.p.get_text()[start..]);
         write!(out, "{i} ").expect("writing to a vector");
-        match frames.get(i).and_then(Option::as_ref) {
+        match frames.get(i) {
             None => out.extend_from_slice(b"null"),
             Some(frame) => {
                 for value in frame.locals() {

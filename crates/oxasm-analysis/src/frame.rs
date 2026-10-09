@@ -1,8 +1,6 @@
 //! [`Frame`]: ASM's `Frame`, a symbolic execution stack frame.
 
 use std::fmt;
-use std::ops::{Deref, Range};
-use std::sync::Arc;
 
 use oxasm::opcodes::*;
 use oxasm::{JavaStr, Type, TypeSort};
@@ -28,7 +26,7 @@ pub struct Frame<V> {
     /// The expected return type of the analyzed method, or `None` if it returns `void`.
     return_value: Option<V>,
     /// The local variables, then the operand stack.
-    values: FrameValues<V>,
+    values: Vec<V>,
     /// The number of local variables.
     num_locals: usize,
     /// The maximum number of elements in the operand stack.
@@ -36,6 +34,22 @@ pub struct Frame<V> {
     /// The size of ASM's `values` array, which bounds the stack in Java's peculiar way (see
     /// [`Frame::try_push`]).
     capacity: usize,
+}
+
+impl<V> Frame<V> {
+    /// This frame, borrowed as a [`FrameRef`].
+    pub fn as_frame_ref(&self) -> FrameRef<'_, V> {
+        FrameRef::new(&self.return_value, &self.values, self.shape())
+    }
+
+    /// The sizes of this frame.
+    pub(crate) fn shape(&self) -> FrameShape {
+        FrameShape {
+            num_locals: self.num_locals,
+            max_stack: self.max_stack,
+            capacity: self.capacity,
+        }
+    }
 }
 
 impl<V: Value> Frame<V> {
@@ -46,7 +60,7 @@ impl<V: Value> Frame<V> {
         let num_locals = locals.len();
         Frame {
             return_value: None,
-            values: FrameValues::Owned(locals),
+            values: locals,
             num_locals,
             max_stack: max_stack.unwrap_or(MAX_STACK_SIZE),
             capacity: num_locals + max_stack.unwrap_or(4),
@@ -66,7 +80,7 @@ impl<V: Value> Frame<V> {
         shape: FrameShape,
     ) -> &mut Frame<V> {
         self.return_value.clone_from(return_value);
-        self.values.assign(values);
+        values.clone_into(&mut self.values);
         self.num_locals = shape.num_locals;
         self.max_stack = shape.max_stack;
         self.accumulate_capacity(shape);
@@ -82,42 +96,6 @@ impl<V: Value> Frame<V> {
     pub(crate) fn assign(&mut self, return_value: &Option<V>, values: &[V], shape: FrameShape) {
         self.init_from(return_value, values, shape);
         self.capacity = shape.capacity;
-    }
-
-    /// The frame with the given parts.
-    pub(crate) fn from_parts(return_value: Option<V>, values: Vec<V>, shape: FrameShape) -> Self {
-        Frame {
-            return_value,
-            values: FrameValues::Owned(values),
-            num_locals: shape.num_locals,
-            max_stack: shape.max_stack,
-            capacity: shape.capacity,
-        }
-    }
-
-    /// The sizes of this frame.
-    pub(crate) fn shape(&self) -> FrameShape {
-        FrameShape {
-            num_locals: self.num_locals,
-            max_stack: self.max_stack,
-            capacity: self.capacity,
-        }
-    }
-
-    /// The frame with the given parts, whose values are the `range` of `arena`.
-    pub(crate) fn from_shared(
-        return_value: Option<V>,
-        arena: Arc<Vec<V>>,
-        range: Range<usize>,
-        shape: FrameShape,
-    ) -> Self {
-        Frame {
-            return_value,
-            values: FrameValues::Shared { arena, range },
-            num_locals: shape.num_locals,
-            max_stack: shape.max_stack,
-            capacity: shape.capacity,
-        }
     }
 
     /// The local variables, then the operand stack.
@@ -179,12 +157,7 @@ impl<V: Value> Frame<V> {
     ///
     /// If the variable does not exist, with ASM's message.
     pub fn try_get_local(&self, index: usize) -> Result<&V, AnalyzerError> {
-        if index >= self.num_locals {
-            return Err(AnalyzerError::runtime(format!(
-                "Trying to get an inexistant local variable {index}"
-            )));
-        }
-        Ok(&self.values[index])
+        self.as_frame_ref().try_get_local(index)
     }
 
     /// Sets the value of the given local variable (ASM's `setLocal`).
@@ -209,7 +182,7 @@ impl<V: Value> Frame<V> {
                 "Trying to set an inexistant local variable {index}"
             )));
         }
-        self.values.vec_mut()[index] = value;
+        self.values[index] = value;
         Ok(())
     }
 
@@ -237,13 +210,13 @@ impl<V: Value> Frame<V> {
     #[track_caller]
     pub fn set_stack(&mut self, index: usize, value: V) {
         let num_locals = self.num_locals;
-        self.values.vec_mut()[num_locals..][index] = value;
+        self.values[num_locals..][index] = value;
     }
 
     /// Clears the operand stack of this frame (ASM's `clearStack`).
     pub fn clear_stack(&mut self) {
         let num_locals = self.num_locals;
-        self.values.vec_mut().truncate(num_locals);
+        self.values.truncate(num_locals);
     }
 
     /// Pops a value from the operand stack of this frame (ASM's `pop`).
@@ -267,7 +240,7 @@ impl<V: Value> Frame<V> {
                 "Cannot pop operand off an empty stack.",
             ));
         }
-        Ok(self.values.vec_mut().pop().expect("the stack is not empty"))
+        Ok(self.values.pop().expect("the stack is not empty"))
     }
 
     /// Pushes a value onto the operand stack of this frame (ASM's `push`).
@@ -296,7 +269,7 @@ impl<V: Value> Frame<V> {
             }
             self.capacity *= 2;
         }
-        self.values.vec_mut().push(value);
+        self.values.push(value);
         Ok(())
     }
 
@@ -548,7 +521,7 @@ impl<V: Value> Frame<V> {
                 };
                 let start = self.stack_top_start(usize::from(dims))?;
                 let value = interpreter.nary_operation(insn, &self.values[start..]);
-                self.values.vec_mut().truncate(start);
+                self.values.truncate(start);
                 self.push_result(value?, "naryOperation")?;
             }
             _ => {
@@ -620,12 +593,12 @@ impl<V: Value> Frame<V> {
         let return_type = match Type::try_get_return_type_of(method_descriptor) {
             Ok(return_type) => return_type,
             Err(e) => {
-                self.values.vec_mut().truncate(start);
+                self.values.truncate(start);
                 return Err(AnalyzerError::runtime(e.message()));
             }
         };
         let value = interpreter.nary_operation(insn, &self.values[start..]);
-        self.values.vec_mut().truncate(start);
+        self.values.truncate(start);
         let value = value?;
         if return_type.get_sort() != TypeSort::Void {
             self.push_result(value, "naryOperation")?;
@@ -663,7 +636,7 @@ impl<V: Value> Frame<V> {
         if self.get_stack_size() != frame.get_stack_size() {
             return Err(incompatible_stack_heights());
         }
-        merge_values(self.values.vec_mut(), &frame.values, interpreter)
+        merge_values(&mut self.values, &frame.values, interpreter)
     }
 
     /// Merges the given frame into this frame, in the case of a subroutine (ASM's
@@ -679,7 +652,6 @@ impl<V: Value> Frame<V> {
         let num_locals = self.num_locals;
         for ((value, other), &used) in self
             .values
-            .vec_mut()
             .iter_mut()
             .zip(values)
             .zip(locals_used)
@@ -698,10 +670,7 @@ impl<V: PartialEq> PartialEq for Frame<V> {
     /// Frames are equal if they have the same return value, local variables, stack, and
     /// maximum stack size.
     fn eq(&self, other: &Frame<V>) -> bool {
-        self.return_value == other.return_value
-            && self.num_locals == other.num_locals
-            && *self.values == *other.values
-            && self.max_stack == other.max_stack
+        self.as_frame_ref() == other.as_frame_ref()
     }
 }
 
@@ -709,81 +678,167 @@ impl<V: fmt::Display> fmt::Display for Frame<V> {
     /// ASM's `toString()`: the local variables, a space, then the stack, each value with its
     /// `Display`.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for value in &self.values[..self.num_locals] {
+        fmt::Display::fmt(&self.as_frame_ref(), f)
+    }
+}
+
+/// A frame of an analyzed method, borrowed from its [`Frames`](crate::Frames), or from a
+/// [`Frame`] ([`Frame::as_frame_ref`]): the read-only methods of [`Frame`], and
+/// [`to_frame`](Self::to_frame) for a frame of its own.
+pub struct FrameRef<'a, V> {
+    return_value: &'a Option<V>,
+    /// The local variables, then the operand stack.
+    values: &'a [V],
+    shape: FrameShape,
+}
+
+impl<'a, V> FrameRef<'a, V> {
+    /// The frame with the given parts.
+    pub(crate) fn new(return_value: &'a Option<V>, values: &'a [V], shape: FrameShape) -> Self {
+        FrameRef {
+            return_value,
+            values,
+            shape,
+        }
+    }
+
+    /// A copy of this frame, as a [`Frame`] (what ASM's `new Frame<>(frame)` makes).
+    pub fn to_frame(&self) -> Frame<V>
+    where
+        V: Clone,
+    {
+        Frame {
+            return_value: self.return_value.clone(),
+            values: self.values.to_vec(),
+            num_locals: self.shape.num_locals,
+            max_stack: self.shape.max_stack,
+            capacity: self.shape.capacity,
+        }
+    }
+
+    /// The expected return type of the analyzed method, `None` if it returns `void`.
+    pub fn get_return(&self) -> Option<&'a V> {
+        self.return_value.as_ref()
+    }
+
+    /// The number of local variables of this frame (ASM's `getLocals()`). Long and double values
+    /// take two variables.
+    pub fn get_locals(&self) -> usize {
+        self.shape.num_locals
+    }
+
+    /// The maximum number of elements in the operand stack of this frame (ASM's
+    /// `getMaxStackSize()`).
+    pub fn get_max_stack_size(&self) -> usize {
+        self.shape.max_stack
+    }
+
+    /// The local variables of this frame.
+    pub fn locals(&self) -> &'a [V] {
+        &self.values[..self.shape.num_locals]
+    }
+
+    /// The operand stack of this frame, from bottom to top.
+    pub fn stack(&self) -> &'a [V] {
+        &self.values[self.shape.num_locals..]
+    }
+
+    /// The value of the given local variable (ASM's `getLocal`).
+    ///
+    /// # Panics
+    ///
+    /// If the variable does not exist (ASM throws `IndexOutOfBoundsException`).
+    #[track_caller]
+    pub fn get_local(&self, index: usize) -> &'a V {
+        self.try_get_local(index).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// The value of the given local variable.
+    ///
+    /// # Errors
+    ///
+    /// If the variable does not exist, with ASM's message.
+    pub fn try_get_local(&self, index: usize) -> Result<&'a V, AnalyzerError> {
+        if index >= self.shape.num_locals {
+            return Err(AnalyzerError::runtime(format!(
+                "Trying to get an inexistant local variable {index}"
+            )));
+        }
+        Ok(&self.values[index])
+    }
+
+    /// The number of elements in the operand stack of this frame (ASM's `getStackSize()`). Long
+    /// and double values take one element.
+    pub fn get_stack_size(&self) -> usize {
+        self.values.len() - self.shape.num_locals
+    }
+
+    /// The value of the given operand stack slot, 0 being the bottom (ASM's `getStack`).
+    ///
+    /// # Panics
+    ///
+    /// If the slot does not exist.
+    #[track_caller]
+    pub fn get_stack(&self, index: usize) -> &'a V {
+        &self.stack()[index]
+    }
+}
+
+impl<V> Clone for FrameRef<'_, V> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<V> Copy for FrameRef<'_, V> {}
+
+impl<V: PartialEq> PartialEq for FrameRef<'_, V> {
+    /// Frames are equal if they have the same return value, local variables, stack, and
+    /// maximum stack size.
+    fn eq(&self, other: &Self) -> bool {
+        self.return_value == other.return_value
+            && self.shape.num_locals == other.shape.num_locals
+            && self.values == other.values
+            && self.shape.max_stack == other.shape.max_stack
+    }
+}
+
+impl<V: PartialEq> PartialEq<Frame<V>> for FrameRef<'_, V> {
+    fn eq(&self, other: &Frame<V>) -> bool {
+        *self == other.as_frame_ref()
+    }
+}
+
+impl<V: PartialEq> PartialEq<FrameRef<'_, V>> for Frame<V> {
+    fn eq(&self, other: &FrameRef<'_, V>) -> bool {
+        self.as_frame_ref() == *other
+    }
+}
+
+impl<V: fmt::Display> fmt::Display for FrameRef<'_, V> {
+    /// ASM's `toString()`: the local variables, a space, then the stack, each value with its
+    /// `Display`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for value in self.locals() {
             write!(f, "{value}")?;
         }
         f.write_str(" ")?;
-        for value in &self.values[self.num_locals..] {
+        for value in self.stack() {
             write!(f, "{value}")?;
         }
         Ok(())
     }
 }
 
-/// The values of a frame: its own, or a span of the values of the frames of an analysis
-/// ([`FrameArena`](crate::frame_arena::FrameArena)), which a frame copies when it changes them.
-enum FrameValues<V> {
-    Owned(Vec<V>),
-    Shared {
-        arena: Arc<Vec<V>>,
-        range: Range<usize>,
-    },
-}
-
-impl<V: Clone> FrameValues<V> {
-    /// The values, made the frame's own.
-    fn vec_mut(&mut self) -> &mut Vec<V> {
-        if let FrameValues::Shared { arena, range } = self {
-            *self = FrameValues::Owned(arena[range.clone()].to_vec());
-        }
-        match self {
-            FrameValues::Owned(values) => values,
-            FrameValues::Shared { .. } => unreachable!("the values were just made owned"),
-        }
-    }
-
-    /// Replaces the values with a copy of `values`, reusing owned storage.
-    fn assign(&mut self, values: &[V]) {
-        match self {
-            FrameValues::Owned(own) => values.clone_into(own),
-            FrameValues::Shared { .. } => *self = FrameValues::Owned(values.to_vec()),
-        }
-    }
-}
-
-impl<V> Deref for FrameValues<V> {
-    type Target = [V];
-
-    fn deref(&self) -> &[V] {
-        match self {
-            FrameValues::Owned(values) => values,
-            FrameValues::Shared { arena, range } => &arena[range.clone()],
-        }
-    }
-}
-
-impl<V: Clone> Clone for FrameValues<V> {
-    fn clone(&self) -> Self {
-        match self {
-            FrameValues::Owned(values) => FrameValues::Owned(values.clone()),
-            FrameValues::Shared { arena, range } => FrameValues::Shared {
-                arena: Arc::clone(arena),
-                range: range.clone(),
-            },
-        }
-    }
-
-    fn clone_from(&mut self, source: &Self) {
-        match source {
-            FrameValues::Owned(values) => self.assign(values),
-            FrameValues::Shared { .. } => *self = source.clone(),
-        }
-    }
-}
-
-impl<V: fmt::Debug> fmt::Debug for FrameValues<V> {
+impl<V: fmt::Debug> fmt::Debug for FrameRef<'_, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&**self, f)
+        f.debug_struct("FrameRef")
+            .field("return_value", self.return_value)
+            .field("values", &self.values)
+            .field("num_locals", &self.shape.num_locals)
+            .field("max_stack", &self.shape.max_stack)
+            .field("capacity", &self.shape.capacity)
+            .finish()
     }
 }
 

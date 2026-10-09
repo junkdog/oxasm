@@ -11,7 +11,9 @@ mod common;
 use common::{MethodNodeBuilder, assert_new_instance, build_class_with_method};
 use oxasm::opcodes::*;
 use oxasm::{JavaStr, Label, Type, TypeSort, jstr};
-use oxasm_analysis::{Analyzer, AnalyzerError, AnalyzerHooks, Frame, InsnRef, Interpreter, Value};
+use oxasm_analysis::{
+    Analyzer, AnalyzerError, AnalyzerHooks, Frame, Frames, InsnRef, Interpreter, Value,
+};
 use oxasm_tree::MethodNode;
 
 const CLASS_NAME: &JavaStr = jstr!("C");
@@ -1252,7 +1254,7 @@ fn assert_maxs_from_frames(method_node: &MethodNode) {
     assert_eq!(usize::from(method_node.max_locals), method_maxs.max_locals);
 }
 
-fn compute_max_stack_and_locals_from_frames<V: Value>(frames: &[Option<Frame<V>>]) -> MethodMaxs {
+fn compute_max_stack_and_locals_from_frames<V: Value>(frames: &Frames<V>) -> MethodMaxs {
     let mut max_stack = 0;
     let mut max_locals = 0;
     for frame in frames.iter().flatten() {

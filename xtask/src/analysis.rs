@@ -134,7 +134,7 @@ fn analyze_method<I: Interpreter>(
         let insn_text: JavaString =
             text_to_java_string(&trace_method_visitor.p.get_text()[start..]);
         write!(text, "{i} ").expect("writing to a vector");
-        match frames.get(i).and_then(Option::as_ref) {
+        match frames.get(i) {
             None => text.extend_from_slice(b"null"),
             Some(frame) => {
                 for value in frame.locals() {

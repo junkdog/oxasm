@@ -8,7 +8,7 @@ use rustc_hash::FxHashMap;
 use crate::basic_interpreter::checked_object_type;
 use crate::error::{AnalyzerError, index_out_of_bounds};
 use crate::frame::{Frame, required};
-use crate::frame_arena::FrameArena;
+use crate::frames::Frames;
 use crate::interpreter::{InsnRef, Interpreter};
 use crate::subroutine::Subroutine;
 use crate::value::Value;
@@ -141,13 +141,11 @@ impl<V, H: AnalyzerHooks<V> + ?Sized> AnalyzerHooks<V> for &mut H {
 pub struct Analyzer<I: Interpreter, H = ()> {
     interpreter: I,
     hooks: H,
-    /// The frames of the last analyzed method, one per instruction (`None` if unreachable).
-    frames: Vec<Option<Frame<I::V>>>,
+    /// The frames of the last analyzed method, and those of an analysis in progress.
+    frames: Frames<I::V>,
     /// The exception handlers of the last analyzed method, one list per instruction: indices in
     /// its `try_catch_blocks`.
     handlers: Vec<Vec<usize>>,
-    /// The frames during an analysis, which end up in `frames`.
-    arena: FrameArena<I::V>,
 }
 
 impl<I: Interpreter> Analyzer<I> {
@@ -164,9 +162,8 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
         Analyzer {
             interpreter,
             hooks,
-            frames: Vec::new(),
+            frames: Frames::default(),
             handlers: Vec::new(),
-            arena: FrameArena::default(),
         }
     }
 
@@ -198,12 +195,12 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
     /// The frames of the last analyzed method (ASM's `getFrames()`): one per instruction (and
     /// label, ...), `None` for an instruction that cannot be reached, or that the analysis did
     /// not reach before it failed.
-    pub fn get_frames(&self) -> &[Option<Frame<I::V>>] {
+    pub fn get_frames(&self) -> &Frames<I::V> {
         &self.frames
     }
 
     /// The frames of the last analyzed method, taken out of this analyzer.
-    pub fn take_frames(&mut self) -> Vec<Option<Frame<I::V>>> {
+    pub fn take_frames(&mut self) -> Frames<I::V> {
         std::mem::take(&mut self.frames)
     }
 
@@ -231,7 +228,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
         &mut self,
         owner: &JavaStr,
         method: &MethodNode,
-    ) -> Result<&[Option<Frame<I::V>>], AnalyzerError> {
+    ) -> Result<&Frames<I::V>, AnalyzerError> {
         self.analyze_with_maxs(
             owner,
             method,
@@ -252,7 +249,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
         &mut self,
         owner: &JavaStr,
         method: &mut MethodNode,
-    ) -> Result<&[Option<Frame<I::V>>], AnalyzerError> {
+    ) -> Result<&Frames<I::V>, AnalyzerError> {
         let max_locals = compute_max_locals(method)?;
         method.max_locals = u16::try_from(max_locals).unwrap_or(u16::MAX);
         let result = self.analyze_with_maxs(owner, method, max_locals, None);
@@ -270,14 +267,14 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
         max_locals: usize,
         max_stack: Option<usize>,
     ) -> Result<(), AnalyzerError> {
-        self.frames.clear();
+        self.frames.reset(0);
         self.handlers.clear();
         if method.access & (ACC_ABSTRACT | ACC_NATIVE) != 0 {
             return Ok(());
         }
         let insn_list = &method.instructions;
         let insn_list_size = insn_list.len();
-        self.frames.resize_with(insn_list_size, || None);
+        self.frames.reset(insn_list_size);
         self.handlers.resize_with(insn_list_size, Vec::new);
 
         // The instructions, and the index of each label and jump target.
@@ -316,7 +313,6 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             }
         }
 
-        self.arena.reset(insn_list_size);
         let mut run = Run {
             insn_list,
             interner: method.interner(),
@@ -333,7 +329,6 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             interpreter: &mut self.interpreter,
             hooks: &mut self.hooks,
             frames: &mut self.frames,
-            arena: &mut self.arena,
             handler_frame: None,
             handlers: &self.handlers,
             subroutines: vec![None; insn_list_size],
@@ -341,9 +336,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             instructions_to_process: Vec::with_capacity(insn_list_size),
         };
 
-        let result = run.analyze(owner, max_stack);
-        run.arena.finish(run.frames);
-        result
+        run.analyze(owner, max_stack)
     }
 }
 
@@ -433,11 +426,8 @@ struct Run<'a, I: Interpreter, H> {
     max_locals: usize,
     interpreter: &'a mut I,
     hooks: &'a mut H,
-    /// The analyzer's frames, which the `init` hook gets, and which get the frames of the arena
-    /// at the end.
-    frames: &'a mut Vec<Option<Frame<I::V>>>,
-    /// The frames during the analysis.
-    arena: &'a mut FrameArena<I::V>,
+    /// The frames.
+    frames: &'a mut Frames<I::V>,
     /// A frame for the exception handlers' merges, kept for its storage.
     handler_frame: Option<Frame<I::V>>,
     handlers: &'a [Vec<usize>],
@@ -525,11 +515,11 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
             return Ok(frame);
         }
         // The hook gets the frames as ASM's `getFrames()`, and may set some.
-        self.arena.export(self.frames);
+        let mut frames = self.frames.to_vec();
         let result = self
             .hooks
-            .init(owner, self.method, self.frames, self.handlers);
-        self.arena.import(self.frames);
+            .init(owner, self.method, &mut frames, self.handlers);
+        self.frames.import(&mut frames);
         result?;
         Ok(frame)
     }
@@ -615,15 +605,15 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                 // instruction processed updates it first, and only what accumulates in it, its
                 // capacity, is updated.
                 if handlers[insn_index].is_empty() {
-                    self.arena.init_capacity(insn_index, current_frame);
+                    self.frames.init_capacity(insn_index, current_frame);
                 } else {
-                    self.arena.init(insn_index, current_frame);
+                    self.frames.init(insn_index, current_frame);
                 }
                 self.merge_successor(insn_index, subroutine.as_deref())?;
                 self.hooks.new_control_flow_edge(insn_index, insn_index + 1);
             }
             _ => {
-                self.arena
+                self.frames
                     .init(insn_index, current_frame)
                     .execute(insn, &mut *self.interpreter)?;
                 let opcode = insn_opcode.expect("a JVM instruction");
@@ -692,7 +682,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                                 .insn_list
                                 .index_of(*caller)
                                 .ok_or_else(|| index_out_of_bounds(-1, self.insn_list.len()))?;
-                            if self.arena.is_set(jsr_insn_index) {
+                            if self.frames.is_set(jsr_insn_index) {
                                 self.merge_after_ret(
                                     jsr_insn_index + 1,
                                     current_frame,
@@ -740,7 +730,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                     .handler_frame
                     .take()
                     .unwrap_or_else(|| Frame::new(Vec::new(), None));
-                self.arena.clone_into(insn_index, &mut handler);
+                self.frames.clone_into(insn_index, &mut handler);
                 let result = self.merge_handler(
                     &mut handler,
                     current_frame,
@@ -792,11 +782,11 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         subroutine: Option<&Subroutine>,
     ) -> Result<(), AnalyzerError> {
         let successor = insn_index + 1;
-        if successor >= self.arena.len() {
-            return Err(index_out_of_bounds(successor, self.arena.len()));
+        if successor >= self.frames.len() {
+            return Err(index_out_of_bounds(successor, self.frames.len()));
         }
         let changed = self
-            .arena
+            .frames
             .merge_into_next(insn_index, &mut *self.interpreter)?;
         self.merge_subroutine_and_enqueue(successor, subroutine, changed);
         Ok(())
@@ -811,12 +801,12 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         frame: &Frame<I::V>,
         subroutine: Option<&Subroutine>,
     ) -> Result<(), AnalyzerError> {
-        let length = self.arena.len();
+        let length = self.frames.len();
         if insn_index >= length {
             return Err(index_out_of_bounds(insn_index, length));
         }
         let changed = self
-            .arena
+            .frames
             .merge(insn_index, frame, &mut *self.interpreter)?;
         self.merge_subroutine_and_enqueue(insn_index, subroutine, changed);
         Ok(())
@@ -859,14 +849,14 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         jsr_insn_index: usize,
         locals_used: &[bool],
     ) -> Result<(), AnalyzerError> {
-        frame_after_ret.merge_subroutine_values(self.arena.values(jsr_insn_index), locals_used);
+        frame_after_ret.merge_subroutine_values(self.frames.values(jsr_insn_index), locals_used);
 
-        let length = self.arena.len();
+        let length = self.frames.len();
         if insn_index >= length {
             return Err(index_out_of_bounds(insn_index, length));
         }
         let mut changed = self
-            .arena
+            .frames
             .merge(insn_index, frame_after_ret, &mut *self.interpreter)?;
         if let Some(subroutine_before_jsr) = self.subroutines[jsr_insn_index].clone()
             && let Some(old_subroutine) = &mut self.subroutines[insn_index]
@@ -1053,7 +1043,7 @@ fn compute_max_locals(method: &MethodNode) -> Result<usize, AnalyzerError> {
 }
 
 /// The maximum stack size of a method, given its frames (ASM's `computeMaxStack`).
-fn compute_max_stack<V: Value>(frames: &[Option<Frame<V>>]) -> usize {
+fn compute_max_stack<V: Value>(frames: &Frames<V>) -> usize {
     frames
         .iter()
         .flatten()
