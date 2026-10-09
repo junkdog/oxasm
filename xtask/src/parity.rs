@@ -12,6 +12,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, bail, ensure};
 use oxasm::{
@@ -733,13 +734,15 @@ fn compare_mode(
     if out.exists() {
         fs::remove_dir_all(&out)?;
     }
-    let chunk_size = classes.len().div_ceil(jobs.max(1)).max(1);
+    // Threads take classes one at a time: the costliest classes of a tier sit next to each other
+    // (the same package or jar), and fixed chunks left most threads idle behind the one that
+    // drew them.
+    let next = AtomicUsize::new(0);
     let results: Vec<Result<Comparison>> = std::thread::scope(|scope| {
-        let handles: Vec<_> = classes
-            .chunks(chunk_size)
-            .enumerate()
-            .map(|(chunk_index, chunk)| {
+        let handles: Vec<_> = (0..jobs.clamp(1, classes.len().max(1)))
+            .map(|_| {
                 let out = out.as_path();
+                let next = &next;
                 // The reader's depth bounds (ADR-06) hold 256 levels of nesting in a few KB of
                 // stack per level when optimized, but xtask's unoptimized frames are larger:
                 // more than the 2 MiB default for a thread at 256 levels of annotations.
@@ -748,7 +751,11 @@ fn compare_mode(
                     .spawn_scoped(scope, move || -> Result<Comparison> {
                         let mut mismatches = Vec::new();
                         let mut categories = Vec::new();
-                        for (i, class) in chunk.iter().enumerate() {
+                        loop {
+                            let i = next.fetch_add(1, Ordering::Relaxed);
+                            let Some(class) = classes.get(i) else {
+                                break;
+                            };
                             let mut oracle = oracle_outcome(cache, class)?;
                             let mut oxasm = oxasm_outcome(mode, &class.bytes, hierarchy, mapping);
                             if mode.check.is_some() {
@@ -783,7 +790,7 @@ fn compare_mode(
                                     };
                                     fs::write(base.with_extension(side), bytes)?;
                                 }
-                                mismatches.push((chunk_index * chunk_size + i, report));
+                                mismatches.push((i, report));
                             }
                         }
                         Ok((mismatches, categories))
