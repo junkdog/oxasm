@@ -63,6 +63,16 @@ pub trait ClassVisitor {
         }
     }
 
+    /// Visits the number of fields and methods of the class: an oxasm extension, which ASM does
+    /// not have. A class reader calls it right after [`visit`](Self::visit), so that a visitor
+    /// which stores the members can size its storage once. It is only a hint: other sources of
+    /// events need not call it, and the members visited may be fewer or more.
+    fn visit_member_counts(&mut self, fields_count: u16, methods_count: u16) {
+        if let Some(d) = self.delegate() {
+            d.visit_member_counts(fields_count, methods_count);
+        }
+    }
+
     /// Visits the source of the class.
     ///
     /// - `source`: the name of the source file from which the class was compiled, or `None`.
@@ -321,6 +331,9 @@ macro_rules! forward_class_visitor {
                 interfaces: &[&JavaStr],
             ) {
                 (**self).visit(version, access, name, signature, super_name, interfaces);
+            }
+            fn visit_member_counts(&mut self, fields_count: u16, methods_count: u16) {
+                (**self).visit_member_counts(fields_count, methods_count);
             }
             fn visit_source(&mut self, source: Option<&JavaStr>, debug: Option<&JavaStr>) {
                 (**self).visit_source(source, debug);

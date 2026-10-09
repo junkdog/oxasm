@@ -765,6 +765,11 @@ impl ClassVisitor for ClassWriter<'_> {
         }
     }
 
+    fn visit_member_counts(&mut self, fields_count: u16, methods_count: u16) {
+        self.fields.reserve(usize::from(fields_count));
+        self.methods.reserve(usize::from(methods_count));
+    }
+
     fn visit_source(&mut self, file: Option<&JavaStr>, debug: Option<&JavaStr>) {
         if let Some(file) = file {
             self.source_file_index = self.symbol_table.add_constant_utf8(file);

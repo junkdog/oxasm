@@ -434,7 +434,8 @@ impl<'b> ClassReader<'b> {
         //   structure (ASM links them through their nextAttribute field, last read first).
         let mut attributes = Vec::new();
 
-        let mut current_attribute_offset = self.get_first_attribute_offset()?;
+        let (fields_count, methods_count, mut current_attribute_offset) =
+            self.get_member_counts_and_first_attribute_offset()?;
         for _ in 0..self.u16_at(current_attribute_offset - 2)? {
             // Read the attribute_info's attribute_name and attribute_length fields.
             let attribute_name = self.utf8_at(current_attribute_offset)?;
@@ -544,6 +545,7 @@ impl<'b> ClassReader<'b> {
             super_class,
             &interfaces,
         );
+        class_visitor.visit_member_counts(fields_count, methods_count);
 
         // Visit the SourceFile and SourceDebugExtension attributes.
         if !parsing_options.contains(ParsingOptions::SKIP_DEBUG)
@@ -689,13 +691,21 @@ impl<'b> ClassReader<'b> {
     /// Returns the offset in `class_file` of the first `ClassFile`'s 'attributes' array field
     /// entry.
     pub(crate) fn get_first_attribute_offset(&self) -> Result<i64, ReadError> {
+        Ok(self.get_member_counts_and_first_attribute_offset()?.2)
+    }
+
+    /// Returns the `fields_count` and `methods_count` of the `ClassFile`, and the offset in
+    /// `class_file` of its first 'attributes' array field entry.
+    fn get_member_counts_and_first_attribute_offset(&self) -> Result<(u16, u16, i64), ReadError> {
         // Skip the access_flags, this_class, super_class, and interfaces_count fields (using 2
         // bytes each), as well as the interfaces array field (2 bytes per interface).
         let mut current_offset = self.header + 8 + i64::from(self.u16_at(self.header + 6)?) * 2;
 
         // Read the fields_count field, then skip the 'fields' and 'methods' array fields.
-        for _ in 0..2 {
+        let mut members_counts = [0; 2];
+        for count in &mut members_counts {
             let members_count = self.u16_at(current_offset)?;
+            *count = members_count;
             current_offset += 2;
             for _ in 0..members_count {
                 // Invariant: current_offset is the offset of a field_info or method_info
@@ -716,7 +726,7 @@ impl<'b> ClassReader<'b> {
         }
 
         // Skip the ClassFile's attributes_count field.
-        Ok(current_offset + 2)
+        Ok((members_counts[0], members_counts[1], current_offset + 2))
     }
 
     /// Reads the BootstrapMethods attribute to compute the offset of each bootstrap method.
