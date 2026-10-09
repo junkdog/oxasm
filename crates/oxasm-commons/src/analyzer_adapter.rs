@@ -681,7 +681,9 @@ impl MethodVisitor for AnalyzerAdapter<'_> {
             let value = self.pop();
             if opcode == INVOKESPECIAL && name == "<init>" {
                 // ASM compares the values by identity: equality is the same for the values of
-                // valid code (labels and UNINITIALIZED_THIS).
+                // valid code (labels and UNINITIALIZED_THIS). On an initialized receiver
+                // (unverifiable code) ASM replaces only the very `String` that was pushed, and
+                // this every equal type: an accepted divergence (oxasm-verification, Fuzzing).
                 let initialized_value = if value == FrameValue::UninitializedThis {
                     object(&self.owner)
                 } else {

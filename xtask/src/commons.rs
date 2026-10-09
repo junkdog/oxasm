@@ -6,7 +6,7 @@ use std::path::Path;
 
 use anyhow::Context;
 use oxasm::constant::{Constant, FrameValue};
-use oxasm::opcodes::{ACC_ABSTRACT, ACC_NATIVE, GETSTATIC, INVOKEVIRTUAL};
+use oxasm::opcodes::{ACC_ABSTRACT, ACC_NATIVE, GETSTATIC, INVOKESPECIAL, INVOKEVIRTUAL};
 use oxasm::{
     ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, JavaStr, JavaString, MethodVisitor,
     ParsingOptions,
@@ -76,6 +76,22 @@ pub fn read_mapping(path: &Path) -> anyhow::Result<Mapping> {
     Ok(SimpleRemapper::new(mapping))
 }
 
+thread_local! {
+    /// Whether the last class [`run`] in the `analyzer-adapter` mode on this thread had an
+    /// `INVOKESPECIAL <init>` whose receiver is an initialized reference (see
+    /// [`initialized_init_receiver`]).
+    static INITIALIZED_INIT_RECEIVER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the last class [`run`] on this thread, in the `analyzer-adapter` mode, called
+/// `INVOKESPECIAL <init>` on an initialized reference (unverifiable code). ASM's `AnalyzerAdapter`
+/// then replaces the receiver in its frame by reference identity, only where the very `String`
+/// object that was pushed is, and oxasm's by equality, wherever an equal type is: an accepted
+/// divergence (2026-10-09).
+pub fn initialized_init_receiver() -> bool {
+    INITIALIZED_INIT_RECEIVER.get()
+}
+
 /// oxasm's side of a commons mode: the class file written by a `ClassWriter(0)`, or the text of
 /// `code-size`.
 pub fn run(
@@ -83,6 +99,7 @@ pub fn run(
     commons: Commons,
     mapping: Option<&Mapping>,
 ) -> Result<Vec<u8>, String> {
+    INITIALIZED_INIT_RECEIVER.set(false);
     let reader = ClassReader::new(class_file).map_err(|e| e.to_string())?;
     if commons == Commons::CodeSize {
         let mut code_sizes = CodeSizes::default();
@@ -421,6 +438,15 @@ impl MethodVisitor for AnalyzedFramesInserter<'_> {
         is_interface: bool,
     ) {
         self.maybe_insert_frame();
+        if opcode == INVOKESPECIAL
+            && name == "<init>"
+            && let Some(stack) = &self.analyzer_adapter.stack
+            && let Ok(sizes) = Type::try_get_arguments_and_return_sizes_of(descriptor)
+            && let Some(receiver) = stack.len().checked_sub((sizes >> 2) as usize)
+            && matches!(stack[receiver], FrameValue::Object(_))
+        {
+            INITIALIZED_INIT_RECEIVER.set(true);
+        }
         self.analyzer_adapter
             .visit_method_insn(opcode, owner, name, descriptor, is_interface);
     }

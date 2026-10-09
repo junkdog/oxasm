@@ -763,7 +763,12 @@ fn compare_mode(
                                     }
                                 }
                             }
-                            if let Some(category) = documented_category(&oracle, &oxasm) {
+                            let initialized_init_receiver = mode.commons
+                                == Some(Commons::AnalyzerAdapter)
+                                && commons::initialized_init_receiver();
+                            if let Some(category) =
+                                documented_category(&oracle, &oxasm, initialized_init_receiver)
+                            {
                                 categories.push(category);
                             } else if let Some(report) = mismatch(&oracle, &oxasm) {
                                 fs::create_dir_all(out)?;
@@ -841,7 +846,23 @@ type Comparison = (Vec<(usize, String)>, Vec<&'static str>);
 
 /// The documented divergence (oxasm-verification, "Known nondeterminism") the two outcomes
 /// disagree by, if any: such a class counts as agreeing, and is reported by category.
-fn documented_category(oracle: &Outcome, oxasm: &Outcome) -> Option<&'static str> {
+fn documented_category(
+    oracle: &Outcome,
+    oxasm: &Outcome,
+    initialized_init_receiver: bool,
+) -> Option<&'static str> {
+    // ASM's AnalyzerAdapter compares an `INVOKESPECIAL <init>` receiver by reference identity,
+    // oxasm's by equality: on an initialized receiver (unverifiable code), the frames of the
+    // `analyzer-adapter` mode differ (accepted, 2026-10-09).
+    if initialized_init_receiver
+        && let (Outcome::Ok(a), Outcome::Ok(b)) = (oracle, oxasm)
+        && a != b
+    {
+        return Some(
+            "INVOKESPECIAL <init> on an initialized reference (ASM's AnalyzerAdapter compares by \
+             identity)",
+        );
+    }
     // The reader categories (P2, ADR-06 and ADR-09): oxasm's reader rejects a class that ASM's
     // reader passes on.
     if let Outcome::Err(error) = oxasm {
