@@ -145,7 +145,7 @@ pub struct Analyzer<I: Interpreter, H = ()> {
     frames: Frames<I::V>,
     /// The exception handlers of the last analyzed method, one list per instruction: indices in
     /// its `try_catch_blocks`.
-    handlers: Vec<Vec<usize>>,
+    handlers: Handlers,
 }
 
 impl<I: Interpreter> Analyzer<I> {
@@ -163,7 +163,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             interpreter,
             hooks,
             frames: Frames::default(),
-            handlers: Vec::new(),
+            handlers: Handlers::default(),
         }
     }
 
@@ -212,7 +212,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
     ///
     /// If `insn_index` is not an instruction index of the last analyzed method.
     pub fn get_handlers(&self, insn_index: usize) -> &[usize] {
-        &self.handlers[insn_index]
+        self.handlers.checked_of(insn_index)
     }
 
     /// Analyzes the given method (ASM's `analyze`). `owner` is the internal name of its class,
@@ -275,16 +275,19 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
         let insn_list = &method.instructions;
         let insn_list_size = insn_list.len();
         self.frames.reset(insn_list_size);
-        self.handlers.resize_with(insn_list_size, Vec::new);
+        // A frame has at most max_locals + max_stack values. Without a maximum stack size, the
+        // reservation is that of ASM's initial array capacity, and the arena may grow.
+        self.frames
+            .reserve(max_locals.saturating_add(max_stack.unwrap_or(4)));
 
         // The instructions, and the index of each label and jump target.
         let mut insns = Vec::with_capacity(insn_list_size);
-        let mut label_nodes = Vec::new();
-        let mut jumps = Vec::new();
-        for (index, (id, node)) in insn_list.iter_with_ids().enumerate() {
+        let mut label_ids = LabelIds::default();
+        let mut has_jumps = false;
+        for (id, node) in insn_list.iter_with_ids() {
             match node.insn {
-                Insn::Label(label) => label_nodes.push((label, index)),
-                Insn::Jump { label, .. } => jumps.push((index, label)),
+                Insn::Label(label) => label_ids.add(label),
+                Insn::Jump { .. } => has_jumps = true,
                 _ => {}
             }
             insns.push(InsnEntry {
@@ -293,25 +296,27 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
                 node,
             });
         }
-        let labels = LabelIndices::new(insn_list, &label_nodes);
-        for (index, label) in jumps {
-            insns[index].jump_target = labels.index_of(label);
+        let labels = LabelIndices::new(insn_list, &insns, label_ids);
+        if has_jumps {
+            for entry in &mut insns {
+                if let Insn::Jump { label, .. } = entry.node.insn {
+                    entry.jump_target = labels.index_of(label);
+                }
+            }
         }
 
         // For each exception handler, and each instruction within its range, record in
         // 'handlers' the fact that execution can flow from this instruction to the exception
         // handler.
-        for (index, try_catch_block) in method.try_catch_blocks.iter().enumerate() {
-            let start_index = labels.index_of(try_catch_block.start);
-            let end_index = labels.index_of(try_catch_block.end);
-            for i in start_index..end_index {
-                // Like ASM, which throws an ArrayIndexOutOfBoundsException (out of `analyze`),
-                // if 'start' is not in the list but 'end' is.
-                let i = usize::try_from(i)
-                    .map_err(|_| index_out_of_bounds(i, insn_list_size).unwrapped())?;
-                self.handlers[i].push(index);
-            }
-        }
+        self.handlers.build(
+            insn_list_size,
+            method.try_catch_blocks.iter().map(|try_catch_block| {
+                (
+                    labels.index_of(try_catch_block.start),
+                    labels.index_of(try_catch_block.end),
+                )
+            }),
+        )?;
 
         let mut run = Run {
             insn_list,
@@ -334,6 +339,7 @@ impl<I: Interpreter, H: AnalyzerHooks<I::V>> Analyzer<I, H> {
             subroutines: vec![None; insn_list_size],
             in_instructions_to_process: vec![false; insn_list_size],
             instructions_to_process: Vec::with_capacity(insn_list_size),
+            current_copy_of: None,
         };
 
         run.analyze(owner, max_stack)
@@ -355,27 +361,52 @@ struct LabelIndices<'a> {
 /// An id of [`LabelIndices::indices`] that is no label of the list.
 const NO_INDEX: u32 = u32::MAX;
 
+/// The range of the ids of the label nodes of an instruction list, and their number.
+#[derive(Default)]
+struct LabelIds {
+    first: u64,
+    last: u64,
+    count: u64,
+}
+
+impl LabelIds {
+    fn add(&mut self, label: Label) {
+        let id = label.id();
+        if self.count == 0 {
+            (self.first, self.last) = (id, id);
+        } else {
+            self.first = self.first.min(id);
+            self.last = self.last.max(id);
+        }
+        self.count += 1;
+    }
+}
+
 impl<'a> LabelIndices<'a> {
-    /// The indices of the label nodes of `insn_list`, given with their label in list order.
-    fn new(insn_list: &'a InsnList, label_nodes: &[(Label, usize)]) -> LabelIndices<'a> {
-        let ids = label_nodes.iter().map(|(label, _)| label.id());
-        let (Some(first_id), Some(last_id)) = (ids.clone().min(), ids.max()) else {
+    /// The indices of the label nodes of `insn_list`, whose instructions are `insns` and the ids
+    /// of whose label nodes are `ids`.
+    fn new(insn_list: &'a InsnList, insns: &[InsnEntry<'_>], ids: LabelIds) -> LabelIndices<'a> {
+        if ids.count == 0 {
             return LabelIndices {
                 insn_list,
                 first_id: 0,
                 indices: Some(Vec::new()),
             };
-        };
-        let span = last_id - first_id + 1;
-        let dense = span <= 4 * label_nodes.len() as u64 + 64
+        }
+        let first_id = ids.first;
+        let span = ids.last - first_id + 1;
+        let dense = span <= 4 * ids.count + 64
             && u32::try_from(insn_list.len()).is_ok_and(|len| len < NO_INDEX);
         let indices = dense.then(|| {
             let mut indices = vec![NO_INDEX; span as usize];
-            for &(label, index) in label_nodes {
-                // A label's node is the first one with this label (see `InsnList::label_position`).
-                let slot = &mut indices[(label.id() - first_id) as usize];
-                if *slot == NO_INDEX {
-                    *slot = index as u32;
+            for (index, entry) in insns.iter().enumerate() {
+                if let Insn::Label(label) = entry.node.insn {
+                    // A label's node is the first one with this label (see
+                    // `InsnList::label_position`).
+                    let slot = &mut indices[(label.id() - first_id) as usize];
+                    if *slot == NO_INDEX {
+                        *slot = index as u32;
+                    }
                 }
             }
             indices
@@ -397,6 +428,117 @@ impl<'a> LabelIndices<'a> {
             Some(&index) if index != NO_INDEX => i64::from(index),
             _ => -1,
         }
+    }
+}
+
+/// The exception handlers of each instruction of a method, as indices in its
+/// `try_catch_blocks`, in one list: those of instruction `i` are `list[starts[i]..starts[i + 1]]`.
+#[derive(Debug, Default)]
+struct Handlers {
+    /// The number of instructions.
+    len: usize,
+    /// Where the handlers of each instruction start in `list`, and where the last ones end;
+    /// empty if no instruction has handlers.
+    starts: Vec<usize>,
+    list: Vec<usize>,
+}
+
+impl Handlers {
+    /// No instructions, and no handlers.
+    fn clear(&mut self) {
+        self.len = 0;
+        self.starts.clear();
+        self.list.clear();
+    }
+
+    /// The handlers of the `len` instructions of a method, given the range of instruction indices
+    /// of each try catch block (from its start index, inclusive, to its end index, exclusive, -1
+    /// for a label not in the list).
+    ///
+    /// # Errors
+    ///
+    /// If the start of a non-empty range is -1, as ASM's `ArrayIndexOutOfBoundsException` out of
+    /// `analyze`. The handlers are then those of the try catch blocks before it, as ASM leaves them.
+    fn build(
+        &mut self,
+        len: usize,
+        ranges: impl Iterator<Item = (i64, i64)> + Clone,
+    ) -> Result<(), AnalyzerError> {
+        self.clear();
+        self.len = len;
+        // The ranges before the first invalid one, with their try catch block's index.
+        let mut error = None;
+        let mut valid = 0;
+        for (start, end) in ranges.clone() {
+            if start < 0 && start < end {
+                error = Some(index_out_of_bounds(start, len).unwrapped());
+                break;
+            }
+            valid += 1;
+        }
+        // Non-empty, so 0 ≤ start < end ≤ len - 1 (an index in the list).
+        let ranges = ranges
+            .take(valid)
+            .enumerate()
+            .filter(|&(_, (start, end))| start < end)
+            .map(|(index, (start, end))| (index, start as usize, end as usize));
+        if ranges.clone().next().is_some() {
+            // The number of handlers of each instruction, by differences (+1 at the start of a
+            // range, -1 at its end), then turned into start indices.
+            let starts = &mut self.starts;
+            starts.resize(len + 1, 0);
+            for (_, start, end) in ranges.clone() {
+                starts[start] = starts[start].wrapping_add(1);
+                starts[end] = starts[end].wrapping_sub(1);
+            }
+            let (mut count, mut total) = (0usize, 0usize);
+            for start in starts.iter_mut() {
+                count = count.wrapping_add(*start);
+                *start = total;
+                total += count;
+            }
+            // Fill the list, with starts[i] as the next free position of instruction i, so that it
+            // ends as the start of instruction i + 1; then shift them back.
+            self.list.resize(total, 0);
+            for (index, start, end) in ranges {
+                for next in &mut starts[start..end] {
+                    self.list[*next] = index;
+                    *next += 1;
+                }
+            }
+            starts.copy_within(..len, 1);
+            starts[0] = 0;
+        }
+        error.map_or(Ok(()), Err)
+    }
+
+    /// The handlers of the instruction at `insn_index`, which must be an instruction index (see
+    /// [`checked_of`](Self::checked_of)).
+    #[inline]
+    fn of(&self, insn_index: usize) -> &[usize] {
+        if self.starts.is_empty() {
+            return &[];
+        }
+        &self.list[self.starts[insn_index]..self.starts[insn_index + 1]]
+    }
+
+    /// The handlers of the instruction at `insn_index`.
+    ///
+    /// # Panics
+    ///
+    /// If `insn_index` is not an instruction index.
+    fn checked_of(&self, insn_index: usize) -> &[usize] {
+        assert!(
+            insn_index < self.len,
+            "index out of bounds: the len is {} but the index is {insn_index}",
+            self.len
+        );
+        self.of(insn_index)
+    }
+
+    /// The handlers of each instruction, one list per instruction.
+    fn to_vec(&self) -> Vec<Vec<usize>> {
+        (0..self.len).map(|i| self.of(i).to_vec()).collect()
     }
 }
 
@@ -430,13 +572,18 @@ struct Run<'a, I: Interpreter, H> {
     frames: &'a mut Frames<I::V>,
     /// A frame for the exception handlers' merges, kept for its storage.
     handler_frame: Option<Frame<I::V>>,
-    handlers: &'a [Vec<usize>],
+    handlers: &'a Handlers,
     /// The subroutine of each instruction (few methods have any).
     subroutines: Vec<Option<Box<Subroutine>>>,
     /// Whether each instruction remains to be processed.
     in_instructions_to_process: Vec<bool>,
     /// The instructions that remain to process.
     instructions_to_process: Vec<usize>,
+    /// The instruction whose frame the current frame is a copy of, if known: the current frame
+    /// was stored there, or initialized from there, and neither changed since. Processing that
+    /// instruction then needs no copy into the current frame. (The current frame's capacity may
+    /// be larger, which a copy would keep.)
+    current_copy_of: Option<usize>,
 }
 
 impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
@@ -510,7 +657,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         max_stack: Option<usize>,
     ) -> Result<Frame<I::V>, AnalyzerError> {
         let frame = self.compute_initial_frame(owner, max_stack)?;
-        self.merge(0, &frame, None)?;
+        self.merge_current(0, &frame, None)?;
         if self.hooks.init_does_nothing() {
             return Ok(frame);
         }
@@ -518,8 +665,9 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         let mut frames = self.frames.to_vec();
         let result = self
             .hooks
-            .init(owner, self.method, &mut frames, self.handlers);
+            .init(owner, self.method, &mut frames, &self.handlers.to_vec());
         self.frames.import(&mut frames);
+        self.current_copy_of = None;
         result?;
         Ok(frame)
     }
@@ -531,7 +679,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         max_stack: Option<usize>,
     ) -> Result<Frame<I::V>, AnalyzerError> {
         let max_locals = self.max_locals;
-        let mut locals = Vec::with_capacity(max_locals);
+        let mut locals = Vec::with_capacity(max_locals + max_stack.unwrap_or(4));
         let set_local = |locals: &mut Vec<I::V>, value: Option<I::V>, operation: &str| {
             let value = required(value, operation)?;
             if locals.len() >= max_locals {
@@ -604,68 +752,87 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                 // instruction. Only the exception handlers below use it: otherwise the next
                 // instruction processed updates it first, and only what accumulates in it, its
                 // capacity, is updated.
-                if handlers[insn_index].is_empty() {
+                if handlers.of(insn_index).is_empty() {
                     self.frames.init_capacity(insn_index, current_frame);
                 } else {
-                    self.frames.init(insn_index, current_frame);
+                    self.init_current(insn_index, current_frame);
                 }
                 self.merge_successor(insn_index, subroutine.as_deref())?;
                 self.hooks.new_control_flow_edge(insn_index, insn_index + 1);
             }
             _ => {
-                self.frames
-                    .init(insn_index, current_frame)
-                    .execute(insn, &mut *self.interpreter)?;
+                self.init_current(insn_index, current_frame);
+                self.current_copy_of = None;
+                current_frame.execute(insn, &mut *self.interpreter)?;
                 let opcode = insn_opcode.expect("a JVM instruction");
                 match &insn.insn {
                     Insn::Jump { label, .. } => {
                         if opcode != GOTO && opcode != JSR {
-                            self.hooks.init_jump_target(current_frame, opcode, None);
-                            self.merge(insn_index + 1, current_frame, subroutine.as_deref())?;
+                            self.init_jump_target(current_frame, opcode, None);
+                            self.merge_current(
+                                insn_index + 1,
+                                current_frame,
+                                subroutine.as_deref(),
+                            )?;
                             self.hooks.new_control_flow_edge(insn_index, insn_index + 1);
                         }
                         let jump_insn_index =
                             self.checked_index(self.insns[insn_index].jump_target)?;
-                        self.hooks
-                            .init_jump_target(current_frame, opcode, Some(*label));
+                        self.init_jump_target(current_frame, opcode, Some(*label));
                         if opcode == JSR {
                             let subroutine =
                                 Subroutine::new(Some(*label), self.max_locals, Some(insn.id));
-                            self.merge(jump_insn_index, current_frame, Some(&subroutine))?;
+                            self.merge_current(jump_insn_index, current_frame, Some(&subroutine))?;
                         } else {
-                            self.merge(jump_insn_index, current_frame, subroutine.as_deref())?;
+                            self.merge_current(
+                                jump_insn_index,
+                                current_frame,
+                                subroutine.as_deref(),
+                            )?;
                         }
                         self.hooks
                             .new_control_flow_edge(insn_index, jump_insn_index);
                     }
                     Insn::LookupSwitch(insn) => {
                         let target_insn_index = self.label_index(insn.dflt)?;
-                        self.hooks
-                            .init_jump_target(current_frame, opcode, Some(insn.dflt));
-                        self.merge(target_insn_index, current_frame, subroutine.as_deref())?;
+                        self.init_jump_target(current_frame, opcode, Some(insn.dflt));
+                        self.merge_current(
+                            target_insn_index,
+                            current_frame,
+                            subroutine.as_deref(),
+                        )?;
                         self.hooks
                             .new_control_flow_edge(insn_index, target_insn_index);
                         for label in &insn.labels {
                             let target_insn_index = self.label_index(*label)?;
-                            self.hooks
-                                .init_jump_target(current_frame, opcode, Some(*label));
-                            self.merge(target_insn_index, current_frame, subroutine.as_deref())?;
+                            self.init_jump_target(current_frame, opcode, Some(*label));
+                            self.merge_current(
+                                target_insn_index,
+                                current_frame,
+                                subroutine.as_deref(),
+                            )?;
                             self.hooks
                                 .new_control_flow_edge(insn_index, target_insn_index);
                         }
                     }
                     Insn::TableSwitch(insn) => {
                         let target_insn_index = self.label_index(insn.dflt)?;
-                        self.hooks
-                            .init_jump_target(current_frame, opcode, Some(insn.dflt));
-                        self.merge(target_insn_index, current_frame, subroutine.as_deref())?;
+                        self.init_jump_target(current_frame, opcode, Some(insn.dflt));
+                        self.merge_current(
+                            target_insn_index,
+                            current_frame,
+                            subroutine.as_deref(),
+                        )?;
                         self.hooks
                             .new_control_flow_edge(insn_index, target_insn_index);
                         for label in &insn.labels {
-                            self.hooks
-                                .init_jump_target(current_frame, opcode, Some(*label));
+                            self.init_jump_target(current_frame, opcode, Some(*label));
                             let target_insn_index = self.label_index(*label)?;
-                            self.merge(target_insn_index, current_frame, subroutine.as_deref())?;
+                            self.merge_current(
+                                target_insn_index,
+                                current_frame,
+                                subroutine.as_deref(),
+                            )?;
                             self.hooks
                                 .new_control_flow_edge(insn_index, target_insn_index);
                         }
@@ -708,7 +875,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
                                 }
                             }
                         }
-                        self.merge(insn_index + 1, current_frame, subroutine.as_deref())?;
+                        self.merge_current(insn_index + 1, current_frame, subroutine.as_deref())?;
                         self.hooks.new_control_flow_edge(insn_index, insn_index + 1);
                     }
                     _ => {}
@@ -716,7 +883,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
             }
         }
 
-        for &try_catch_block_index in &handlers[insn_index] {
+        for &try_catch_block_index in handlers.of(insn_index) {
             let try_catch_block = &method.try_catch_blocks[try_catch_block_index];
             let (catch_type, handler_index) = self.handler_of(try_catch_block_index)?;
             if self.hooks.new_control_flow_exception_edge_of(
@@ -785,9 +952,13 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         if successor >= self.frames.len() {
             return Err(index_out_of_bounds(successor, self.frames.len()));
         }
+        let stored = !self.frames.is_set(successor);
         let changed = self
             .frames
             .merge_into_next(insn_index, &mut *self.interpreter)?;
+        // A copy of a copy of the current frame is one too.
+        let is_current = self.current_copy_of == Some(insn_index);
+        self.track_current_copy(successor, stored, changed, is_current);
         self.merge_subroutine_and_enqueue(successor, subroutine, changed);
         Ok(())
     }
@@ -801,15 +972,78 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         frame: &Frame<I::V>,
         subroutine: Option<&Subroutine>,
     ) -> Result<(), AnalyzerError> {
+        let changed = self.merge_frame(insn_index, frame, false)?;
+        self.merge_subroutine_and_enqueue(insn_index, subroutine, changed);
+        Ok(())
+    }
+
+    /// [`merge`](Self::merge) of the current frame.
+    fn merge_current(
+        &mut self,
+        insn_index: usize,
+        current_frame: &Frame<I::V>,
+        subroutine: Option<&Subroutine>,
+    ) -> Result<(), AnalyzerError> {
+        let changed = self.merge_frame(insn_index, current_frame, true)?;
+        self.merge_subroutine_and_enqueue(insn_index, subroutine, changed);
+        Ok(())
+    }
+
+    /// Merges the given frame into the frame at the given instruction, or stores a copy of it
+    /// there. Returns whether the frame at that instruction changed.
+    fn merge_frame(
+        &mut self,
+        insn_index: usize,
+        frame: &Frame<I::V>,
+        is_current: bool,
+    ) -> Result<bool, AnalyzerError> {
         let length = self.frames.len();
         if insn_index >= length {
             return Err(index_out_of_bounds(insn_index, length));
         }
+        let stored = !self.frames.is_set(insn_index);
         let changed = self
             .frames
             .merge(insn_index, frame, &mut *self.interpreter)?;
-        self.merge_subroutine_and_enqueue(insn_index, subroutine, changed);
-        Ok(())
+        self.track_current_copy(insn_index, stored, changed, is_current);
+        Ok(changed)
+    }
+
+    /// Updates [`current_copy_of`](Run::current_copy_of) after a merge into the frame at
+    /// `insn_index`, which `stored` a copy of a frame there if there was none, and `changed`
+    /// that frame. `is_current` says whether the merged frame was a copy of the current frame.
+    fn track_current_copy(
+        &mut self,
+        insn_index: usize,
+        stored: bool,
+        changed: bool,
+        is_current: bool,
+    ) {
+        if stored && is_current {
+            self.current_copy_of = Some(insn_index);
+        } else if changed && self.current_copy_of == Some(insn_index) {
+            self.current_copy_of = None;
+        }
+    }
+
+    /// Initializes the current frame from the frame at `insn_index` (see [`Frames::init`]),
+    /// unless it is a copy of it already.
+    fn init_current(&mut self, insn_index: usize, current_frame: &mut Frame<I::V>) {
+        if self.current_copy_of != Some(insn_index) {
+            self.frames.init(insn_index, current_frame);
+            self.current_copy_of = Some(insn_index);
+        }
+    }
+
+    /// Calls the `init_jump_target` hook on the current frame, which it may change.
+    fn init_jump_target(
+        &mut self,
+        current_frame: &mut Frame<I::V>,
+        opcode: u8,
+        target: Option<Label>,
+    ) {
+        self.hooks.init_jump_target(current_frame, opcode, target);
+        self.current_copy_of = None;
     }
 
     fn merge_subroutine_and_enqueue(
@@ -850,14 +1084,9 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
         locals_used: &[bool],
     ) -> Result<(), AnalyzerError> {
         frame_after_ret.merge_subroutine_values(self.frames.values(jsr_insn_index), locals_used);
+        self.current_copy_of = None;
 
-        let length = self.frames.len();
-        if insn_index >= length {
-            return Err(index_out_of_bounds(insn_index, length));
-        }
-        let mut changed = self
-            .frames
-            .merge(insn_index, frame_after_ret, &mut *self.interpreter)?;
+        let mut changed = self.merge_frame(insn_index, frame_after_ret, true)?;
         if let Some(subroutine_before_jsr) = self.subroutines[jsr_insn_index].clone()
             && let Some(old_subroutine) = &mut self.subroutines[insn_index]
         {
@@ -977,7 +1206,7 @@ impl<'a, I: Interpreter, H: AnalyzerHooks<I::V>> Run<'a, I, H> {
 
             // Push the exception handler successors of currentInsn onto
             // instructionIndicesToProcess.
-            for &try_catch_block_index in &handlers[current_insn_index] {
+            for &try_catch_block_index in handlers.of(current_insn_index) {
                 instruction_indices_to_process.push(self.handler_targets[try_catch_block_index]);
             }
 

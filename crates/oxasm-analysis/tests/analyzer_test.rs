@@ -1237,6 +1237,93 @@ fn test_analyze_glass_fish2_corba_client_delegate_impl_example_new_instance() {
     assert_new_instance(&test_analyze_glass_fish2_corba_client_delegate_impl_example_method_node());
 }
 
+/// The exception handlers of each instruction, from `get_handlers` and in the `init` hook: the
+/// indices of the try catch blocks whose range holds it, in order, for overlapping, nested,
+/// empty and reversed ranges.
+#[test]
+fn test_get_handlers() {
+    struct RecordHandlers(Vec<Vec<usize>>);
+    impl AnalyzerHooks<MockValue> for RecordHandlers {
+        fn init(
+            &mut self,
+            _owner: &JavaStr,
+            _method: &MethodNode,
+            _frames: &mut [Option<Frame<MockValue>>],
+            handlers: &[Vec<usize>],
+        ) -> Result<(), AnalyzerError> {
+            self.0 = handlers.to_vec();
+            Ok(())
+        }
+    }
+    let [label0, label1, label2, label3, label4] = labels();
+    let method_node = MethodNodeBuilder::with_maxs(1, 1)
+        .label(label0)
+        .nop()
+        .label(label1)
+        .nop()
+        .label(label2)
+        .nop()
+        .label(label3)
+        .vreturn()
+        .label(label4)
+        .athrow()
+        .trycatch(label0, label2, label4)
+        .trycatch(label1, label3, label4)
+        .trycatch(label0, label3, label4)
+        .trycatch(label2, label1, label4)
+        .trycatch(label1, label1, label4)
+        .build();
+    let mut analyzer = Analyzer::with_hooks(MockInterpreter, RecordHandlers(Vec::new()));
+    analyzer.analyze(CLASS_NAME, &method_node).unwrap();
+
+    let expected: [&[usize]; 10] = [
+        &[0, 2],
+        &[0, 2],
+        &[0, 1, 2],
+        &[0, 1, 2],
+        &[1, 2],
+        &[1, 2],
+        &[],
+        &[],
+        &[],
+        &[],
+    ];
+    for (insn_index, handlers) in expected.iter().enumerate() {
+        assert_eq!(analyzer.get_handlers(insn_index), *handlers, "{insn_index}");
+    }
+    assert_eq!(analyzer.hooks().0, expected.map(<[usize]>::to_vec));
+    let out_of_bounds =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| analyzer.get_handlers(10)));
+    assert!(out_of_bounds.is_err());
+}
+
+/// A try catch block whose start is not in the instruction list, and whose end is, fails the
+/// analysis as ASM's does (an `ArrayIndexOutOfBoundsException` out of `analyze`), and the
+/// handlers are then those of the try catch blocks before it.
+#[test]
+fn test_get_handlers_after_a_try_catch_block_out_of_the_list() {
+    let [label0, label1, label2, outside] = labels();
+    let method_node = MethodNodeBuilder::with_maxs(1, 1)
+        .label(label0)
+        .nop()
+        .label(label1)
+        .vreturn()
+        .label(label2)
+        .athrow()
+        .trycatch(label0, label1, label2)
+        .trycatch(outside, label1, label2)
+        .trycatch(label0, label1, label2)
+        .build();
+    let mut analyzer = new_analyzer();
+    assert_eq!(
+        analyze_error(&mut analyzer, &method_node),
+        "Index -1 out of bounds for length 6"
+    );
+    assert_eq!(analyzer.get_handlers(0), &[0]);
+    assert_eq!(analyzer.get_handlers(1), &[0]);
+    assert_eq!(analyzer.get_handlers(2), &[] as &[usize]);
+}
+
 fn new_analyzer() -> Analyzer<MockInterpreter> {
     Analyzer::new(MockInterpreter)
 }

@@ -191,8 +191,11 @@ impl BasicInterpreter {
                 let Insn::Type { desc, .. } = &insn.insn else {
                     return Err(cast_error(insn, "TypeInsnNode"));
                 };
-                let mut descriptor = oxasm::JavaString::from("[");
-                checked_object_type(insn.resolve(*desc))?.append_descriptor(&mut descriptor);
+                let internal_name = insn.resolve(*desc);
+                // "[", and "L" internal_name ";" at most.
+                let mut descriptor = oxasm::JavaString::with_capacity(internal_name.len() + 3);
+                descriptor.push('[');
+                checked_object_type(internal_name)?.append_descriptor(&mut descriptor);
                 return this.new_value(Some(&get_type(&descriptor)?));
             }
             ARRAYLENGTH => BasicValue::INT_VALUE,

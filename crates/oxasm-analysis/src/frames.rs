@@ -114,6 +114,18 @@ impl<V: Value> Frames<V> {
         self.slots.resize(len, None);
     }
 
+    /// Reserves room for the values of a frame at each instruction, of at most `frame_size`
+    /// values each, so that the arena does not grow during the analysis (by reallocations, which
+    /// copy it). The reservation is capped at 32 MiB, which the largest methods of the bench pack
+    /// stay under (21 MiB): a hostile method can declare 65535 locals and stack slots, with most
+    /// of its instructions unreachable.
+    pub(crate) fn reserve(&mut self, frame_size: usize) {
+        const MAX_RESERVED_BYTES: usize = 32 << 20;
+        let max_values = MAX_RESERVED_BYTES / size_of::<V>().max(1);
+        let values = self.slots.len().saturating_mul(frame_size).min(max_values);
+        self.values.reserve(values);
+    }
+
     /// Whether the instruction at `index` has a frame.
     pub(crate) fn is_set(&self, index: usize) -> bool {
         self.slots[index].is_some()
