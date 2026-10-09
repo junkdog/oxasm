@@ -184,8 +184,8 @@ pub(crate) struct MethodWriterState {
     /// The current stack map frame. The first element contains the bytecode offset of the
     /// instruction to which the frame corresponds, the second element is the number of
     /// locals and the third one is the number of stack elements. The local variables start at
-    /// index 3 and are followed by the operand stack elements. In summary frame[0] = offset,
-    /// frame[1] = numLocal, frame[2] = numStack. Local variables and operand stack entries
+    /// index 3 and are followed by the operand stack elements. In summary `frame[0] = offset`,
+    /// `frame[1] = numLocal`, `frame[2] = numStack`. Local variables and operand stack entries
     /// contain abstract types, as defined in ASM's `Frame`, but restricted to CONSTANT_KIND,
     /// REFERENCE_KIND, UNINITIALIZED_KIND or FORWARD_UNINITIALIZED_KIND abstract types. Long and
     /// double types use only one array entry.
@@ -343,8 +343,10 @@ impl MethodWriterState {
         let inserted = self.compute == Compute::InsertedFrames;
         let frame = self.labels.get(current_basic_block).frame;
         let result = match frame.map(|frame| self.labels.frame_mut(frame)) {
-            Some(frame) if inserted => frame.execute_current(opcode, arg, arg_symbol, symbol_table),
-            Some(frame) => frame.execute(opcode, arg, arg_symbol, symbol_table),
+            Some(mut frame) if inserted => {
+                frame.execute_current(opcode, arg, arg_symbol, symbol_table)
+            }
+            Some(mut frame) => frame.execute(opcode, arg, arg_symbol, symbol_table),
             // ASM's NullPointerException (no frame visited before the instruction).
             None => Err(WriteError::IllegalState(
                 "no frame before the first instruction".to_owned(),
@@ -402,6 +404,11 @@ impl MethodWriterState {
         // Methods have about one label per 12 bytes of bytecode; one per 4, plus 2, covers 99.9%
         // of a corpus' methods.
         self.labels.reserve(code_length / 4 + 2);
+        if self.compute == Compute::AllFrames {
+            // The frames of a method have about 1.6 abstract types per byte of bytecode; 4 per
+            // byte, plus 16, cover 99.7% of a corpus' methods.
+            self.labels.reserve_frame_values(code_length * 4 + 16);
+        }
     }
 }
 

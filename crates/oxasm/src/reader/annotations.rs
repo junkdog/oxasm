@@ -69,7 +69,7 @@ annotation_host!(
 );
 
 impl<'b> ClassReader<'b> {
-    /// Visits the Runtime[In]VisibleAnnotations attribute at `offset`, if not 0 (the loop that
+    /// Visits the `Runtime[In]VisibleAnnotations` attribute at `offset`, if not 0 (the loop that
     /// ASM repeats for classes, fields, methods and record components).
     pub(super) fn read_annotations_attribute<H: AnnotationHost + ?Sized>(
         &self,
@@ -99,7 +99,7 @@ impl<'b> ClassReader<'b> {
         Ok(())
     }
 
-    /// Visits the Runtime[In]VisibleTypeAnnotations attribute at `offset`, if not 0 (the loop
+    /// Visits the `Runtime[In]VisibleTypeAnnotations` attribute at `offset`, if not 0 (the loop
     /// that ASM repeats for classes, fields, methods and record components).
     pub(super) fn read_type_annotations_attribute<H: AnnotationHost + ?Sized>(
         &self,
@@ -138,11 +138,11 @@ impl<'b> ClassReader<'b> {
         Ok(())
     }
 
-    /// Parses a Runtime[In]VisibleTypeAnnotations attribute of a Code attribute to find the
+    /// Parses a `Runtime[In]VisibleTypeAnnotations` attribute of a Code attribute to find the
     /// offset of each `type_annotation` entry it contains, to find the corresponding labels, and
     /// to visit the try catch block annotations (ASM's `readTypeAnnotations`).
     ///
-    /// Returns the start offset of each entry of the Runtime[In]VisibleTypeAnnotations_attribute
+    /// Returns the start offset of each entry of the `Runtime[In]VisibleTypeAnnotations_attribute`
     /// 'annotations' array field.
     pub(super) fn read_type_annotations(
         &self,
@@ -360,7 +360,7 @@ impl<'b> ClassReader<'b> {
         Ok(TypePath::from_structure(structure))
     }
 
-    /// Reads a Runtime[In]VisibleParameterAnnotations attribute and makes the given visitor visit
+    /// Reads a `Runtime[In]VisibleParameterAnnotations` attribute and makes the given visitor visit
     /// it.
     pub(super) fn read_parameter_annotations(
         &self,

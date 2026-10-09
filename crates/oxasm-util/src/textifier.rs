@@ -33,7 +33,7 @@ use crate::java_fmt::{double_to_string, float_to_string};
 use crate::printer::{self, OPCODES, Printer, TYPES, TextNode, append_string};
 use crate::trace::TraceSignatureVisitor;
 
-/// The usage message of [`main`].
+/// The usage message of [`Textifier::main`].
 const USAGE: &str = "Prints a disassembled view of the given class.\n\
     Usage: Textifier [-nodebug] <fully qualified class name or class file name>";
 

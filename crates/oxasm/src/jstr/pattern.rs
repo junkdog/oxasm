@@ -1,4 +1,4 @@
-//! Search patterns for [`JavaStr`](super::JavaStr) methods.
+//! Search patterns for [`JavaStr`] methods.
 //!
 //! Matching is bytewise on the semi-UTF-8 encoding. Encodings are self-synchronizing, so a match
 //! always starts and ends on code point boundaries. One consequence differs from Java: a lone

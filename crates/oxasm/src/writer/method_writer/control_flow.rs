@@ -299,7 +299,7 @@ impl MethodWriterState {
                 // Frame.accept().
                 Some(current_basic_block) => {
                     if let Some(frame) = self.labels.get(current_basic_block).frame {
-                        self.labels.frame_mut(frame).owner = Some(block);
+                        self.labels.frame_mut(frame).frame.owner = Some(block);
                     }
                 }
             },
@@ -515,7 +515,7 @@ impl MethodWriterState {
                 &self.descriptor,
                 max_locals,
             )?;
-        self.accept_block_frame(symbol_table, first_frame);
+        self.accept_computed_frame(symbol_table, first_frame);
 
         // Fix point algorithm: add the first basic block to a list of blocks to process (i.e.
         // blocks whose stack map frame has changed) and, while there are blocks to process,
@@ -560,15 +560,13 @@ impl MethodWriterState {
                         edge.info,
                     )?
                 } else {
-                    let mut dst_frame = labels.take_frame(successor_frame);
-                    let result = labels.frame(basic_block_frame).merge(
+                    let source = *labels.frame(basic_block_frame);
+                    labels.frame_mut(successor_frame).merge_from(
+                        &source,
                         symbol_table,
                         hierarchy,
-                        &mut dst_frame,
                         edge.info,
-                    );
-                    labels.put_frame(successor_frame, dst_frame);
-                    result?
+                    )?
                 };
                 if successor_block_changed
                     && labels.get(successor_block).next_list_element.is_none()
@@ -593,7 +591,7 @@ impl MethodWriterState {
                 let Some(block_frame) = self.labels.get(block).frame else {
                     return Err(null_pointer("basicBlock.frame"));
                 };
-                self.accept_block_frame(symbol_table, block_frame);
+                self.accept_computed_frame(symbol_table, block_frame);
             }
             let next_basic_block = self.labels.get(block).next_basic_block;
             if flags & FLAG_REACHABLE == 0 {
@@ -649,16 +647,6 @@ impl MethodWriterState {
 
         self.max_stack = max_stack_size;
         Ok(())
-    }
-
-    /// Visits the given frame of a basic block in the StackMapTable (ASM's `Frame.accept`).
-    fn accept_block_frame(&mut self, symbol_table: &mut SymbolTable, frame: u32) {
-        let frame = self.labels.frame(frame);
-        let owner_offset = frame
-            .owner
-            .map_or(0, |owner| self.labels.get(owner).bytecode_offset);
-        let (locals, stack) = frame.accept();
-        self.accept_frame(symbol_table, owner_offset, &locals, &stack);
     }
 
     /// The control flow graph of this method, from the basic block of `start` on: for each basic

@@ -7,10 +7,11 @@ use crate::opcodes::{self, FrameKind};
 use crate::ty::Type;
 use crate::writer::byte_vector::ByteVector;
 use crate::writer::frame::{
-    self, APPEND_FRAME, CHOP_FRAME, FULL_FRAME, Frame, ITEM_OBJECT, ITEM_UNINITIALIZED, SAME_FRAME,
-    SAME_FRAME_EXTENDED, SAME_LOCALS_1_STACK_ITEM_FRAME, SAME_LOCALS_1_STACK_ITEM_FRAME_EXTENDED,
+    self, APPEND_FRAME, CHOP_FRAME, FULL_FRAME, Frame, FrameMut, ITEM_OBJECT, ITEM_UNINITIALIZED,
+    SAME_FRAME, SAME_FRAME_EXTENDED, SAME_LOCALS_1_STACK_ITEM_FRAME,
+    SAME_LOCALS_1_STACK_ITEM_FRAME_EXTENDED,
 };
-use crate::writer::label_table::LabelTable;
+use crate::writer::label_table::{FrameId, LabelTable};
 use crate::writer::method_writer::{Compute, MethodWriterState};
 use crate::writer::symbol_table::SymbolTable;
 
@@ -41,11 +42,13 @@ impl MethodWriterState {
                 // method descriptor (it is the previous frame of the first visited one).
                 let arguments_size =
                     (Type::try_get_arguments_and_return_sizes_of(&*self.descriptor)? >> 2) as usize;
-                let input_locals = frame::input_locals_from_descriptor(
+                let mut input_locals = Vec::new();
+                frame::input_locals_from_descriptor(
                     symbol_table,
                     self.access_flags,
                     &self.descriptor,
                     arguments_size,
+                    &mut input_locals,
                 )?;
                 // The implicit first frame's owner is a new label, at bytecode offset 0.
                 let locals = frame::frame_elements(&input_locals, true);
@@ -179,27 +182,32 @@ impl MethodWriterState {
                 // visited in ClassReader if the EXPAND_ASM_INSNS option is used - and
                 // COMPUTE_INSERTED_FRAMES can't be set if EXPAND_ASM_INSNS is not used). Its
                 // number of locals is the length of `local`.
-                let mut frame = Frame::new(Some(current_basic_block));
-                frame.set_input_frame_from_descriptor(
+                let frame = labels.add_frame(Frame::new(Some(current_basic_block)));
+                labels.frame_mut(frame).set_input_frame_from_descriptor(
                     symbol_table,
                     self.access_flags,
                     &self.descriptor,
                     local.len(),
                 )?;
-                let frame = labels.add_frame(frame);
                 labels.get_mut(current_basic_block).frame = Some(frame);
                 frame
             }
             Some(frame) => {
                 if kind == FrameKind::New {
-                    let mut current_frame = labels.take_frame(frame);
-                    let result = current_frame.set_input_frame_from_api_format(
+                    let mut current_frame = *labels.frame(frame);
+                    let mut values = labels.take_frame_values();
+                    let result = FrameMut {
+                        frame: &mut current_frame,
+                        values: &mut values,
+                    }
+                    .set_input_frame_from_api_format(
                         symbol_table,
                         local,
                         stack,
                         |label| labels.resolved_offset(label),
                     );
-                    labels.put_frame(frame, current_frame);
+                    labels.put_frame_values(values);
+                    *labels.frame_mut(frame).frame = current_frame;
                     result?;
                 }
                 // If type is not F_NEW then it is F_INSERT by hypothesis, and currentBlock.frame
@@ -209,13 +217,25 @@ impl MethodWriterState {
                 frame
             }
         };
+        self.accept_computed_frame(symbol_table, frame);
+        Ok(())
+    }
+
+    /// Visits the given frame of the frame computation (ASM's `Frame.accept`).
+    pub(crate) fn accept_computed_frame(&mut self, symbol_table: &mut SymbolTable, frame: FrameId) {
         let frame = self.labels.frame(frame);
         let owner_offset = frame
             .owner
             .map_or(0, |owner| self.labels.get(owner).bytecode_offset);
-        let (locals, stack) = frame.accept();
-        self.accept_frame(symbol_table, owner_offset, &locals, &stack);
-        Ok(())
+        // As visit_frame_start, with the elements appended by the frame.
+        let mut current_frame = std::mem::take(&mut self.current_frame);
+        current_frame.clear();
+        current_frame.extend_from_slice(&[owner_offset, 0, 0]);
+        let (num_local, num_stack) = frame.accept(self.labels.frame_values(), &mut current_frame);
+        current_frame[1] = num_local as i32;
+        current_frame[2] = num_stack as i32;
+        self.current_frame = current_frame;
+        self.visit_frame_end(symbol_table);
     }
 
     /// Visits a frame computed by the frame computation (the end of ASM's `Frame.accept`).
@@ -260,7 +280,12 @@ impl MethodWriterState {
             self.put_frame(symbol_table);
             self.stack_map_table_number_of_entries += 1;
         }
-        self.previous_frame = Some(std::mem::take(&mut self.current_frame));
+        // ASM drops the previous frame's array; it holds the next frame here, which
+        // visit_frame_start clears.
+        match &mut self.previous_frame {
+            Some(previous_frame) => std::mem::swap(previous_frame, &mut self.current_frame),
+            None => self.previous_frame = Some(std::mem::take(&mut self.current_frame)),
+        }
     }
 
     /// Compresses and writes `current_frame` in a new StackMapTable entry.

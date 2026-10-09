@@ -75,8 +75,8 @@ pub struct LocalVariablesSorter<M, H = ()> {
     /// The hooks of this sorter.
     pub hooks: H,
     /// The mapping from old to new local variable indices. A local variable at index i of size 1
-    /// is remapped to 'mapping[2*i]', while a local variable at index i of size 2 is remapped to
-    /// 'mapping[2*i+1]'. A value is the new index plus 1, or 0 if there is none yet.
+    /// is remapped to `mapping[2*i]`, while a local variable at index i of size 2 is remapped to
+    /// `mapping[2*i+1]`. A value is the new index plus 1, or 0 if there is none yet.
     remapped_variable_indices: Vec<u32>,
     /// The local variable types after remapping. The format of this array is the same as in
     /// [`MethodVisitor::visit_frame`], except that long and double types use two slots.

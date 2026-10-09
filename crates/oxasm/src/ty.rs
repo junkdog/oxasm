@@ -424,6 +424,16 @@ impl<'a> Type<'a> {
         argument_types(&TypeBuf::Borrowed(method_descriptor.as_ref()), 0)
     }
 
+    /// Calls `f` with each argument type of the given method descriptor, in order, without
+    /// collecting them. The errors are those of [`Type::try_get_argument_types_of`] followed by
+    /// `f`'s: a malformed descriptor is reported before any error of `f`.
+    pub(crate) fn try_for_each_argument_type_of<E: From<InvalidDescriptor>>(
+        method_descriptor: &'a JavaStr,
+        f: impl FnMut(Type<'a>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for_each_argument_type(&TypeBuf::Borrowed(method_descriptor), 0, f)
+    }
+
     /// Returns the return type of methods of this type. This method should only be used for
     /// method types. The returned type shares this type's buffer.
     ///
@@ -931,13 +941,36 @@ fn skip_argument(d: &[u8], mut offset: usize) -> Result<usize, usize> {
 }
 
 fn argument_types<'a>(buf: &TypeBuf<'a>, base: usize) -> Result<Vec<Type<'a>>, InvalidDescriptor> {
+    let mut argument_types = Vec::new();
+    for_each_argument_type(buf, base, |argument_type| {
+        argument_types.push(argument_type);
+        Ok::<_, InvalidDescriptor>(())
+    })?;
+    Ok(argument_types)
+}
+
+/// Checks the argument types of the method descriptor at `base` of `buf`, as
+/// [`argument_types`] does (not generic, so that [`for_each_argument_type`] can call it).
+fn check_argument_types(buf: &TypeBuf<'_>, base: usize) -> Result<(), InvalidDescriptor> {
+    for_each_argument_type(buf, base, |_| Ok(()))
+}
+
+/// Calls `f` with each argument type of the method descriptor at `base` of `buf`, in order: ASM's
+/// `for (Type argumentType : getArgumentTypes(descriptor))`, without collecting the types.
+///
+/// The errors are ASM's, which creates all the argument types before the loop uses the first: a
+/// malformed descriptor is reported before an error of `f`.
+fn for_each_argument_type<'a, E: From<InvalidDescriptor>>(
+    buf: &TypeBuf<'a>,
+    base: usize,
+    mut f: impl FnMut(Type<'a>) -> Result<(), E>,
+) -> Result<(), E> {
     let descriptor = &buf.as_java_str()[base..];
     let d = descriptor.as_bytes();
     let past_end = |offset| out_of_bounds(descriptor, offset);
     // ASM counts the argument types first, then creates them: a descriptor that ends too early
     // is reported before an invalid argument type. This does both in one pass, and finishes the
     // count only when an argument type is invalid.
-    let mut argument_types = Vec::new();
     // Skip the first character, which is always a '('.
     let mut current_offset = char_len(d, 0);
     // Parse and create the argument types, one at each loop iteration.
@@ -953,14 +986,20 @@ fn argument_types<'a>(buf: &TypeBuf<'a>, base: usize) -> Result<Vec<Type<'a>>, I
             base + current_argument_type_offset,
             base + current_offset,
         ) {
-            Ok(argument_type) => argument_types.push(argument_type),
+            Ok(argument_type) => {
+                if let Err(error) = f(argument_type) {
+                    // The rest of the descriptor must be valid for this error to be the first.
+                    check_argument_types(buf, base)?;
+                    return Err(error);
+                }
+            }
             Err(invalid) => {
                 Type::try_get_argument_count_of(descriptor)?;
-                return Err(invalid);
+                return Err(invalid.into());
             }
         }
     }
-    Ok(argument_types)
+    Ok(())
 }
 
 fn return_type<'a>(buf: &TypeBuf<'a>) -> Result<Type<'a>, InvalidDescriptor> {

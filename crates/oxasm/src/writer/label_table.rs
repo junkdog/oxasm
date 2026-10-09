@@ -15,7 +15,7 @@ use rustc_hash::FxHashMap;
 
 use crate::label::Label;
 use crate::writer::byte_vector::ByteVector;
-use crate::writer::frame::Frame;
+use crate::writer::frame::{Frame, FrameMut, FrameValues};
 
 /// The index of a label's state (a basic block, if the label starts one) in a [`LabelTable`].
 pub(crate) type BlockId = u32;
@@ -223,6 +223,8 @@ pub(crate) struct LabelTable {
     blocks: Vec<Block>,
     /// The frames of the basic blocks (ASM's `Frame` objects that labels refer to).
     frames: Vec<Frame>,
+    /// The arrays of the frames.
+    frame_values: FrameValues,
     /// The edges of the control flow graph.
     edges: Vec<Edge>,
 }
@@ -346,20 +348,33 @@ impl LabelTable {
         &self.frames[id as usize]
     }
 
-    /// The frame of the given index.
-    pub(crate) fn frame_mut(&mut self, id: FrameId) -> &mut Frame {
-        &mut self.frames[id as usize]
+    /// The frame of the given index, with the arrays of the frames.
+    pub(crate) fn frame_mut(&mut self, id: FrameId) -> FrameMut<'_> {
+        FrameMut {
+            frame: &mut self.frames[id as usize],
+            values: &mut self.frame_values,
+        }
     }
 
-    /// Removes the frame of the given index from the table (until [`Self::put_frame`] puts it
-    /// back), so that it can be used with the label table.
-    pub(crate) fn take_frame(&mut self, id: FrameId) -> Frame {
-        std::mem::take(&mut self.frames[id as usize])
+    /// Reserves room for `additional` more values in the arrays of the frames.
+    pub(crate) fn reserve_frame_values(&mut self, additional: usize) {
+        self.frame_values.reserve(additional);
     }
 
-    /// Puts back a frame taken with [`Self::take_frame`].
-    pub(crate) fn put_frame(&mut self, id: FrameId, frame: Frame) {
-        self.frames[id as usize] = frame;
+    /// The arrays of the frames.
+    pub(crate) fn frame_values(&self) -> &FrameValues {
+        &self.frame_values
+    }
+
+    /// Removes the arrays of the frames from the table (until [`Self::put_frame_values`] puts
+    /// them back), so that a frame can be updated while the label table is read.
+    pub(crate) fn take_frame_values(&mut self) -> FrameValues {
+        std::mem::take(&mut self.frame_values)
+    }
+
+    /// Puts back the arrays taken with [`Self::take_frame_values`].
+    pub(crate) fn put_frame_values(&mut self, values: FrameValues) {
+        self.frame_values = values;
     }
 
     /// The edge of the given index.
