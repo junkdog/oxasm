@@ -8,12 +8,12 @@ use std::cell::{Cell, RefCell};
 
 use oxasm::error::ReadErrorKind;
 use oxasm::opcodes::{
-    ACC_ABSTRACT, ACC_PUBLIC, ACC_STATIC, ACC_SUPER, NOP, RETURN, V_PREVIEW, V1_1,
+    ACC_ABSTRACT, ACC_PUBLIC, ACC_STATIC, ACC_SUPER, GOTO, NOP, RETURN, V_PREVIEW, V1_1,
 };
 use oxasm::{
-    AnnotationVisitor, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, FieldVisitor,
-    JavaStr, Label, MethodVisitor, ModuleVisitor, ParsingOptions, RecordComponentVisitor, TypePath,
-    TypeReference, jstr,
+    AnnotationVisitor, Attribute, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags,
+    FieldVisitor, JavaStr, Label, MethodVisitor, ModuleVisitor, ParsingOptions,
+    RecordComponentVisitor, TypePath, TypeReference, UnknownAttribute, jstr,
 };
 use oxasm_testkit::{InvalidClass, PrecompiledClass};
 
@@ -846,6 +846,197 @@ fn test_accept_code_length_minus_one() {
             ParsingOptions::empty(),
         )
         .unwrap_err();
+
+    assert_eq!(error.kind, ReadErrorKind::InvalidBytecodeOffset(0));
+}
+
+/// A class `C` whose static methods `()V` are the given instructions, each a `NOP`, a `RETURN`, or
+/// a label (`None`) with a line number on the instruction after it.
+fn class_with_methods(methods: &[&[Option<u8>]]) -> Vec<u8> {
+    let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+    class_writer.visit(
+        V1_1,
+        ACC_PUBLIC,
+        jstr!("C"),
+        None,
+        Some(jstr!("java/lang/Object")),
+        &[],
+    );
+    for (i, code) in methods.iter().enumerate() {
+        let name = format!("m{i}");
+        let mut method_visitor = class_writer
+            .visit_method(
+                ACC_STATIC,
+                JavaStr::from_str(&name),
+                jstr!("()V"),
+                None,
+                &[],
+            )
+            .unwrap();
+        method_visitor.visit_code();
+        for (line, insn) in (1..).zip(code.iter()) {
+            match *insn {
+                Some(opcode) => method_visitor.visit_insn(opcode),
+                None => {
+                    let label = Label::new();
+                    method_visitor.visit_label(label);
+                    method_visitor.visit_line_number(line, label);
+                }
+            }
+        }
+        method_visitor.visit_maxs(0, 0);
+        method_visitor.visit_end();
+    }
+    class_writer.visit_end();
+    class_writer.to_bytes().unwrap()
+}
+
+/// oxasm-specific: a method sees none of the labels of the methods read before it, in its class
+/// or in a class read before on the same thread (R2 in oxasm-optimization.md: the reader's label
+/// table is kept per thread, and a method only empties the slots the previous one filled).
+#[test]
+fn test_accept_visits_no_label_of_a_previous_method() {
+    let labelled: &[Option<u8>] = &[Some(NOP), Some(NOP), None, Some(NOP), Some(RETURN)];
+    let unlabelled: &[Option<u8>] = &[Some(NOP), Some(NOP), Some(NOP), Some(RETURN)];
+    let first = class_with_methods(&[labelled, unlabelled]);
+    let second = class_with_methods(&[unlabelled]);
+    let mut first_events = LineNumberEvents::default();
+    let mut second_events = LineNumberEvents::default();
+
+    ClassReader::new(&first)
+        .unwrap()
+        .accept(&mut first_events, ParsingOptions::empty())
+        .unwrap();
+    ClassReader::new(&second)
+        .unwrap()
+        .accept(&mut second_events, ParsingOptions::empty())
+        .unwrap();
+
+    assert_eq!(
+        first_events.0.into_inner(),
+        [
+            "insn 0", "insn 0", "label", "line 3", "insn 0", "insn 177", // m0
+            "insn 0", "insn 0", "insn 0", "insn 177", // m1
+        ]
+    );
+    assert_eq!(
+        second_events.0.into_inner(),
+        ["insn 0", "insn 0", "insn 0", "insn 177"]
+    );
+}
+
+/// oxasm-specific: a jump past the end of a method's code is invalid, even when an earlier
+/// method's code was long enough (R2 in oxasm-optimization.md: the reader's label table keeps
+/// the slots of the longest method so far).
+#[test]
+fn test_accept_jump_past_the_code_after_a_longer_method() {
+    let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+    class_writer.visit(
+        V1_1,
+        ACC_PUBLIC,
+        jstr!("C"),
+        None,
+        Some(jstr!("java/lang/Object")),
+        &[],
+    );
+    {
+        let mut method_visitor = class_writer
+            .visit_method(ACC_STATIC, jstr!("long"), jstr!("()V"), None, &[])
+            .unwrap();
+        method_visitor.visit_code();
+        for _ in 0..10 {
+            method_visitor.visit_insn(NOP);
+        }
+        method_visitor.visit_insn(RETURN);
+        method_visitor.visit_maxs(0, 0);
+        method_visitor.visit_end();
+    }
+    {
+        let mut method_visitor = class_writer
+            .visit_method(ACC_STATIC, jstr!("short"), jstr!("()V"), None, &[])
+            .unwrap();
+        let start = Label::new();
+        method_visitor.visit_code();
+        method_visitor.visit_label(start);
+        method_visitor.visit_insn(NOP);
+        method_visitor.visit_jump_insn(GOTO, start);
+        method_visitor.visit_insn(RETURN);
+        method_visitor.visit_maxs(0, 0);
+        method_visitor.visit_end();
+    }
+    class_writer.visit_end();
+    let mut class_file = class_writer.to_bytes().unwrap();
+    // NOP, GOTO -1, RETURN: make the GOTO jump to offset 8, past the code's 5 bytes.
+    let code = [NOP, GOTO, 0xFF, 0xFF, RETURN];
+    let code_offset = class_file
+        .windows(code.len())
+        .position(|bytes| bytes == code)
+        .unwrap();
+    class_file[code_offset + 2..code_offset + 4].copy_from_slice(&7i16.to_be_bytes());
+
+    let error = ClassReader::new(&class_file)
+        .unwrap()
+        .accept(
+            &mut ClassWriter::new(ClassWriterFlags::empty()),
+            ParsingOptions::empty(),
+        )
+        .unwrap_err();
+
+    assert_eq!(error.kind, ReadErrorKind::InvalidBytecodeOffset(8));
+}
+
+/// oxasm-specific: a type annotation of the class whose target has bytecode offsets (a
+/// LOCAL_VARIABLE one, which a class can't have) finds no labels, as before the first Code
+/// attribute of any class, even after a class with code was read on the same thread (ASM's
+/// `null` label array: a `NullPointerException`). R2 in oxasm-optimization.md keeps the label
+/// table per thread; the `read_noop` fuzz corpus found that its first version handed the previous
+/// class's table over as it was.
+#[test]
+fn test_accept_class_type_annotation_with_bytecode_offsets() {
+    let with_code = class_with_methods(&[&[Some(NOP), None, Some(RETURN)]]);
+    let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+    class_writer.visit(
+        V1_1,
+        ACC_PUBLIC,
+        jstr!("C"),
+        None,
+        Some(jstr!("java/lang/Object")),
+        &[],
+    );
+    let desc = class_writer.new_utf8(jstr!("LA;"));
+    // One annotation: a LOCAL_VARIABLE target with one range (start_pc 0, length 0, index 0),
+    // an empty type path, the type and no element value pairs.
+    let mut content = vec![
+        0,
+        1,
+        TypeReference::LOCAL_VARIABLE,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ];
+    content.extend(desc.to_be_bytes());
+    content.extend([0, 0]);
+    class_writer.visit_attribute(&Attribute::Unknown(UnknownAttribute {
+        name: "RuntimeInvisibleTypeAnnotations".into(),
+        content,
+    }));
+    class_writer.visit_end();
+    let annotated = class_writer.to_bytes().unwrap();
+    let read = |class_file: &[u8]| {
+        ClassReader::new(class_file).unwrap().accept(
+            &mut ClassWriter::new(ClassWriterFlags::empty()),
+            ParsingOptions::empty(),
+        )
+    };
+
+    read(&with_code).unwrap();
+    let error = read(&annotated).unwrap_err();
 
     assert_eq!(error.kind, ReadErrorKind::InvalidBytecodeOffset(0));
 }

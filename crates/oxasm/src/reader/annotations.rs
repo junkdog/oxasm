@@ -12,7 +12,6 @@ use crate::visitor::{
     AnnotationVisitor, ClassVisitor, FieldVisitor, MethodVisitor, RecordComponentVisitor,
 };
 
-use super::code::create_label;
 use super::context::Context;
 use super::{ClassReader, ReadError, ReadErrorKind, required};
 
@@ -175,8 +174,10 @@ impl<'b> ClassReader<'b> {
                         let length = i64::from(self.u16_at(current_offset + 2)?);
                         // Skip the index field (2 bytes).
                         current_offset += 6;
-                        create_label(start_pc, &mut context.current_method_labels)?;
-                        create_label(start_pc + length, &mut context.current_method_labels)?;
+                        context.current_method_labels.create_label(start_pc)?;
+                        context
+                            .current_method_labels
+                            .create_label(start_pc + length)?;
                     }
                 }
                 TypeReference::CAST
@@ -297,11 +298,12 @@ impl<'b> ClassReader<'b> {
                     let length = i64::from(self.u16_at(current_offset + 2)?);
                     let index = self.u16_at(current_offset + 4)?;
                     current_offset += 6;
-                    starts.push(create_label(start_pc, &mut context.current_method_labels)?);
-                    ends.push(create_label(
-                        start_pc + length,
-                        &mut context.current_method_labels,
-                    )?);
+                    starts.push(context.current_method_labels.create_label(start_pc)?);
+                    ends.push(
+                        context
+                            .current_method_labels
+                            .create_label(start_pc + length)?,
+                    );
                     indices.push(index);
                 }
                 context.current_local_variable_annotation_range_starts = starts;

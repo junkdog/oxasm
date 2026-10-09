@@ -51,6 +51,7 @@ use crate::label::Label;
 use crate::opcodes;
 use crate::visitor::ClassVisitor;
 
+use code::MethodLabels;
 use context::Context;
 
 pub use crate::error::{ReadError, ReadErrorKind};
@@ -798,7 +799,7 @@ impl<'b> ClassReader<'b> {
         name: Option<&JavaStr>,
         offset: i64,
         length: i32,
-        code: Option<(i64, &mut Vec<Option<Label>>)>,
+        code: Option<(i64, &mut MethodLabels)>,
     ) -> Result<Attribute, ReadError> {
         if i64::from(length) > self.class_file.len() as i64 - offset {
             return Err(ReadError::new(
@@ -848,7 +849,7 @@ pub struct AttributeReadContext<'r, 'b> {
     offset: i64,
     length: i32,
     code_attribute_offset: Option<i64>,
-    labels: Option<&'r mut Vec<Option<Label>>>,
+    labels: Option<&'r mut MethodLabels>,
 }
 
 impl<'b> AttributeReadContext<'_, 'b> {
@@ -901,7 +902,7 @@ impl<'b> AttributeReadContext<'_, 'b> {
                 ReadErrorKind::InvalidAttribute("labels read outside of a Code attribute".into()),
             )
         })?;
-        code::read_label(bytecode_offset as i64, labels)
+        labels.read_label(bytecode_offset as i64)
     }
 }
 

@@ -1,5 +1,7 @@
 //! ASM's `ClassReader` section "Methods to parse a Code attribute".
 
+use std::cell::Cell;
+
 use crate::constant::{Constant, FrameValue};
 use crate::constants::{
     self, ALOAD_3, ASM_GOTO_W, ASM_IFEQ, ASM_IFNONNULL, ASM_IFNULL, ASM_IFNULL_OPCODE_DELTA,
@@ -34,65 +36,141 @@ fn invalid_bytecode_offset(bytecode_offset: i64) -> ReadError {
     ReadError::new(0, ReadErrorKind::InvalidBytecodeOffset(bytecode_offset))
 }
 
-/// `labels[bytecode_offset]`, which must exist.
-#[inline]
-fn label_slot(
-    bytecode_offset: i64,
-    labels: &mut [Option<Label>],
-) -> Result<&mut Option<Label>, ReadError> {
-    match usize::try_from(bytecode_offset)
-        .ok()
-        .and_then(|i| labels.get_mut(i))
-    {
-        Some(slot) => Ok(slot),
-        None => Err(invalid_bytecode_offset(bytecode_offset)),
+/// The labels of the current method, indexed by bytecode offset (ASM's `Label[] labels` of
+/// `readCode`, `new Label[codeLength + 1]`): only the bytecode offsets for which a label is
+/// needed have one.
+///
+/// ASM allocates the array for each method. Here the slots stay allocated, at the length of the
+/// longest method so far, and a new method only empties the slots the previous one filled: every
+/// slot not listed in `filled` is `None`, including those past the current method's offsets. A
+/// thread's table also outlives the class: a reader borrows it with [`take`](Self::take) and
+/// gives it back with [`put_back`](Self::put_back).
+#[derive(Debug, Default)]
+pub(super) struct MethodLabels {
+    /// The label of each bytecode offset, if any; at least `len` slots.
+    slots: Vec<Option<Label>>,
+    /// The number of bytecode offsets of the current method (its code length + 1).
+    len: usize,
+    /// The bytecode offsets whose slot holds a label.
+    filled: Vec<usize>,
+}
+
+/// The most slots a thread's table keeps between classes: one per bytecode offset of the
+/// longest method the JVMS allows (`code_length` < 65536), plus one.
+const MAX_KEPT_SLOTS: usize = 1 << 16;
+
+thread_local! {
+    /// The label table of the thread's last class reader.
+    static THREAD_METHOD_LABELS: Cell<MethodLabels> = const {
+        Cell::new(MethodLabels { slots: Vec::new(), len: 0, filled: Vec::new() })
+    };
+}
+
+impl MethodLabels {
+    /// The thread's label table (a new one if another reader of this thread has it), with no
+    /// bytecode offset until the class's first Code attribute: ASM's `null`, which the type
+    /// annotations of the class, or of a method before it, may still read.
+    pub(super) fn take() -> MethodLabels {
+        let mut labels = THREAD_METHOD_LABELS
+            .try_with(Cell::take)
+            .unwrap_or_default();
+        labels.reset(0);
+        labels
     }
-}
 
-/// Returns the label corresponding to the given bytecode offset. The default implementation of
-/// this method creates a label for the given offset if it has not been already created (ASM's
-/// `readLabel`).
-pub(super) fn read_label(
-    bytecode_offset: i64,
-    labels: &mut [Option<Label>],
-) -> Result<Label, ReadError> {
-    Ok(*label_slot(bytecode_offset, labels)?.get_or_insert_with(Label::new))
-}
-
-/// Creates a label without the `FLAG_DEBUG_ONLY` flag set, for the given bytecode offset. The
-/// label is created as with [`read_label`] and its `FLAG_DEBUG_ONLY` flag is cleared.
-#[inline]
-pub(super) fn create_label(
-    bytecode_offset: i64,
-    labels: &mut [Option<Label>],
-) -> Result<Label, ReadError> {
-    let slot = label_slot(bytecode_offset, labels)?;
-    let label = slot.get_or_insert_with(Label::new).with_debug_only(false);
-    *slot = Some(label);
-    Ok(label)
-}
-
-/// Creates a label with the `FLAG_DEBUG_ONLY` flag set, if there is no already existing label
-/// for the given bytecode offset (otherwise does nothing). The label is created with a call to
-/// [`read_label`].
-fn create_debug_label(bytecode_offset: i64, labels: &mut [Option<Label>]) -> Result<(), ReadError> {
-    let slot = label_slot(bytecode_offset, labels)?;
-    if slot.is_none() {
-        *slot = Some(Label::new().with_debug_only(true));
+    /// Gives `labels` back to the thread, for the next [`take`](Self::take), unless it is larger
+    /// than a valid method needs.
+    pub(super) fn put_back(labels: MethodLabels) {
+        if labels.slots.len() <= MAX_KEPT_SLOTS {
+            // During the thread's exit there is nothing to give it back to.
+            let _ = THREAD_METHOD_LABELS.try_with(|kept| kept.set(labels));
+        }
     }
-    Ok(())
-}
 
-/// `labels[bytecode_offset]` in the second pass, where the first pass created every label that
-/// an instruction refers to.
-#[inline]
-fn label_at(bytecode_offset: i64, labels: &[Option<Label>]) -> Result<Label, ReadError> {
-    match usize::try_from(bytecode_offset)
-        .ok()
-        .and_then(|i| labels.get(i).copied().flatten())
-    {
-        Some(label) => Ok(label),
-        None => Err(invalid_bytecode_offset(bytecode_offset)),
+    /// Empties the table for a method with `len` bytecode offsets (its code length + 1).
+    pub(super) fn reset(&mut self, len: usize) {
+        for &i in &self.filled {
+            self.slots[i] = None;
+        }
+        self.filled.clear();
+        if self.slots.len() < len {
+            self.slots.resize(len, None);
+        }
+        self.len = len;
+    }
+
+    /// The label of the given bytecode offset, if any.
+    #[inline]
+    pub(super) fn get(&self, bytecode_offset: usize) -> Option<Label> {
+        // The slots past `len` are `None`.
+        self.slots.get(bytecode_offset).copied().flatten()
+    }
+
+    /// The index of `bytecode_offset`'s slot, which must exist.
+    #[inline]
+    fn index(&self, bytecode_offset: i64) -> Result<usize, ReadError> {
+        match usize::try_from(bytecode_offset) {
+            Ok(i) if i < self.len && i < self.slots.len() => Ok(i),
+            _ => Err(invalid_bytecode_offset(bytecode_offset)),
+        }
+    }
+
+    /// The label of `bytecode_offset`, whose slot must exist (ASM's `labels[bytecodeOffset]`).
+    pub(super) fn slot(&self, bytecode_offset: i64) -> Result<Option<Label>, ReadError> {
+        Ok(self.slots[self.index(bytecode_offset)?])
+    }
+
+    /// The label of `bytecode_offset`'s slot `i`, created (as `new_label`) if there is none.
+    #[inline]
+    fn get_or_create(&mut self, i: usize, new_label: impl FnOnce() -> Label) -> &mut Label {
+        let MethodLabels { slots, filled, .. } = self;
+        slots[i].get_or_insert_with(|| {
+            filled.push(i);
+            new_label()
+        })
+    }
+
+    /// Returns the label corresponding to the given bytecode offset. The default implementation
+    /// of this method creates a label for the given offset if it has not been already created
+    /// (ASM's `readLabel`).
+    pub(super) fn read_label(&mut self, bytecode_offset: i64) -> Result<Label, ReadError> {
+        let i = self.index(bytecode_offset)?;
+        Ok(*self.get_or_create(i, Label::new))
+    }
+
+    /// Creates a label without the `FLAG_DEBUG_ONLY` flag set, for the given bytecode offset.
+    /// The label is created as with [`read_label`](Self::read_label) and its `FLAG_DEBUG_ONLY`
+    /// flag is cleared.
+    #[inline]
+    pub(super) fn create_label(&mut self, bytecode_offset: i64) -> Result<Label, ReadError> {
+        let i = self.index(bytecode_offset)?;
+        let label = self.get_or_create(i, Label::new);
+        *label = label.with_debug_only(false);
+        Ok(*label)
+    }
+
+    /// Creates a label with the `FLAG_DEBUG_ONLY` flag set, if there is no already existing
+    /// label for the given bytecode offset (otherwise does nothing). The label is created with a
+    /// call to [`read_label`](Self::read_label).
+    #[inline]
+    fn create_debug_label(&mut self, bytecode_offset: i64) -> Result<(), ReadError> {
+        let i = self.index(bytecode_offset)?;
+        self.get_or_create(i, || Label::new().with_debug_only(true));
+        Ok(())
+    }
+
+    /// `labels[bytecode_offset]` in the second pass, where the first pass created every label
+    /// that an instruction refers to.
+    #[inline]
+    fn label_at(&self, bytecode_offset: i64) -> Result<Label, ReadError> {
+        // The slots past `len` are `None`.
+        match usize::try_from(bytecode_offset)
+            .ok()
+            .and_then(|i| self.get(i))
+        {
+            Some(label) => Ok(label),
+            None => Err(invalid_bytecode_offset(bytecode_offset)),
+        }
     }
 }
 
@@ -343,8 +421,7 @@ impl<'b> ClassReader<'b> {
             start: bytecode_start_offset as usize,
         };
         method_visitor.visit_code_length(u32::try_from(code_length).unwrap_or(0));
-        context.current_method_labels.clear();
-        context.current_method_labels.resize(labels_length, None);
+        context.current_method_labels.reset(labels_length);
         context.current_method_line_numbers.clear();
         let labels = &mut context.current_method_labels;
         // The bytecode offset of the current instruction.
@@ -358,17 +435,17 @@ impl<'b> ClassReader<'b> {
                 }
                 FIRST_PASS_JUMP => {
                     let branch = i64::from(code.i16_at(pc + 1)?);
-                    create_label(bytecode_offset + branch, labels)?;
+                    labels.create_label(bytecode_offset + branch)?;
                     pc += 3;
                 }
                 FIRST_PASS_ASM_JUMP => {
                     let branch = i64::from(code.u16_at(pc + 1)?);
-                    create_label(bytecode_offset + branch, labels)?;
+                    labels.create_label(bytecode_offset + branch)?;
                     pc += 3;
                 }
                 FIRST_PASS_WIDE_JUMP => {
                     let branch = i64::from(code.i32_at(pc + 1)?);
-                    create_label(bytecode_offset + branch, labels)?;
+                    labels.create_label(bytecode_offset + branch)?;
                     pc += 5;
                 }
                 FIRST_PASS_WIDE => match code.u8_at(pc + 1)? {
@@ -390,7 +467,7 @@ impl<'b> ClassReader<'b> {
                     pc += 4 - (pc & 3);
                     // Read the default label and the number of table entries.
                     let default = i64::from(code.i32_at(pc)?);
-                    create_label(bytecode_offset + default, labels)?;
+                    labels.create_label(bytecode_offset + default)?;
                     let high = code.i32_at(pc + 8)?;
                     let low = code.i32_at(pc + 4)?;
                     let mut num_table_entries = high.wrapping_sub(low).wrapping_add(1);
@@ -399,7 +476,7 @@ impl<'b> ClassReader<'b> {
                     while num_table_entries > 0 {
                         num_table_entries -= 1;
                         let branch = i64::from(code.i32_at(pc)?);
-                        create_label(bytecode_offset + branch, labels)?;
+                        labels.create_label(bytecode_offset + branch)?;
                         pc += 4;
                     }
                 }
@@ -408,14 +485,14 @@ impl<'b> ClassReader<'b> {
                     pc += 4 - (pc & 3);
                     // Read the default label and the number of switch cases.
                     let default = i64::from(code.i32_at(pc)?);
-                    create_label(bytecode_offset + default, labels)?;
+                    labels.create_label(bytecode_offset + default)?;
                     let mut num_switch_cases = code.i32_at(pc + 4)?;
                     pc += 8;
                     // Read the switch labels.
                     while num_switch_cases > 0 {
                         num_switch_cases -= 1;
                         let branch = i64::from(code.i32_at(pc + 4)?);
-                        create_label(bytecode_offset + branch, labels)?;
+                        labels.create_label(bytecode_offset + branch)?;
                         pc += 8;
                     }
                 }
@@ -435,9 +512,9 @@ impl<'b> ClassReader<'b> {
         let exception_table_length = self.u16_at(current_offset)?;
         current_offset += 2;
         for _ in 0..exception_table_length {
-            let start = create_label(self.u16_at(current_offset)?.into(), labels)?;
-            let end = create_label(self.u16_at(current_offset + 2)?.into(), labels)?;
-            let handler = create_label(self.u16_at(current_offset + 4)?.into(), labels)?;
+            let start = labels.create_label(self.u16_at(current_offset)?.into())?;
+            let end = labels.create_label(self.u16_at(current_offset + 2)?.into())?;
+            let handler = labels.create_label(self.u16_at(current_offset + 4)?.into())?;
             let catch_type_index = usize::from(self.u16_at(current_offset + 6)?);
             let catch_type = self.utf8_at(self.cp_info_offset(catch_type_index)?)?;
             current_offset += 8;
@@ -490,13 +567,12 @@ impl<'b> ClassReader<'b> {
                         for _ in 0..local_variable_table_length {
                             let start_pc =
                                 i64::from(self.u16_at(current_local_variable_table_offset)?);
-                            create_debug_label(start_pc, &mut context.current_method_labels)?;
+                            context.current_method_labels.create_debug_label(start_pc)?;
                             let length =
                                 i64::from(self.u16_at(current_local_variable_table_offset + 2)?);
-                            create_debug_label(
-                                start_pc + length,
-                                &mut context.current_method_labels,
-                            )?;
+                            context
+                                .current_method_labels
+                                .create_debug_label(start_pc + length)?;
                             // Skip the name_index, descriptor_index and index fields (2 bytes
                             // each).
                             current_local_variable_table_offset += 10;
@@ -520,10 +596,9 @@ impl<'b> ClassReader<'b> {
                             let start_pc = self.u16_at(current_line_number_table_offset)?;
                             let line_number = self.u16_at(current_line_number_table_offset + 2)?;
                             current_line_number_table_offset += 4;
-                            create_debug_label(
-                                i64::from(start_pc),
-                                &mut context.current_method_labels,
-                            )?;
+                            context
+                                .current_method_labels
+                                .create_debug_label(i64::from(start_pc))?;
                             context
                                 .current_method_line_numbers
                                 .push((start_pc, line_number));
@@ -634,10 +709,9 @@ impl<'b> ClassReader<'b> {
                     if potential_bytecode_offset < code_length
                         && self.u8_at(bytecode_start_offset + potential_bytecode_offset)? == NEW
                     {
-                        create_label(
-                            potential_bytecode_offset,
-                            &mut context.current_method_labels,
-                        )?;
+                        context
+                            .current_method_labels
+                            .create_label(potential_bytecode_offset)?;
                     }
                 }
                 offset += 1;
@@ -698,7 +772,7 @@ impl<'b> ClassReader<'b> {
 
             // Visit the label and the line number(s) for this bytecode offset, if any.
             let labels = &context.current_method_labels;
-            if let Some(current_label) = labels.get(pc).copied().flatten() {
+            if let Some(current_label) = labels.get(pc) {
                 method_visitor.visit_label(current_label);
                 // Skip the entries of offsets that are not an instruction's, which ASM's
                 // readCode never visits either.
@@ -768,13 +842,13 @@ impl<'b> ClassReader<'b> {
                 }
                 InsnKind::Jump => {
                     let branch = i64::from(code.i16_at(pc + 1)?);
-                    let label = label_at(current_bytecode_offset + branch, labels)?;
+                    let label = labels.label_at(current_bytecode_offset + branch)?;
                     method_visitor.visit_jump_insn(opcode, label);
                     pc += 3;
                 }
                 InsnKind::WideJump => {
                     let branch = i64::from(code.i32_at(pc + 1)?);
-                    let label = label_at(current_bytecode_offset + branch, labels)?;
+                    let label = labels.label_at(current_bytecode_offset + branch)?;
                     method_visitor.visit_jump_insn(opcode - wide_jump_opcode_delta, label);
                     pc += 5;
                 }
@@ -792,7 +866,7 @@ impl<'b> ClassReader<'b> {
                         opcode - ASM_IFNULL_OPCODE_DELTA
                     };
                     let branch = i64::from(code.u16_at(pc + 1)?);
-                    let target = label_at(current_bytecode_offset + branch, labels)?;
+                    let target = labels.label_at(current_bytecode_offset + branch)?;
                     if opcode == GOTO || opcode == JSR {
                         // Replace GOTO with GOTO_W and JSR with JSR_W.
                         method_visitor.visit_jump_insn(opcode + WIDE_JUMP_OPCODE_DELTA, target);
@@ -805,10 +879,9 @@ impl<'b> ClassReader<'b> {
                         } else {
                             opcode ^ 1
                         };
-                        let endif = create_label(
-                            current_bytecode_offset + 3,
-                            &mut context.current_method_labels,
-                        )?;
+                        let endif = context
+                            .current_method_labels
+                            .create_label(current_bytecode_offset + 3)?;
                         method_visitor.visit_jump_insn(opcode, endif);
                         method_visitor.visit_jump_insn(GOTO_W, target);
                         // endif designates the instruction just after GOTO_W, and is visited as
@@ -821,7 +894,7 @@ impl<'b> ClassReader<'b> {
                 InsnKind::AsmGotoW => {
                     // Replace ASM_GOTO_W with GOTO_W.
                     let branch = i64::from(code.i32_at(pc + 1)?);
-                    let label = label_at(current_bytecode_offset + branch, labels)?;
+                    let label = labels.label_at(current_bytecode_offset + branch)?;
                     method_visitor.visit_jump_insn(GOTO_W, label);
                     // The instruction just after is a jump target (because ASM_GOTO_W is used in
                     // patterns IFNOTxxx <L> ASM_GOTO_W <l> L:..., see MethodWriter), so we need
@@ -844,7 +917,7 @@ impl<'b> ClassReader<'b> {
                     pc += 4 - (pc & 3);
                     // Read the instruction.
                     let default = i64::from(code.i32_at(pc)?);
-                    let default_label = label_at(current_bytecode_offset + default, labels)?;
+                    let default_label = labels.label_at(current_bytecode_offset + default)?;
                     let low = code.i32_at(pc + 4)?;
                     let high = code.i32_at(pc + 8)?;
                     pc += 12;
@@ -857,7 +930,7 @@ impl<'b> ClassReader<'b> {
                     )?);
                     for _ in 0..length {
                         let branch = i64::from(code.i32_at(pc)?);
-                        table.push(label_at(current_bytecode_offset + branch, labels)?);
+                        table.push(labels.label_at(current_bytecode_offset + branch)?);
                         pc += 4;
                     }
                     method_visitor.visit_table_switch_insn(low, high, default_label, &table);
@@ -867,7 +940,7 @@ impl<'b> ClassReader<'b> {
                     pc += 4 - (pc & 3);
                     // Read the instruction.
                     let default = i64::from(code.i32_at(pc)?);
-                    let default_label = label_at(current_bytecode_offset + default, labels)?;
+                    let default_label = labels.label_at(current_bytecode_offset + default)?;
                     let num_pairs = code.i32_at(pc + 4)?;
                     pc += 8;
                     let capacity =
@@ -877,7 +950,7 @@ impl<'b> ClassReader<'b> {
                     for _ in 0..num_pairs {
                         keys.push(code.i32_at(pc)?);
                         let branch = i64::from(code.i32_at(pc + 4)?);
-                        values.push(label_at(current_bytecode_offset + branch, labels)?);
+                        values.push(labels.label_at(current_bytecode_offset + branch)?);
                         pc += 8;
                     }
                     method_visitor.visit_lookup_switch_insn(default_label, &keys, &values);
@@ -1046,7 +1119,7 @@ impl<'b> ClassReader<'b> {
                 }
             }
         }
-        if let Some(label) = *label_slot(code_length, &mut context.current_method_labels)? {
+        if let Some(label) = context.current_method_labels.slot(code_length)? {
             method_visitor.visit_label(label);
         }
 
@@ -1090,8 +1163,8 @@ impl<'b> ClassReader<'b> {
                     signature = self.utf8_at(signature_offset)?;
                 }
                 let labels = &context.current_method_labels;
-                let start = label_at(start_pc.into(), labels)?;
-                let end = label_at(i64::from(start_pc) + i64::from(length), labels)?;
+                let start = labels.label_at(start_pc.into())?;
+                let end = labels.label_at(i64::from(start_pc) + i64::from(length))?;
                 method_visitor.visit_local_variable(
                     required(name, current_offset - 6)?,
                     required(descriptor, current_offset - 4)?,

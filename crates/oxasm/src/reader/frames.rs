@@ -11,7 +11,6 @@ use crate::jstr::{JavaStr, JavaString};
 use crate::label::Label;
 use crate::opcodes::ACC_STATIC;
 
-use super::code::create_label;
 use super::context::Context;
 use super::{ClassReader, ReadError, ReadErrorKind, required};
 
@@ -238,10 +237,9 @@ impl<'b> ClassReader<'b> {
             ));
         }
         context.current_frame_offset = context.current_frame_offset.wrapping_add(offset_delta + 1);
-        create_label(
-            i64::from(context.current_frame_offset),
-            &mut context.current_method_labels,
-        )?;
+        context
+            .current_method_labels
+            .create_label(i64::from(context.current_frame_offset))?;
         Ok(current_offset)
     }
 
@@ -274,8 +272,9 @@ impl<'b> ClassReader<'b> {
             }
             ITEM_UNINITIALIZED => {
                 let bytecode_offset = i64::from(self.u16_at(current_offset)?);
-                let label: Label =
-                    create_label(bytecode_offset, &mut context.current_method_labels)?;
+                let label: Label = context
+                    .current_method_labels
+                    .create_label(bytecode_offset)?;
                 current_offset += 2;
                 FrameValue::Uninitialized(label)
             }

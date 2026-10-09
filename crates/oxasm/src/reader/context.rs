@@ -7,6 +7,7 @@ use crate::label::Label;
 use crate::type_path::TypePath;
 
 use super::ParsingOptions;
+use super::code::MethodLabels;
 
 /// Information about a class being parsed in a [`ClassReader`](super::ClassReader). `'a` is the
 /// lifetime of the reader borrow (the strings come from its cache) and of the codecs.
@@ -25,10 +26,9 @@ pub(super) struct Context<'a> {
     pub(super) current_method_name: Option<&'a JavaStr>,
     /// The descriptor of the current method.
     pub(super) current_method_descriptor: Option<&'a JavaStr>,
-    /// The labels of the current method, indexed by bytecode offset (only bytecode offsets for
-    /// which a label is needed have a non `None` associated label). Empty until the first Code
-    /// attribute (ASM's `null`).
-    pub(super) current_method_labels: Vec<Option<Label>>,
+    /// The labels of the current method, indexed by bytecode offset: the thread's table,
+    /// given back when the context is dropped.
+    pub(super) current_method_labels: MethodLabels,
     /// The `(start_pc, line_number)` entries of the current method's line number tables (ASM's
     /// `Label.lineNumber` and `Label.otherLineNumbers`), sorted by `start_pc` once read, and in
     /// the order they were read for each `start_pc`.
@@ -91,7 +91,7 @@ impl<'a> Context<'a> {
             current_method_access_flags: 0,
             current_method_name: None,
             current_method_descriptor: None,
-            current_method_labels: Vec::new(),
+            current_method_labels: MethodLabels::take(),
             current_method_line_numbers: Vec::new(),
             current_type_annotation_target: 0,
             current_type_annotation_target_path: None,
@@ -108,5 +108,11 @@ impl<'a> Context<'a> {
             current_frame_stack_types: Vec::new(),
             current_frame_stack_capacity: 0,
         }
+    }
+}
+
+impl Drop for Context<'_> {
+    fn drop(&mut self) {
+        MethodLabels::put_back(std::mem::take(&mut self.current_method_labels));
     }
 }
