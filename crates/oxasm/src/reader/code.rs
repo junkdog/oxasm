@@ -1154,6 +1154,7 @@ impl<'b> ClassReader<'b> {
                 }
             }
             let local_variable_table_length = self.u16_at(local_variable_table_offset)?;
+            method_visitor.visit_local_variable_count(local_variable_table_length);
             current_offset = local_variable_table_offset + 2;
             for _ in 0..local_variable_table_length {
                 let start_pc = self.u16_at(current_offset)?;

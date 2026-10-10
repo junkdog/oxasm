@@ -17,6 +17,9 @@ use crate::insn::{InsnNode, InsnTypeAnnotations};
 /// The "no slot" value of the slot links.
 const NIL: u32 = u32::MAX;
 
+/// The [`Slot::next_owner`] of a slot that is not in the chain of owners.
+const UNCHAINED: u32 = u32::MAX - 1;
+
 /// The source of list ids: each list (and each [`InsnList::clear`]) takes the next one, so that
 /// the handles of a list never designate a node of another list. It is the start of the next
 /// block of [`LIST_ID_BLOCK`] ids, and wraps after 2^32 ids, which only matters for a handle kept
@@ -93,8 +96,15 @@ struct Slot {
     generation: u32,
     previous: u32,
     next: u32,
+    /// The next slot in the chain of the slots that may hold a node owning memory (`NIL` at
+    /// its end), or `UNCHAINED`. It fits in the slot's padding.
+    next_owner: u32,
     node: Option<InsnNode>,
 }
+
+// The chain of owners costs no memory: `next_owner` fills what was the slot's padding.
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<Slot>() == 40);
 
 /// The positions of the instructions, built on demand (ASM's `cache`, and the `index` field of
 /// the nodes).
@@ -124,6 +134,10 @@ pub struct InsnList {
     /// The arena. Its slots have no drop glue: dropping the list drops only the nodes that own
     /// memory (see the `Drop` impl).
     slots: Vec<ManuallyDrop<Slot>>,
+    /// The first slot in the chain of the slots that may hold a node owning memory, or `NIL`:
+    /// every slot that was given such a node, or lent out mutably. A slot stays in the chain
+    /// once in it, whatever it holds later.
+    owners: u32,
     /// The free slots.
     free: Vec<u32>,
     first: u32,
@@ -142,6 +156,7 @@ impl InsnList {
         InsnList {
             id: next_list_id(),
             slots: Vec::new(),
+            owners: NIL,
             free: Vec::new(),
             first: NIL,
             last: NIL,
@@ -219,6 +234,8 @@ impl InsnList {
     pub fn node_mut(&mut self, id: InsnId) -> Option<&mut InsnNode> {
         let slot = self.slot_of(id)?;
         self.labels.take();
+        // The caller may store a node that owns memory.
+        self.chain_owner(slot);
         self.slots[slot as usize].node.as_mut()
     }
 
@@ -538,24 +555,46 @@ impl InsnList {
             .unwrap_or_else(|| panic!("{id:?} is not an instruction of this list"))
     }
 
-    /// Stores the given node in a free slot, and returns the slot (not linked yet).
+    /// Stores the given node in a free slot, and returns the slot (not linked yet). The slot
+    /// joins the chain of owners if the node owns memory: a test that the inlined call sites of
+    /// [`add`](Self::add) resolve at compile time, since they know the node's variant.
     #[inline(always)]
     fn alloc(&mut self, node: InsnNode) -> u32 {
+        let owns_memory = node.insn.owns_memory();
         if let Some(slot) = self.free.pop() {
             self.slots[slot as usize].node = Some(node);
+            if owns_memory {
+                self.chain_owner(slot);
+            }
             slot
         } else {
             let slot = u32::try_from(self.slots.len())
                 .ok()
-                .filter(|&slot| slot != NIL)
+                .filter(|&slot| slot < UNCHAINED)
                 .expect("too many instructions in an InsnList");
+            let next_owner = if owns_memory {
+                std::mem::replace(&mut self.owners, slot)
+            } else {
+                UNCHAINED
+            };
             self.slots.push(ManuallyDrop::new(Slot {
                 generation: 0,
                 previous: NIL,
                 next: NIL,
+                next_owner,
                 node: Some(node),
             }));
             slot
+        }
+    }
+
+    /// Adds the given slot to the chain of owners, if it is not in it yet.
+    #[inline]
+    fn chain_owner(&mut self, slot: u32) {
+        let entry = &mut self.slots[slot as usize];
+        if entry.next_owner == UNCHAINED {
+            entry.next_owner = self.owners;
+            self.owners = slot;
         }
     }
 
@@ -681,18 +720,15 @@ impl Default for InsnList {
 }
 
 /// Drops the nodes that own memory. Most instructions own none, and the slots are
-/// `ManuallyDrop`, so the others cost a test of their variant instead of a call to the drop glue
-/// of each slot (T3 in oxasm-optimization.md).
+/// `ManuallyDrop`, so only the slots in the chain of owners are visited, instead of a call to the
+/// drop glue of each slot (T3 in oxasm-optimization.md), or a test of each slot's variant (T9).
 impl Drop for InsnList {
     fn drop(&mut self) {
-        for slot in &mut self.slots {
-            if slot
-                .node
-                .as_ref()
-                .is_some_and(|node| node.insn.owns_memory())
-            {
-                slot.node = None;
-            }
+        let mut slot = self.owners;
+        while slot != NIL {
+            let entry = &mut self.slots[slot as usize];
+            slot = entry.next_owner;
+            entry.node = None;
         }
     }
 }
@@ -704,6 +740,7 @@ impl Clone for InsnList {
         InsnList {
             id: next_list_id(),
             slots: self.slots.clone(),
+            owners: self.owners,
             free: self.free.clone(),
             first: self.first,
             last: self.last,

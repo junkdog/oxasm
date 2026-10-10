@@ -306,3 +306,81 @@ fn accept_visits_the_code_length() {
     MethodNode::default().accept_method_visitor(&mut accepted);
     assert!(accepted.0.is_empty());
 }
+
+/// The local variable count hints of a visit, each with the number of declarations that
+/// followed it.
+#[derive(Default)]
+struct LocalVariableCounts(Vec<(u16, usize)>);
+impl ClassVisitor for LocalVariableCounts {
+    fn visit_method<'a>(
+        &'a mut self,
+        _access: u32,
+        _name: &JavaStr,
+        _descriptor: &JavaStr,
+        _signature: Option<&JavaStr>,
+        _exceptions: &[&JavaStr],
+    ) -> Option<Box<dyn MethodVisitor + 'a>> {
+        Some(Box::new(&mut *self))
+    }
+}
+impl MethodVisitor for LocalVariableCounts {
+    fn visit_local_variable_count(&mut self, count: u16) {
+        self.0.push((count, 0));
+    }
+
+    fn visit_local_variable(
+        &mut self,
+        _name: &JavaStr,
+        _descriptor: &JavaStr,
+        _signature: Option<&JavaStr>,
+        _start: Label,
+        _end: Label,
+        _index: u16,
+    ) {
+        self.0.last_mut().expect("a count hint first").1 += 1;
+    }
+}
+
+/// oxasm-specific: a reader visits the number of local variables before their declarations
+/// (T8 in oxasm-optimization.md: a method node sizes its list from it), and the hint changes
+/// nothing in the node.
+#[test]
+fn visit_local_variable_count_is_only_a_hint() {
+    let mut hinted = 0;
+    for &class in PrecompiledClass::ALL {
+        let reader = ClassReader::new(class.bytes()).unwrap();
+        let mut counts = LocalVariableCounts::default();
+        reader.accept(&mut counts, ParsingOptions::empty()).unwrap();
+        for &(count, visited) in &counts.0 {
+            assert_eq!(usize::from(count), visited, "{class}");
+        }
+        hinted += counts.0.len();
+    }
+    assert!(hinted > 0);
+
+    let (start, end) = (Label::new(), Label::new());
+    let visit = |count: Option<u16>| {
+        let mut method_node = MethodNode::default();
+        method_node.visit_code();
+        method_node.visit_label(start);
+        method_node.visit_insn(NOP);
+        method_node.visit_label(end);
+        if let Some(count) = count {
+            method_node.visit_local_variable_count(count);
+        }
+        for index in 0..2 {
+            method_node.visit_local_variable(
+                JavaStr::from_str("x"),
+                JavaStr::from_str("I"),
+                None,
+                start,
+                end,
+                index,
+            );
+        }
+        method_node.local_variables
+    };
+    for count in [Some(0), Some(1), Some(2), Some(u16::MAX)] {
+        assert_eq!(visit(count), visit(None), "{count:?}");
+    }
+}

@@ -538,6 +538,17 @@ pub trait MethodVisitor {
             .visit_try_catch_annotation(type_ref, type_path, descriptor, visible)
     }
 
+    /// Visits the number of local variable declarations that follow: an oxasm extension, which
+    /// ASM does not have. A class reader calls it before the first
+    /// [`visit_local_variable`](Self::visit_local_variable) of a method, with the length of its
+    /// `LocalVariableTable`, so that a visitor which stores the declarations can size its storage
+    /// once. It is only a hint: other sources of events need not call it.
+    fn visit_local_variable_count(&mut self, count: u16) {
+        if let Some(d) = self.delegate() {
+            d.visit_local_variable_count(count);
+        }
+    }
+
     /// Visits a local variable declaration.
     ///
     /// - `name`: the name of a local variable.
@@ -776,6 +787,9 @@ macro_rules! forward_method_visitor {
                 visible: bool,
             ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
                 (**self).visit_try_catch_annotation(type_ref, type_path, descriptor, visible)
+            }
+            fn visit_local_variable_count(&mut self, count: u16) {
+                (**self).visit_local_variable_count(count);
             }
             fn visit_local_variable(
                 &mut self,

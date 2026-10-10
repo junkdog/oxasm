@@ -838,6 +838,10 @@ impl MethodVisitor for MethodNode {
         self.add_try_catch_annotation(None, type_ref, type_path, descriptor, visible)
     }
 
+    fn visit_local_variable_count(&mut self, count: u16) {
+        self.local_variables.reserve(usize::from(count));
+    }
+
     fn visit_local_variable(
         &mut self,
         name: &JavaStr,

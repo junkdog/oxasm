@@ -1280,6 +1280,28 @@ fn instructions_owning_memory_are_dropped() {
     reused.remove(ids[3]);
     reused.add(insns_owning_memory(&interner).swap_remove(3));
     drop((edited, reused));
+
+    // T9: the list drops only the slots it has chained as owners, so every way of storing an
+    // instruction that owns memory in a slot must chain it: through `IndexMut` and `node_mut`
+    // in a slot that held a plain instruction, by an insertion or replacement in a recycled
+    // slot (once or twice), and in a copy.
+    let mut plain = InsnList::new();
+    let ids: Vec<InsnId> = (0..8).map(|tag| plain.add(int(tag))).collect();
+    let mut owning = insns_owning_memory(&interner).into_iter();
+    plain[ids[0]].insn = owning.next().unwrap();
+    plain.node_mut(ids[1]).unwrap().insn = owning.next().unwrap();
+    plain.remove(ids[2]);
+    let recycled = plain.insert(owning.next().unwrap());
+    plain.remove(recycled);
+    let recycled = plain.insert_after(ids[3], int(8));
+    plain.remove(recycled);
+    plain.insert_before(ids[3], owning.next().unwrap());
+    plain.set(ids[4], owning.next().unwrap());
+    plain
+        .cursor(0)
+        .add(insns_owning_memory(&interner).swap_remove(3));
+    let copy = plain.clone();
+    drop((plain, copy));
 }
 
 proptest! {
