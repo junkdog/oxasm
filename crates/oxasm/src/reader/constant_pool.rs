@@ -23,10 +23,13 @@ use super::{
     ReadError, ReadErrorKind,
 };
 
-/// The flag of a `constant_utf8_values` entry borrowed from the class file. The entry's bits 0-31
-/// are the string's offset (a class file is shorter than 2 GiB), and bits 32-47 its length.
+/// The bits of a `cp_info_entries` entry that hold its `cp_info` offset plus one (a class file is
+/// shorter than 2 GiB).
+const CP_INFO_OFFSET: u64 = 0xFFFF_FFFF;
+/// The flag of a `cp_info_entries` entry whose string is borrowed from the class file. The
+/// entry's bits 32-47 are the string's length, and the string is at its offset in `utf8_bytes`.
 const UTF8_BORROWED: u64 = 1 << 62;
-/// The value of a `constant_utf8_values` entry decoded into `constant_utf8_decoded`.
+/// The flag of a `cp_info_entries` entry whose string is decoded into `constant_utf8_decoded`.
 const UTF8_DECODED: u64 = 1 << 63;
 
 /// ASM 9.11's bound on nested `ConstantDynamic` bootstrap arguments (`depthLimit`).
@@ -108,8 +111,9 @@ impl<'b> ClassReader<'b> {
     /// and the second slot of long and double entries).
     #[inline]
     pub(crate) fn cp_info_offset(&self, index: usize) -> Result<i64, ReadError> {
-        match self.cp_info_offsets.get(index) {
-            Some(&offset) => Ok(i64::from(offset)),
+        match self.cp_info_entries.get(index) {
+            // The offset bits never change, so any ordering reads them.
+            Some(entry) => Ok((entry.load(Ordering::Relaxed) & CP_INFO_OFFSET) as i64),
             None => Err(ReadError::new(
                 0,
                 ReadErrorKind::InvalidConstantPoolIndex(index as u16),
@@ -125,7 +129,7 @@ impl<'b> ClassReader<'b> {
     /// `constant_pool_count` field).
     #[must_use]
     pub fn get_item_count(&self) -> usize {
-        self.cp_info_offsets.len()
+        self.cp_info_entries.len()
     }
 
     /// Returns the start offset in this class file of a JVMS 'cp_info' structure (i.e. a
@@ -276,7 +280,7 @@ impl<'b> ClassReader<'b> {
     pub(crate) fn utf(&self, constant_pool_entry_index: usize) -> Result<&JavaStr, ReadError> {
         // The common case, a string borrowed from the class file, stays inline: the rest is
         // out of line, so that this path does not pay for its registers.
-        if let Some(cell) = self.constant_utf8_values.get(constant_pool_entry_index) {
+        if let Some(cell) = self.cp_info_entries.get(constant_pool_entry_index) {
             let state = cell.load(Ordering::Acquire);
             if state & UTF8_BORROWED != 0 {
                 return Ok(self.borrowed_utf(state));
@@ -285,12 +289,12 @@ impl<'b> ClassReader<'b> {
         self.utf_out_of_line(constant_pool_entry_index)
     }
 
-    /// The string of a `constant_utf8_values` entry borrowed from the class file.
+    /// The string of a `cp_info_entries` entry borrowed from the class file.
     #[inline(always)]
     fn borrowed_utf(&self, state: u64) -> &'b JavaStr {
-        let offset = (state & 0xFFFF_FFFF) as usize;
+        let offset = (state & CP_INFO_OFFSET) as usize;
         let length = ((state >> 32) & 0xFFFF) as usize;
-        let bytes = &self.class_file[offset..offset + length];
+        let bytes = &self.utf8_bytes[offset..offset + length];
         // SAFETY: the entry was stored by `utf_out_of_line`, from a string that `read_utf`
         // borrowed from these bytes, so they are valid UTF-8.
         unsafe { JavaStr::from_semi_utf8_unchecked(bytes) }
@@ -304,7 +308,7 @@ impl<'b> ClassReader<'b> {
         &self,
         constant_pool_entry_index: usize,
     ) -> Result<&JavaStr, ReadError> {
-        let Some(cell) = self.constant_utf8_values.get(constant_pool_entry_index) else {
+        let Some(cell) = self.cp_info_entries.get(constant_pool_entry_index) else {
             return Err(ReadError::new(
                 0,
                 ReadErrorKind::InvalidConstantPoolIndex(constant_pool_entry_index as u16),
@@ -314,14 +318,14 @@ impl<'b> ClassReader<'b> {
         if state & UTF8_BORROWED != 0 {
             return Ok(self.borrowed_utf(state));
         }
-        if state == UTF8_DECODED {
+        if state & UTF8_DECODED != 0 {
             // The release store of UTF8_DECODED happened after both cells were initialized.
             let decoded = self.constant_utf8_decoded.get().expect("initialized");
             return Ok(decoded[constant_pool_entry_index]
                 .get()
                 .expect("initialized"));
         }
-        let cp_info_offset = self.cp_info_offset(constant_pool_entry_index)?;
+        let cp_info_offset = (state & CP_INFO_OFFSET) as i64;
         let utf_offset = cp_info_offset + 2;
         let value = self.read_utf(
             utf_offset,
@@ -336,20 +340,20 @@ impl<'b> ClassReader<'b> {
                 ));
                 // Racing threads store the same value.
                 cell.store(
-                    UTF8_BORROWED | (value.len() as u64) << 32 | utf_offset as u64,
+                    UTF8_BORROWED | (value.len() as u64) << 32 | cp_info_offset as u64,
                     Ordering::Release,
                 );
                 Ok(value)
             }
             Cow::Owned(value) => {
                 let decoded = self.constant_utf8_decoded.get_or_init(|| {
-                    (0..self.constant_utf8_values.len())
+                    (0..self.cp_info_entries.len())
                         .map(|_| OnceLock::new())
                         .collect()
                 });
                 // Another thread may have decoded the same string meanwhile: either value is fine.
                 let value = decoded[constant_pool_entry_index].get_or_init(|| value);
-                cell.store(UTF8_DECODED, Ordering::Release);
+                cell.store(UTF8_DECODED | cp_info_offset as u64, Ordering::Release);
                 Ok(value)
             }
         }
@@ -663,6 +667,150 @@ mod tests {
             reader.utf(STRINGS.len() + 1).unwrap_err().kind,
             ReadErrorKind::InvalidConstantPoolIndex(STRINGS.len() as u16 + 1)
         );
+    }
+
+    #[test]
+    fn cp_info_offset_is_kept_by_cached_strings() {
+        let bytes = class_file(&STRINGS);
+        let reader = ClassReader::new(&bytes).unwrap();
+        let offsets: Vec<i64> = (0..=STRINGS.len())
+            .map(|index| reader.cp_info_offset(index).unwrap())
+            .collect();
+        assert_eq!(offsets[..2], [0, 11]);
+        for index in 1..=STRINGS.len() {
+            reader.utf(index).unwrap();
+        }
+        for (index, &offset) in offsets.iter().enumerate() {
+            assert_eq!(
+                reader.cp_info_offset(index).unwrap(),
+                offset,
+                "entry {index}"
+            );
+            assert_eq!(
+                reader.get_item(index).unwrap(),
+                offset as usize,
+                "entry {index}"
+            );
+        }
+    }
+
+    /// The constant pool entries of every tag but the dynamic ones (which need a
+    /// `BootstrapMethods` attribute), as tags and sizes.
+    const ENTRIES: [(u8, usize); 15] = [
+        (super::super::CONSTANT_UTF8_TAG, 3 + 4),
+        (super::super::CONSTANT_INTEGER_TAG, 5),
+        (super::super::CONSTANT_FLOAT_TAG, 5),
+        (super::super::CONSTANT_LONG_TAG, 9),
+        (super::super::CONSTANT_DOUBLE_TAG, 9),
+        (super::super::CONSTANT_CLASS_TAG, 3),
+        (super::super::CONSTANT_STRING_TAG, 3),
+        (super::super::CONSTANT_FIELDREF_TAG, 5),
+        (super::super::CONSTANT_METHODREF_TAG, 5),
+        (super::super::CONSTANT_INTERFACE_METHODREF_TAG, 5),
+        (super::super::CONSTANT_NAME_AND_TYPE_TAG, 5),
+        (super::super::CONSTANT_METHOD_HANDLE_TAG, 4),
+        (super::super::CONSTANT_METHOD_TYPE_TAG, 3),
+        (super::super::CONSTANT_MODULE_TAG, 3),
+        (super::super::CONSTANT_PACKAGE_TAG, 3),
+    ];
+
+    /// A class file prefix with the given constant_pool_count and entries (each a tag, then
+    /// zeros but for a `CONSTANT_Utf8`'s length of 4), and `tail` after them.
+    fn class_file_with(count: u16, entries: &[(u8, usize)], tail: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 52];
+        bytes.extend_from_slice(&count.to_be_bytes());
+        for &(tag, size) in entries {
+            let start = bytes.len();
+            bytes.resize(start + size, 0);
+            bytes[start] = tag;
+            if tag == super::super::CONSTANT_UTF8_TAG {
+                bytes[start + 2] = 4;
+            }
+        }
+        bytes.extend_from_slice(tail);
+        bytes
+    }
+
+    #[test]
+    fn new_finds_every_entry() {
+        // A long or double takes two indices, the second with offset 0.
+        let count = ENTRIES.len() + 2 + 1;
+        let bytes = class_file_with(count as u16, &ENTRIES, &[]);
+        let reader = ClassReader::new(&bytes).unwrap();
+        assert_eq!(reader.get_item_count(), count);
+        let mut expected = vec![0];
+        let mut offset = 10;
+        for &(tag, size) in &ENTRIES {
+            expected.push(offset + 1);
+            if tag == super::super::CONSTANT_LONG_TAG || tag == super::super::CONSTANT_DOUBLE_TAG {
+                expected.push(0);
+            }
+            offset += size;
+        }
+        let offsets: Vec<usize> = (0..count).map(|i| reader.get_item(i).unwrap()).collect();
+        assert_eq!(offsets, expected);
+        assert_eq!(reader.header(), offset);
+        assert_eq!(reader.get_max_string_length(), 3 + 4);
+        assert_eq!(
+            reader.get_item(count).unwrap_err().kind,
+            ReadErrorKind::InvalidConstantPoolIndex(count as u16)
+        );
+    }
+
+    #[test]
+    fn new_with_a_long_as_the_last_entry_or_no_entry() {
+        // The long's second index is past the constant pool.
+        let long = (super::super::CONSTANT_LONG_TAG, 9);
+        let bytes = class_file_with(2, &[long], &[]);
+        let reader = ClassReader::new(&bytes).unwrap();
+        assert_eq!(reader.get_item_count(), 2);
+        assert_eq!(reader.get_item(1).unwrap(), 11);
+        assert_eq!(reader.header(), 19);
+
+        for count in [0, 1] {
+            let bytes = class_file_with(count, &[], &[]);
+            let reader = ClassReader::new(&bytes).unwrap();
+            assert_eq!(reader.get_item_count(), usize::from(count));
+            assert_eq!(reader.header(), 10);
+        }
+    }
+
+    #[test]
+    fn new_rejects_truncated_constant_pools_and_unknown_tags() {
+        let utf8 = (super::super::CONSTANT_UTF8_TAG, 3 + 4);
+        let class = (super::super::CONSTANT_CLASS_TAG, 3);
+        let error = |bytes: &[u8]| {
+            let error = ClassReader::new(bytes).unwrap_err();
+            (error.offset, error.kind.clone())
+        };
+        // No tag for the third entry.
+        let bytes = class_file_with(4, &[utf8, class], &[]);
+        assert_eq!(error(&bytes), (20, ReadErrorKind::UnexpectedEnd));
+        // A CONSTANT_Utf8 tag without its length, or with only one byte of it.
+        for tail in [&[][..], &[0]] {
+            let mut bytes = class_file_with(3, &[class], &[super::super::CONSTANT_UTF8_TAG]);
+            bytes.extend_from_slice(tail);
+            assert_eq!(error(&bytes), (14, ReadErrorKind::UnexpectedEnd));
+        }
+        // Another entry cut short is the business of what reads it, as in ASM.
+        for (tag, size) in [
+            (super::super::CONSTANT_CLASS_TAG, 3),
+            (super::super::CONSTANT_LONG_TAG, 9),
+        ] {
+            for tail in [&[tag][..], &[tag, 0]] {
+                let bytes = class_file_with(2, &[], tail);
+                let reader = ClassReader::new(&bytes).unwrap();
+                assert_eq!(reader.get_item(1).unwrap(), 11);
+                assert_eq!(reader.header(), 10 + size);
+            }
+        }
+        for tag in [0, 2, 13, 14, 21, 255] {
+            let bytes = class_file_with(3, &[class, (tag, 3)], &[]);
+            assert_eq!(
+                error(&bytes),
+                (13, ReadErrorKind::InvalidConstantPoolTag(tag))
+            );
+        }
     }
 
     #[test]

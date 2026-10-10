@@ -158,20 +158,24 @@ fn next_reader_id() -> u64 {
 pub struct ClassReader<'b> {
     /// The class file (ASM's `classFileBuffer`).
     class_file: &'b [u8],
+    /// `class_file` from its third byte, so that the string of a `CONSTANT_Utf8` entry starts at
+    /// the entry's `cp_info_offset` in it (3 bytes after its tag).
+    utf8_bytes: &'b [u8],
     /// The offset in bytes of the `ClassFile`'s access_flags field.
     header: i64,
     /// The offset in bytes, in `class_file`, of each `cp_info` entry of the `ClassFile`'s
-    /// `constant_pool` array, *plus one*. In other words, the offset of constant pool entry `i`
-    /// is given by `cp_info_offsets[i] - 1`, i.e. its `cp_info`'s tag field is given by
-    /// `class_file[cp_info_offsets[i] - 1]`. Entry 0 (and the second slot of long and double
-    /// entries) is 0.
-    cp_info_offsets: Box<[u32]>,
-    /// The `String` objects corresponding to the `CONSTANT_Utf8` constant pool items, decoded on
-    /// first use. Each entry is 0 until then, and then holds `UTF8_BORROWED | length << 32 |
-    /// offset` for a string borrowed from `class_file` (almost all of them), or `UTF8_DECODED`
-    /// for one in `constant_utf8_decoded`. Racing decoders store the same value, so a release
-    /// store publishes it, without a compare-and-swap.
-    constant_utf8_values: Box<[AtomicU64]>,
+    /// `constant_pool` array, *plus one*, in bits 0-31 of each entry (ASM's `cpInfoOffsets`). In
+    /// other words, the offset of constant pool entry `i` is given by `cp_info_offset(i) - 1`, i.e.
+    /// its `cp_info`'s tag field is given by `class_file[cp_info_offset(i) - 1]`. Entry 0 (and the
+    /// second slot of long and double entries) has offset 0.
+    ///
+    /// The other bits cache the `String` objects corresponding to the `CONSTANT_Utf8` constant
+    /// pool items (ASM's `constantUtf8Values`), decoded on first use. They are 0 until then, and
+    /// then hold `UTF8_BORROWED | length << 32` for a string borrowed from `class_file` (almost
+    /// all of them), or `UTF8_DECODED` for one in `constant_utf8_decoded`. Racing decoders store
+    /// the same value, so a release store publishes it, without a compare-and-swap. Every entry is
+    /// written once when the reader is made, so the array is never zeroed.
+    cp_info_entries: Box<[AtomicU64]>,
     /// The `CONSTANT_Utf8` constant pool items that are not valid UTF-8 as they stand, decoded
     /// on first use. Allocated on first need, as such strings are rare.
     constant_utf8_decoded: OnceLock<Box<[OnceLock<JavaString>]>>,
@@ -217,9 +221,9 @@ impl<'b> ClassReader<'b> {
         }
         let mut reader = ClassReader {
             class_file,
+            utf8_bytes: class_file.get(2..).unwrap_or_default(),
             header: 0,
-            cp_info_offsets: Box::default(),
-            constant_utf8_values: Box::default(),
+            cp_info_entries: Box::default(),
             constant_utf8_decoded: OnceLock::new(),
             constant_dynamic_values: Box::default(),
             bootstrap_method_offsets: None,
@@ -237,73 +241,89 @@ impl<'b> ClassReader<'b> {
                 ));
             }
         }
-        // Create the constant pool arrays. The constant_pool_count field is after the magic,
+        // Create the constant pool array. The constant_pool_count field is after the magic,
         // minor_version and major_version fields, which use 4, 2 and 2 bytes respectively.
         let constant_pool_count = usize::from(reader.u16_at(8)?);
-        let mut cp_info_offsets = vec![0u32; constant_pool_count];
+        let mut cp_info_entries = Box::<[AtomicU64]>::new_uninit_slice(constant_pool_count);
+        if let Some(entry) = cp_info_entries.first_mut() {
+            entry.write(AtomicU64::new(0));
+        }
         // Compute the offset of each constant pool entry, as well as a conservative estimate of
         // the maximum length of the constant pool strings. The first constant pool entry is
         // after the magic, minor_version, major_version and constant_pool_count fields, which use
         // 4, 2, 2 and 2 bytes respectively.
         let mut current_cp_info_index = 1;
-        let mut current_cp_info_offset: i64 = 10;
+        let mut current_cp_info_offset: usize = 10;
         let mut current_max_string_length = 0;
         let mut has_bootstrap_methods = false;
         let mut has_constant_dynamic = false;
         // The offset of the other entries depend on the total size of all the previous entries.
-        while current_cp_info_index < constant_pool_count {
-            cp_info_offsets[current_cp_info_index] = (current_cp_info_offset + 1) as u32;
+        while let Some(entry) = cp_info_entries.get_mut(current_cp_info_index) {
+            entry.write(AtomicU64::new(current_cp_info_offset as u64 + 1));
             current_cp_info_index += 1;
-            let cp_info_size: i64 = match reader.u8_at(current_cp_info_offset)? {
-                CONSTANT_FIELDREF_TAG
-                | CONSTANT_METHODREF_TAG
-                | CONSTANT_INTERFACE_METHODREF_TAG
-                | CONSTANT_INTEGER_TAG
-                | CONSTANT_FLOAT_TAG
-                | CONSTANT_NAME_AND_TYPE_TAG => 5,
-                CONSTANT_DYNAMIC_TAG => {
-                    has_bootstrap_methods = true;
-                    has_constant_dynamic = true;
-                    5
-                }
-                CONSTANT_INVOKE_DYNAMIC_TAG => {
-                    has_bootstrap_methods = true;
-                    5
-                }
-                CONSTANT_LONG_TAG | CONSTANT_DOUBLE_TAG => {
-                    current_cp_info_index += 1;
-                    9
-                }
-                CONSTANT_UTF8_TAG => {
-                    let size = 3 + i64::from(reader.u16_at(current_cp_info_offset + 1)?);
-                    // The size in bytes of this CONSTANT_Utf8 structure provides a conservative
-                    // estimate of the length in characters of the corresponding string, and is
-                    // much cheaper to compute than this exact length.
-                    current_max_string_length = current_max_string_length.max(size as usize);
-                    size
-                }
-                CONSTANT_METHOD_HANDLE_TAG => 4,
-                CONSTANT_CLASS_TAG
-                | CONSTANT_STRING_TAG
-                | CONSTANT_METHOD_TYPE_TAG
-                | CONSTANT_PACKAGE_TAG
-                | CONSTANT_MODULE_TAG => 3,
-                tag => {
-                    return Err(ReadError::new(
-                        current_cp_info_offset,
-                        ReadErrorKind::InvalidConstantPoolTag(tag),
-                    ));
-                }
+            let Some(&tag) = class_file.get(current_cp_info_offset) else {
+                return Err(ReadError::new(
+                    current_cp_info_offset as i64,
+                    ReadErrorKind::UnexpectedEnd,
+                ));
             };
+            let mut cp_info_size = usize::from(CP_INFO_SIZES[usize::from(tag)]);
+            // A CONSTANT_Utf8's length, read for every tag (and added for this one only) so that
+            // the tags, which alternate, don't take a branch.
+            let is_utf8 = usize::from(tag == CONSTANT_UTF8_TAG);
+            let length =
+                match class_file.get(current_cp_info_offset + 1..current_cp_info_offset + 3) {
+                    Some(&[length_high, length_low]) => {
+                        usize::from(u16::from_be_bytes([length_high, length_low]))
+                    }
+                    _ if is_utf8 != 0 => {
+                        return Err(ReadError::new(
+                            current_cp_info_offset as i64 + 1,
+                            ReadErrorKind::UnexpectedEnd,
+                        ));
+                    }
+                    _ => 0,
+                };
+            cp_info_size += length * is_utf8;
+            // The size in bytes of a CONSTANT_Utf8 structure provides a conservative estimate of
+            // the length in characters of the corresponding string, and is much cheaper to
+            // compute than this exact length.
+            current_max_string_length = current_max_string_length.max(cp_info_size * is_utf8);
+            if cp_info_size == 0 {
+                // The tags of a variable size, or with more to do than skip the entry.
+                cp_info_size = match tag {
+                    CONSTANT_DYNAMIC_TAG => {
+                        has_bootstrap_methods = true;
+                        has_constant_dynamic = true;
+                        5
+                    }
+                    CONSTANT_INVOKE_DYNAMIC_TAG => {
+                        has_bootstrap_methods = true;
+                        5
+                    }
+                    CONSTANT_LONG_TAG | CONSTANT_DOUBLE_TAG => {
+                        if let Some(entry) = cp_info_entries.get_mut(current_cp_info_index) {
+                            entry.write(AtomicU64::new(0));
+                        }
+                        current_cp_info_index += 1;
+                        9
+                    }
+                    _ => {
+                        return Err(ReadError::new(
+                            current_cp_info_offset as i64,
+                            ReadErrorKind::InvalidConstantPoolTag(tag),
+                        ));
+                    }
+                };
+            }
             current_cp_info_offset += cp_info_size;
         }
         reader.max_string_length = current_max_string_length;
         // The Classfile's access_flags field is just after the last constant pool entry.
-        reader.header = current_cp_info_offset;
-        reader.cp_info_offsets = cp_info_offsets.into_boxed_slice();
-        reader.constant_utf8_values = (0..constant_pool_count)
-            .map(|_| AtomicU64::new(0))
-            .collect();
+        reader.header = current_cp_info_offset as i64;
+        // SAFETY: entry 0 was written before the loop, and each iteration wrote the entry at its
+        // index, and the next one too for a long or double, until the index reached the end.
+        reader.cp_info_entries = unsafe { cp_info_entries.assume_init() };
 
         // Allocate the cache of ConstantDynamic values, if there is at least one.
         if has_constant_dynamic {
@@ -619,7 +639,7 @@ impl<'b> ClassReader<'b> {
         }
 
         // Visit the class declaration. The minor_version and major_version fields start 6 bytes
-        // before the first constant pool entry, which itself starts at cp_info_offsets[1] - 1
+        // before the first constant pool entry, which itself starts at cp_info_offset(1) - 1
         // (by definition).
         let version_offset = self.cp_info_offset(1)? - 7;
         class_visitor.visit(
@@ -631,7 +651,7 @@ impl<'b> ClassReader<'b> {
             &interfaces,
         );
         class_visitor.visit_member_counts(fields_count, methods_count);
-        // The constant pool spans from its first entry, at cp_info_offsets[1] - 1, to the header.
+        // The constant pool spans from its first entry, at cp_info_offset(1) - 1, to the header.
         class_visitor.visit_constant_pool_size(
             self.get_item_count() as u16,
             (self.header - (version_offset + 6)) as u32,
@@ -1019,3 +1039,24 @@ pub(crate) const CONSTANT_DYNAMIC_TAG: u8 = 17;
 pub(crate) const CONSTANT_INVOKE_DYNAMIC_TAG: u8 = 18;
 pub(crate) const CONSTANT_MODULE_TAG: u8 = 19;
 pub(crate) const CONSTANT_PACKAGE_TAG: u8 = 20;
+
+/// The size in bytes of the `cp_info` structure of each constant pool tag (without the string, for
+/// `CONSTANT_Utf8`), or 0 for the tags that need more than a skip (long, double, dynamic and
+/// invoke dynamic entries) and for invalid tags.
+const CP_INFO_SIZES: [u8; 256] = {
+    let mut sizes = [0; 256];
+    sizes[CONSTANT_UTF8_TAG as usize] = 3;
+    sizes[CONSTANT_FIELDREF_TAG as usize] = 5;
+    sizes[CONSTANT_METHODREF_TAG as usize] = 5;
+    sizes[CONSTANT_INTERFACE_METHODREF_TAG as usize] = 5;
+    sizes[CONSTANT_INTEGER_TAG as usize] = 5;
+    sizes[CONSTANT_FLOAT_TAG as usize] = 5;
+    sizes[CONSTANT_NAME_AND_TYPE_TAG as usize] = 5;
+    sizes[CONSTANT_METHOD_HANDLE_TAG as usize] = 4;
+    sizes[CONSTANT_CLASS_TAG as usize] = 3;
+    sizes[CONSTANT_STRING_TAG as usize] = 3;
+    sizes[CONSTANT_METHOD_TYPE_TAG as usize] = 3;
+    sizes[CONSTANT_PACKAGE_TAG as usize] = 3;
+    sizes[CONSTANT_MODULE_TAG as usize] = 3;
+    sizes
+};
