@@ -539,6 +539,9 @@ enum Own {
 struct Writer {
     /// The number of strings in the table.
     len: usize,
+    /// The number of slots of the shard's first own table: [`TABLE0`], or more from
+    /// [`Interner::with_capacity`]'s hint.
+    first_len: usize,
     /// Which table the shard's table is.
     own: Own,
     /// The heap tables of this shard, the current one last if its table is one: those it
@@ -597,12 +600,14 @@ fn put(table: Table, slot: u64) {
 }
 
 impl Shard {
-    /// A shard that starts with the given shared table.
-    fn new(shared: &(Table, usize)) -> Shard {
+    /// A shard that starts with the given shared table, and whose first own table has
+    /// `first_len` slots.
+    fn new(shared: &(Table, usize), first_len: usize) -> Shard {
         Shard {
             w: ShardWrite {
                 writer: Mutex::new(Writer {
                     len: shared.1,
+                    first_len,
                     own: Own::Shared,
                     heap: Vec::new(),
                 }),
@@ -725,11 +730,29 @@ impl Interner {
     /// Constructs an interner that holds the well-known symbols.
     #[must_use]
     pub fn new() -> Interner {
+        Interner::with_capacity(0)
+    }
+
+    /// Constructs an interner that holds the well-known symbols, with room for about `strings`
+    /// more before its tables grow.
+    ///
+    /// Only a hint: the strings are spread over shards, each of whose table makes its room on
+    /// its first insert, so a shard that gets more than its share still grows, and one that gets
+    /// none allocates nothing. A good hint saves the rehash of each table as it doubles: about
+    /// 40 strings a class is typical of an application's classes.
+    #[must_use]
+    pub fn with_capacity(strings: usize) -> Interner {
         // It starts with the shared well-known strings and tables.
         let shared = shared();
+        let share = strings.div_ceil(SHARDS).min(MAX_SHARD_HINT);
         Interner {
             tables: std::array::from_fn(|i| AtomicPtr::new(shared.tables[i].0.0)),
-            shards: boxed_array(shared.tables.iter().map(Shard::new)),
+            shards: boxed_array(
+                shared
+                    .tables
+                    .iter()
+                    .map(|shared| Shard::new(shared, first_len(shared.1, share))),
+            ),
             arenas: boxed_array(
                 std::iter::once(Arena::with_well_known_chunks(shared))
                     .chain((1..ARENAS).map(|_| Arena::new())),
@@ -827,7 +850,7 @@ impl Interner {
         let full = (writer.len + 1) * 2 > table.len();
         let table = if full || writer.own == Own::Shared {
             // A larger table, or the shard's own copy of the shared one.
-            let len = if full { table.len() * 2 } else { table.len() }.max(TABLE0);
+            let len = if full { table.len() * 2 } else { table.len() }.max(writer.first_len);
             let (grown, own) = if len == TABLE0 && writer.own == Own::Shared {
                 (shard.first_table(), Own::First)
             } else {
@@ -929,6 +952,20 @@ impl fmt::Debug for Interner {
     }
 }
 
+/// The most strings a shard's share of [`Interner::with_capacity`]'s hint counts: about as many as
+/// a shard can hold (2^32 symbols over 64 shards); their table is 2 GiB.
+const MAX_SHARD_HINT: usize = 1 << 26;
+
+/// The number of slots of a shard's first own table, for `len` strings of the shared table and a
+/// share of `strings` more: half full or less, with an eighth to spare for an uneven spread.
+fn first_len(len: usize, strings: usize) -> usize {
+    if strings == 0 {
+        return TABLE0;
+    }
+    let strings = len + strings + strings / 8;
+    (strings * 2 + 2).next_power_of_two().max(TABLE0)
+}
+
 /// The `N` items in a boxed array.
 fn boxed_array<T, const N: usize>(items: impl Iterator<Item = T>) -> Box<[T; N]> {
     let items: Box<[T]> = items.collect();
@@ -999,6 +1036,75 @@ mod tests {
             // SAFETY: from `new_table`, and no longer borrowed.
             unsafe { free_table(table) };
         }
+    }
+
+    #[test]
+    fn a_capacity_hint_sizes_the_first_tables() {
+        let n = if cfg!(miri) { 2000 } else { 20_000 };
+        let interner = Interner::with_capacity(n);
+        // On 8 threads (Miri's arenas hold 4 KiB each), which make the first tables concurrently.
+        let syms: Vec<Sym> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..8)
+                .map(|t| {
+                    let interner = &interner;
+                    s.spawn(move || {
+                        (t * n / 8..(t + 1) * n / 8)
+                            .map(|i| interner.intern(&*format!("p/C{i}")))
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().unwrap())
+                .collect()
+        });
+        assert_eq!(interner.len(), WELL_KNOWN.len() + n);
+        for (i, &sym) in syms.iter().enumerate() {
+            assert_eq!(interner.resolve(sym), &*format!("p/C{i}"));
+        }
+        // Each shard made one table, of its share, and never grew it.
+        for (index, shard) in interner.shards.iter().enumerate() {
+            let writer = lock(&shard.w.writer);
+            assert_eq!(writer.heap.len(), 1, "shard {index}");
+            assert!(writer.own == Own::Heap && writer.first_len > TABLE0);
+            assert_eq!(interner.table(index).len(), writer.first_len);
+        }
+        // No hint: the first table is the shard's own, of `TABLE0` slots. (Miri's 2-slot first
+        // table is full with one well-known string, so the insert may grow it.)
+        let interner = Interner::with_capacity(0);
+        let shards = interner.shards.iter();
+        assert!(
+            shards
+                .map(|s| lock(&s.w.writer).first_len)
+                .all(|n| n == TABLE0)
+        );
+        interner.intern("p/C");
+        let shard = &interner.shards[shard_index(hash(b"p/C"))];
+        assert!(cfg!(miri) || lock(&shard.w.writer).own == Own::First);
+    }
+
+    #[test]
+    fn first_tables_hold_their_share() {
+        assert_eq!(first_len(5, 0), TABLE0);
+        for len in [0, 1, 7] {
+            for share in [1, 2, 63, 64, 1000, 4096] {
+                let slots = first_len(len, share);
+                assert!(slots.is_power_of_two(), "{len} + {share}");
+                // Room before `publish_slot` grows it: `(len + 1) * 2 <= slots`.
+                assert!(
+                    (len + share + share / 8 + 1) * 2 <= slots,
+                    "{len} + {share}"
+                );
+            }
+        }
+        // A hint past what the shards can hold asks for no more than they can: 2^28 slots
+        // (2 GiB) a shard, made on its first insert.
+        let interner = Interner::with_capacity(usize::MAX);
+        for shard in interner.shards.iter() {
+            assert!(lock(&shard.w.writer).first_len <= 1 << 28);
+        }
+        assert_eq!(interner.get("<init>"), Some(sym::INIT));
     }
 
     #[test]
