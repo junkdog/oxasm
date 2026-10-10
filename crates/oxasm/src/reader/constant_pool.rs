@@ -758,6 +758,54 @@ mod tests {
     }
 
     #[test]
+    fn new_sizes_entries_by_their_tag_whatever_their_bytes() {
+        // Every entry's bytes are 0xFF where another tag's CONSTANT_Utf8 length would be, and
+        // the strings' lengths need both bytes.
+        let lengths = [0, 1, 255, 256, 257, 4096, usize::from(u16::MAX)];
+        let mut entries: Vec<(u8, usize)> = ENTRIES
+            .iter()
+            .copied()
+            .filter(|&(tag, _)| tag != super::super::CONSTANT_UTF8_TAG)
+            .collect();
+        for (i, &length) in lengths.iter().enumerate() {
+            entries.insert(2 * i, (super::super::CONSTANT_UTF8_TAG, 3 + length));
+        }
+        let mut bytes = vec![0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 52, 0, 0];
+        let mut expected = vec![0];
+        let mut strings = Vec::new();
+        for &(tag, size) in &entries {
+            if tag == super::super::CONSTANT_UTF8_TAG {
+                strings.push(expected.len());
+            }
+            expected.push(bytes.len() + 1);
+            if tag == super::super::CONSTANT_LONG_TAG || tag == super::super::CONSTANT_DOUBLE_TAG {
+                expected.push(0);
+            }
+            let start = bytes.len();
+            bytes.resize(start + size, 0xFF);
+            bytes[start] = tag;
+            if tag == super::super::CONSTANT_UTF8_TAG {
+                let length = (size - 3) as u16;
+                bytes[start + 1..start + 3].copy_from_slice(&length.to_be_bytes());
+                bytes[start + 3..].fill(b'a');
+            }
+        }
+        let header = bytes.len();
+        bytes[8..10].copy_from_slice(&(expected.len() as u16).to_be_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        let reader = ClassReader::new(&bytes).unwrap();
+        let offsets: Vec<usize> = (0..expected.len())
+            .map(|i| reader.get_item(i).unwrap())
+            .collect();
+        assert_eq!(offsets, expected);
+        assert_eq!(reader.header(), header);
+        assert_eq!(reader.get_max_string_length(), 3 + usize::from(u16::MAX));
+        for (&index, &length) in strings.iter().zip(&lengths) {
+            assert_eq!(reader.utf(index).unwrap().len(), length, "entry {index}");
+        }
+    }
+
+    #[test]
     fn new_with_a_long_as_the_last_entry_or_no_entry() {
         // The long's second index is past the constant pool.
         let long = (super::super::CONSTANT_LONG_TAG, 9);

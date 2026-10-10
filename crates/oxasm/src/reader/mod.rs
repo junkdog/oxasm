@@ -253,45 +253,60 @@ impl<'b> ClassReader<'b> {
         // after the magic, minor_version, major_version and constant_pool_count fields, which use
         // 4, 2, 2 and 2 bytes respectively.
         let mut current_cp_info_index = 1;
-        let mut current_cp_info_offset: usize = 10;
+        // The offset of the current entry's tag plus one: what its cp_info_entries entry holds,
+        // and where a CONSTANT_Utf8's length starts.
+        let mut current_cp_info_start: usize = 11;
         let mut current_max_string_length = 0;
         let mut has_bootstrap_methods = false;
         let mut has_constant_dynamic = false;
         // The offset of the other entries depend on the total size of all the previous entries.
+        // That makes each start one chain of loads and operations from the first, which bounds
+        // the loop's speed: so the next start is chosen among candidates by the tag's bits
+        // instead of loaded from a size table, and a CONSTANT_Utf8's candidate is chosen last.
         while let Some(entry) = cp_info_entries.get_mut(current_cp_info_index) {
-            entry.write(AtomicU64::new(current_cp_info_offset as u64 + 1));
+            let start = current_cp_info_start;
+            entry.write(AtomicU64::new(start as u64));
             current_cp_info_index += 1;
-            let Some(&tag) = class_file.get(current_cp_info_offset) else {
+            let Some(&tag) = class_file.get(start - 1) else {
                 return Err(ReadError::new(
-                    current_cp_info_offset as i64,
+                    start as i64 - 1,
                     ReadErrorKind::UnexpectedEnd,
                 ));
             };
-            let mut cp_info_size = usize::from(CP_INFO_SIZES[usize::from(tag)]);
             // A CONSTANT_Utf8's length, read for every tag (and added for this one only) so that
             // the tags, which alternate, don't take a branch.
-            let is_utf8 = usize::from(tag == CONSTANT_UTF8_TAG);
-            let length =
-                match class_file.get(current_cp_info_offset + 1..current_cp_info_offset + 3) {
-                    Some(&[length_high, length_low]) => {
-                        usize::from(u16::from_be_bytes([length_high, length_low]))
-                    }
-                    _ if is_utf8 != 0 => {
-                        return Err(ReadError::new(
-                            current_cp_info_offset as i64 + 1,
-                            ReadErrorKind::UnexpectedEnd,
-                        ));
-                    }
-                    _ => 0,
-                };
-            cp_info_size += length * is_utf8;
+            let is_utf8 = tag == CONSTANT_UTF8_TAG;
+            let length = match class_file.get(start..start + 2) {
+                Some(&[length_high, length_low]) => {
+                    usize::from(u16::from_be_bytes([length_high, length_low]))
+                }
+                _ if is_utf8 => {
+                    return Err(ReadError::new(start as i64, ReadErrorKind::UnexpectedEnd));
+                }
+                _ => 0,
+            };
+            let utf8_next = (start + 3) + length;
             // The size in bytes of a CONSTANT_Utf8 structure provides a conservative estimate of
             // the length in characters of the corresponding string, and is much cheaper to
-            // compute than this exact length.
-            current_max_string_length = current_max_string_length.max(cp_info_size * is_utf8);
-            if cp_info_size == 0 {
+            // compute than this exact length. (Taken from utf8_next, not as 3 + length: LLVM
+            // would then share that sum, and add the start after the selects below.)
+            current_max_string_length = current_max_string_length.max(
+                std::hint::select_unpredictable(is_utf8, utf8_next - start, 0),
+            );
+            if CP_INFO_SIZES[usize::from(tag)] != 0 {
+                let fixed = std::hint::select_unpredictable(
+                    FIVE_BYTE_TAGS.wrapping_shr(u32::from(tag)) & 1 != 0,
+                    start + 5,
+                    std::hint::select_unpredictable(
+                        tag == CONSTANT_METHOD_HANDLE_TAG,
+                        start + 4,
+                        start + 3,
+                    ),
+                );
+                current_cp_info_start = std::hint::select_unpredictable(is_utf8, utf8_next, fixed);
+            } else {
                 // The tags of a variable size, or with more to do than skip the entry.
-                cp_info_size = match tag {
+                current_cp_info_start += match tag {
                     CONSTANT_DYNAMIC_TAG => {
                         has_bootstrap_methods = true;
                         has_constant_dynamic = true;
@@ -310,17 +325,16 @@ impl<'b> ClassReader<'b> {
                     }
                     _ => {
                         return Err(ReadError::new(
-                            current_cp_info_offset as i64,
+                            start as i64 - 1,
                             ReadErrorKind::InvalidConstantPoolTag(tag),
                         ));
                     }
                 };
             }
-            current_cp_info_offset += cp_info_size;
         }
         reader.max_string_length = current_max_string_length;
         // The Classfile's access_flags field is just after the last constant pool entry.
-        reader.header = current_cp_info_offset as i64;
+        reader.header = current_cp_info_start as i64 - 1;
         // SAFETY: entry 0 was written before the loop, and each iteration wrote the entry at its
         // index, and the next one too for a long or double, until the index reached the end.
         reader.cp_info_entries = unsafe { cp_info_entries.assume_init() };
@@ -1059,4 +1073,25 @@ const CP_INFO_SIZES: [u8; 256] = {
     sizes[CONSTANT_PACKAGE_TAG as usize] = 3;
     sizes[CONSTANT_MODULE_TAG as usize] = 3;
     sizes
+};
+
+/// The tags of [`CP_INFO_SIZES`]'s 5-byte entries, as bits, by which the constructor tells the
+/// sizes apart without loading them: the others are 4 bytes for `CONSTANT_MethodHandle` only,
+/// and 3 for the rest (plus the string, for `CONSTANT_Utf8`).
+const FIVE_BYTE_TAGS: u64 = {
+    let mut bits = 0;
+    let mut tag = 0;
+    while tag < CP_INFO_SIZES.len() {
+        match CP_INFO_SIZES[tag] {
+            0 | 3 => {}
+            4 => assert!(tag == CONSTANT_METHOD_HANDLE_TAG as usize),
+            5 => {
+                assert!(tag < u64::BITS as usize);
+                bits |= 1 << tag;
+            }
+            _ => panic!("a constant pool entry size the constructor doesn't choose"),
+        }
+        tag += 1;
+    }
+    bits
 };
