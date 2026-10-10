@@ -8,7 +8,9 @@
 //!   stays allocated until the interner drops, so a reader still probing it stays valid (at worst
 //!   it misses, and retries under the lock). A shard's first own table (its first insert copies
 //!   the shared one) is in the shard itself, so that a new interner's first inserts allocate no
-//!   table, nor does its drop free one.
+//!   table, nor does its drop free one. The 64 table pointers are in the interner itself, each
+//!   with its table's size in its low bits: a lookup loads one of eight cache lines, then the
+//!   slot, with no table header between.
 //! - **64 byte arenas,** one per inserting thread. Strings are stored length-prefixed (a
 //!   little-endian `u16`, then the bytes, at an even offset) in chunks that never move, and a
 //!   string never straddles two of them. Each chunk spans 128 KiB of offsets; an arena's first
@@ -23,12 +25,13 @@
 //!   stores. The lock order is fixed: arena (if shared), then shard. If another thread got
 //!   there first, the staged bytes stay unpublished, and the next insert into the arena
 //!   overwrites them.
-//! - **Cache lines:** what lookups read (a shard's table pointer, an arena's chunk pointers) is
-//!   apart from what inserts write (the mutexes). So is the interner itself (the pointers to its
-//!   shards and arenas, which every lookup reads) from the reference counts of the `Arc` that
-//!   holds it, which every member node of the tree writes when it is made and dropped.
+//! - **Cache lines:** what lookups read (the table pointers, an arena's chunk pointers) is apart
+//!   from what inserts write (the mutexes). So is the interner itself (the table pointers and the
+//!   pointers to its shards and arenas, which every lookup reads) from the reference counts of
+//!   the `Arc` that holds it, which every member node of the tree writes when it is made and
+//!   dropped.
 
-use std::alloc::{Layout, alloc, dealloc, handle_alloc_error};
+use std::alloc::{Layout, alloc, alloc_zeroed, dealloc, handle_alloc_error};
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::hash::Hasher;
@@ -405,17 +408,8 @@ struct Shared {
     /// `CHUNKS` chunk pointers: the well-known chunks, then nulls.
     chunk_pointers: Box<[AtomicPtr<u8>]>,
     /// The table of each shard (leaked), and its number of strings.
-    tables: Box<[(SharedTable, usize)]>,
+    tables: Box<[(Table, usize)]>,
 }
-
-/// A shared table (leaked), never written after `Shared` is made.
-struct SharedTable(*mut Table);
-
-// SAFETY: the shared table and chunks are written while `SHARED` is initialized, and only read
-// afterwards (an interner copies them before inserting).
-unsafe impl Send for SharedTable {}
-// SAFETY: as above.
-unsafe impl Sync for SharedTable {}
 
 fn shared() -> &'static Shared {
     static SHARED: std::sync::OnceLock<Shared> = std::sync::OnceLock::new();
@@ -452,12 +446,10 @@ fn shared() -> &'static Shared {
             .iter()
             .map(|slots| {
                 let table = new_table((slots.len() * 2).next_power_of_two().max(2));
-                // SAFETY: just allocated, and not shared yet.
-                let table_ref = unsafe { &*table };
                 for &slot in slots {
-                    put(table_ref, slot);
+                    put(table, slot);
                 }
-                (SharedTable(table), slots.len())
+                (table, slots.len())
             })
             .collect();
         Shared {
@@ -472,31 +464,52 @@ fn shared() -> &'static Shared {
 // Shards
 // -------------------------------------------------------------------------------------------------
 
-/// A shard: its table pointer, which every lookup reads, apart from the lock that inserts take,
-/// and the slots of its first own table, so that a new interner's first inserts allocate no
-/// table.
+/// An open-addressing table of `tag << 32 | sym` slots (0 is empty), a power of two long: the
+/// address of its slots (64-aligned), with the base-2 logarithm of their number in the low six
+/// bits. Its slots are a shard's [`FirstSlots`], or a heap allocation of [`new_table`] (as are
+/// the shared tables', which are never freed).
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Table(*mut AtomicU64);
+
+// SAFETY: a table's slots are only accessed atomically, and live as long as their interner (or
+// forever, for the shared tables).
+unsafe impl Send for Table {}
+// SAFETY: as above.
+unsafe impl Sync for Table {}
+
+/// The bits of a table pointer that hold its size; slots are aligned to 64 bytes.
+const TABLE_LEN_BITS: usize = 63;
+
+impl Table {
+    /// The table of the given `len` slots, a power of two, at `slots`, aligned to 64 bytes.
+    fn new(slots: *mut AtomicU64, len: usize) -> Table {
+        debug_assert!(len.is_power_of_two() && slots.addr() & TABLE_LEN_BITS == 0);
+        Table(slots.map_addr(|addr| addr | len.trailing_zeros() as usize))
+    }
+
+    #[inline]
+    fn len(self) -> usize {
+        1 << (self.0.addr() & TABLE_LEN_BITS)
+    }
+
+    #[inline]
+    fn slots_ptr(self) -> *mut AtomicU64 {
+        self.0.map_addr(|addr| addr & !TABLE_LEN_BITS)
+    }
+
+    #[inline]
+    fn slots<'a>(self) -> &'a [AtomicU64] {
+        // SAFETY: `len` initialized slots, which live as long as the table (see `Table`).
+        unsafe { std::slice::from_raw_parts(self.slots_ptr(), self.len()) }
+    }
+}
+
+/// A shard: the lock that inserts take, and the slots of its first own table, so that a new
+/// interner's first inserts allocate no table. (Its table is in [`Interner::tables`].)
 struct Shard {
-    r: ShardRead,
     w: ShardWrite,
     first: FirstSlots,
 }
-
-#[repr(align(128))]
-struct ShardRead {
-    /// The shared table, `first`, or a leaked `Box<Table>`; replaced (never freed) when the
-    /// table grows.
-    table: AtomicPtr<Table>,
-    /// The header of the shard's first own table, whose slots are `FirstSlots`: written once,
-    /// under the shard's lock, before `table` points to it.
-    first: UnsafeCell<MaybeUninit<Table>>,
-}
-
-// SAFETY: `first` is written once, under the shard's lock, before a release store of `table`
-// publishes it, and only read afterwards.
-unsafe impl Sync for ShardRead {}
-// SAFETY: `first` only ever points to the same shard's `FirstSlots`, and is written once the shard
-// is in its interner's boxed slice, which never moves it.
-unsafe impl Send for ShardRead {}
 
 #[repr(align(128))]
 struct ShardWrite {
@@ -508,25 +521,9 @@ struct ShardWrite {
 #[repr(align(128))]
 struct FirstSlots(UnsafeCell<MaybeUninit<[AtomicU64; TABLE0]>>);
 
-// SAFETY: initialized once, under the shard's lock, before a release store of the shard's `table`
+// SAFETY: initialized once, under the shard's lock, before a release store of the shard's table
 // publishes them; afterwards only accessed atomically.
 unsafe impl Sync for FirstSlots {}
-
-/// An open-addressing table of `tag << 32 | sym` slots (0 is empty), a power of two long. Its
-/// slots are a shard's [`FirstSlots`], or a leaked `Box<[AtomicU64]>` (as are the shared tables',
-/// which are never freed).
-struct Table {
-    slots: *const AtomicU64,
-    len: usize,
-}
-
-impl Table {
-    #[inline]
-    fn slots(&self) -> &[AtomicU64] {
-        // SAFETY: `len` initialized slots, which live as long as the table (see `Table`).
-        unsafe { std::slice::from_raw_parts(self.slots, self.len) }
-    }
-}
 
 /// Which table a shard's table is.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -535,7 +532,7 @@ enum Own {
     Shared,
     /// The shard's first own table, in the shard.
     First,
-    /// A leaked `Box<Table>` with leaked slots.
+    /// A heap table.
     Heap,
 }
 
@@ -544,20 +541,34 @@ struct Writer {
     len: usize,
     /// Which table the shard's table is.
     own: Own,
-    /// The heap tables that this shard's table replaced, freed when the interner drops.
-    retired: Vec<*mut Table>,
+    /// The heap tables of this shard, the current one last if its table is one: those it
+    /// replaced stay allocated until the interner drops.
+    heap: Vec<Table>,
 }
 
-// SAFETY: the retired tables are owned allocations, only touched under the shard's mutex or with
-// `&mut`.
-unsafe impl Send for Writer {}
+/// The layout of a heap table of `len` slots: room to align them to 64 bytes for [`Table`]'s size
+/// bits, and for the allocation's address just before them. (An allocation aligned past 16 bytes
+/// costs more than this one.)
+fn table_layout(len: usize) -> Layout {
+    Layout::from_size_align(len * 8 + 64, 8).expect("a valid layout")
+}
 
-fn new_table(len: usize) -> *mut Table {
-    let slots: Box<[AtomicU64]> = (0..len).map(|_| AtomicU64::new(0)).collect();
-    Box::into_raw(Box::new(Table {
-        slots: Box::into_raw(slots).cast::<AtomicU64>(),
-        len,
-    }))
+/// A heap table of `len` zeroed slots.
+fn new_table(len: usize) -> Table {
+    let layout = table_layout(len);
+    // SAFETY: the layout has a non-zero size.
+    let base = unsafe { alloc_zeroed(layout) };
+    if base.is_null() {
+        handle_alloc_error(layout);
+    }
+    // At least 8 bytes past `base` (both are multiples of 8), and `len * 8` bytes before the
+    // allocation's end.
+    let slots = base.map_addr(|addr| (addr + 64) & !TABLE_LEN_BITS);
+    // SAFETY: the 8 bytes before `slots` are in the allocation, aligned, and not a slot.
+    let base_at = unsafe { slots.cast::<*mut u8>().sub(1) };
+    // SAFETY: as above.
+    unsafe { base_at.write(base) };
+    Table::new(slots.cast::<AtomicU64>(), len)
 }
 
 /// Frees a table of [`new_table`].
@@ -565,20 +576,17 @@ fn new_table(len: usize) -> *mut Table {
 /// # Safety
 ///
 /// `table` is from `new_table`, and nothing borrows it any more.
-unsafe fn free_table(table: *mut Table) {
-    // SAFETY: (the caller's) leaked by `new_table`.
-    let table = unsafe { Box::from_raw(table) };
+unsafe fn free_table(table: Table) {
+    // SAFETY: (the caller's) from `new_table`, which stored its allocation's address there.
+    let base_at = unsafe { table.slots_ptr().cast::<*mut u8>().sub(1) };
     // SAFETY: as above.
-    drop(unsafe {
-        Box::from_raw(ptr::slice_from_raw_parts_mut(
-            table.slots.cast_mut(),
-            table.len,
-        ))
-    });
+    let base = unsafe { base_at.read() };
+    // SAFETY: as above, allocated with this layout.
+    unsafe { dealloc(base, table_layout(table.len())) };
 }
 
 /// Stores a slot in a table that has room. Under the shard's lock.
-fn put(table: &Table, slot: u64) {
+fn put(table: Table, slot: u64) {
     let slots = table.slots();
     let mask = slots.len() - 1;
     let mut i = (slot >> 32) as usize & mask;
@@ -590,103 +598,27 @@ fn put(table: &Table, slot: u64) {
 
 impl Shard {
     /// A shard that starts with the given shared table.
-    fn new(shared: &(SharedTable, usize)) -> Shard {
+    fn new(shared: &(Table, usize)) -> Shard {
         Shard {
-            r: ShardRead {
-                table: AtomicPtr::new(shared.0.0),
-                first: UnsafeCell::new(MaybeUninit::uninit()),
-            },
             w: ShardWrite {
                 writer: Mutex::new(Writer {
                     len: shared.1,
                     own: Own::Shared,
-                    retired: Vec::new(),
+                    heap: Vec::new(),
                 }),
             },
             first: FirstSlots(UnsafeCell::new(MaybeUninit::uninit())),
         }
     }
 
-    #[inline]
-    fn table(&self) -> &Table {
-        // SAFETY: a table is freed only when the interner drops (a replaced one is retired).
-        unsafe { &*self.r.table.load(Acquire) }
-    }
-
     /// The shard's first own table, its slots zeroed: not yet published. Under the shard's lock,
     /// once.
-    fn first_table(&self) -> *mut Table {
+    fn first_table(&self) -> Table {
         let slots = self.first.0.get().cast::<AtomicU64>();
-        // SAFETY: under the shard's lock, before `table` points to it: no other thread accesses
-        // the first slots yet; an all-zero `AtomicU64` is valid.
+        // SAFETY: under the shard's lock, before the table points to it: no other thread
+        // accesses the first slots yet; an all-zero `AtomicU64` is valid.
         unsafe { ptr::write_bytes(slots, 0, TABLE0) };
-        let header = self.r.first.get().cast::<Table>();
-        // SAFETY: as above, for the header.
-        unsafe { header.write(Table { slots, len: TABLE0 }) };
-        header
-    }
-
-    /// The `Sym` of `bytes` in this shard, and its interned bytes.
-    #[inline]
-    fn find<'a>(
-        &self,
-        arenas: &'a [Arena; ARENAS],
-        tag: u32,
-        bytes: &[u8],
-    ) -> Option<(u32, &'a [u8])> {
-        let slots = self.table().slots();
-        let mask = slots.len() - 1;
-        let mut i = tag as usize & mask;
-        loop {
-            let slot = slots[i].load(Acquire);
-            if slot == 0 {
-                return None;
-            }
-            if (slot >> 32) as u32 == tag {
-                #[allow(clippy::cast_possible_truncation)] // the low half
-                let sym = slot as u32;
-                let interned = arenas[arena_of(sym)].bytes_published(offset_of(sym));
-                if interned == bytes {
-                    return Some((sym, interned));
-                }
-            }
-            i = (i + 1) & mask;
-        }
-    }
-
-    /// Publishes `sym` in this shard's table. Under the shard's lock.
-    fn insert(&self, writer: &mut Writer, tag: u32, sym: u32) {
-        let table = self.table();
-        let full = (writer.len + 1) * 2 > table.len;
-        let table = if full || writer.own == Own::Shared {
-            // A larger table, or the shard's own copy of the shared one.
-            let len = if full { table.len * 2 } else { table.len }.max(TABLE0);
-            let (grown, own) = if len == TABLE0 && writer.own == Own::Shared {
-                (self.first_table(), Own::First)
-            } else {
-                (new_table(len), Own::Heap)
-            };
-            // SAFETY: just made, and not shared yet.
-            let grown_ref = unsafe { &*grown };
-            for slot in table.slots() {
-                let slot = slot.load(Relaxed);
-                if slot != 0 {
-                    put(grown_ref, slot);
-                }
-            }
-            // Under the shard's lock: a plain load and store, rather than a locked swap.
-            let old = self.r.table.load(Relaxed);
-            self.r.table.store(grown, Release);
-            if writer.own == Own::Heap {
-                writer.retired.push(old);
-            }
-            writer.own = own;
-            grown_ref
-        } else {
-            table
-        };
-        put(table, (u64::from(tag) << 32) | u64::from(sym));
-        writer.len += 1;
+        Table::new(slots, TABLE0)
     }
 }
 
@@ -697,9 +629,7 @@ impl Drop for Shard {
             .writer
             .get_mut()
             .unwrap_or_else(PoisonError::into_inner);
-        let own = (writer.own == Own::Heap).then_some(*self.r.table.get_mut());
-        let tables = own.into_iter().chain(writer.retired.drain(..));
-        for table in tables {
+        for table in writer.heap.drain(..) {
             // SAFETY: each is from `new_table`; `&mut self`: nothing borrows them.
             unsafe { free_table(table) };
         }
@@ -783,6 +713,10 @@ fn thread_arena() -> (usize, bool) {
 // Aligned so that in an `Arc`, its fields are not on the cache line of the reference counts.
 #[repr(align(128))]
 pub struct Interner {
+    /// The table of each shard: the shared one, the shard's first, or a heap table; replaced
+    /// (never freed while the interner lives) when it grows. Together, so that a lookup reads
+    /// one of eight cache lines.
+    tables: [AtomicPtr<AtomicU64>; SHARDS],
     shards: Box<[Shard; SHARDS]>,
     arenas: Box<[Arena; ARENAS]>,
 }
@@ -794,6 +728,7 @@ impl Interner {
         // It starts with the shared well-known strings and tables.
         let shared = shared();
         Interner {
+            tables: std::array::from_fn(|i| AtomicPtr::new(shared.tables[i].0.0)),
             shards: boxed_array(shared.tables.iter().map(Shard::new)),
             arenas: boxed_array(
                 std::iter::once(Arena::with_well_known_chunks(shared))
@@ -817,8 +752,7 @@ impl Interner {
     #[inline]
     pub(super) fn intern_bytes(&self, bytes: &[u8]) -> (u32, &[u8]) {
         let hash = hash(bytes);
-        let shard = &self.shards[shard_index(hash)];
-        match shard.find(&self.arenas, tag(hash), bytes) {
+        match self.find(shard_index(hash), tag(hash), bytes) {
             Some(found) => found,
             None => self.insert(bytes, hash),
         }
@@ -833,7 +767,8 @@ impl Interner {
             "a string of {} bytes, longer than MAX_LEN",
             bytes.len()
         );
-        let shard = &self.shards[shard_index(hash)];
+        let shard_index = shard_index(hash);
+        let shard = &self.shards[shard_index];
         let tag = tag(hash);
         let (arena_index, owned) = thread_arena();
         let arena = &self.arenas[arena_index];
@@ -843,7 +778,7 @@ impl Interner {
         let state = unsafe { &mut *arena.w.state.get() };
         let (offset, new_end) = arena.stage(state, bytes);
         let mut writer = lock(&shard.w.writer);
-        if let Some(found) = shard.find(&self.arenas, tag, bytes) {
+        if let Some(found) = self.find(shard_index, tag, bytes) {
             // The staged bytes stay unpublished.
             return found;
         }
@@ -852,8 +787,69 @@ impl Interner {
         arena.w.published_end.store(new_end, Relaxed);
         let sym =
             u32::try_from(((offset / 2) << ARENA_BITS) | arena_index).expect("within an arena");
-        shard.insert(&mut writer, tag, sym);
+        self.publish_slot(shard_index, &mut writer, tag, sym);
         (sym, arena.bytes_published(offset))
+    }
+
+    /// The table of the given shard.
+    #[inline]
+    fn table(&self, shard: usize) -> Table {
+        Table(self.tables[shard].load(Acquire))
+    }
+
+    /// The `Sym` of `bytes` in the given shard, and its interned bytes.
+    #[inline]
+    fn find(&self, shard: usize, tag: u32, bytes: &[u8]) -> Option<(u32, &[u8])> {
+        let slots = self.table(shard).slots();
+        let mask = slots.len() - 1;
+        let mut i = tag as usize & mask;
+        loop {
+            let slot = slots[i].load(Acquire);
+            if slot == 0 {
+                return None;
+            }
+            if (slot >> 32) as u32 == tag {
+                #[allow(clippy::cast_possible_truncation)] // the low half
+                let sym = slot as u32;
+                let interned = self.arenas[arena_of(sym)].bytes_published(offset_of(sym));
+                if interned == bytes {
+                    return Some((sym, interned));
+                }
+            }
+            i = (i + 1) & mask;
+        }
+    }
+
+    /// Publishes `sym` in the table of the given shard. Under the shard's lock.
+    fn publish_slot(&self, shard_index: usize, writer: &mut Writer, tag: u32, sym: u32) {
+        let shard = &self.shards[shard_index];
+        let table = self.table(shard_index);
+        let full = (writer.len + 1) * 2 > table.len();
+        let table = if full || writer.own == Own::Shared {
+            // A larger table, or the shard's own copy of the shared one.
+            let len = if full { table.len() * 2 } else { table.len() }.max(TABLE0);
+            let (grown, own) = if len == TABLE0 && writer.own == Own::Shared {
+                (shard.first_table(), Own::First)
+            } else {
+                let grown = new_table(len);
+                writer.heap.push(grown);
+                (grown, Own::Heap)
+            };
+            for slot in table.slots() {
+                let slot = slot.load(Relaxed);
+                if slot != 0 {
+                    put(grown, slot);
+                }
+            }
+            // Under the shard's lock: a plain store, rather than a locked swap.
+            self.tables[shard_index].store(grown.0, Release);
+            writer.own = own;
+            grown
+        } else {
+            table
+        };
+        put(table, (u64::from(tag) << 32) | u64::from(sym));
+        writer.len += 1;
     }
 
     /// The symbol of the given string, if it is interned.
@@ -861,9 +857,7 @@ impl Interner {
     pub fn get(&self, s: &(impl AsRef<JavaStr> + ?Sized)) -> Option<Sym> {
         let bytes = s.as_ref().as_bytes();
         let hash = hash(bytes);
-        let shard = &self.shards[shard_index(hash)];
-        shard
-            .find(&self.arenas, tag(hash), bytes)
+        self.find(shard_index(hash), tag(hash), bytes)
             .map(|(id, _)| sym(id))
     }
 
@@ -994,6 +988,20 @@ mod tests {
     }
 
     #[test]
+    fn tables_keep_their_size_in_their_pointer() {
+        let max = if cfg!(miri) { 10 } else { 20 };
+        for len in (1..=max).map(|bits| 1usize << bits) {
+            let table = new_table(len);
+            assert_eq!(table.len(), len);
+            assert_eq!(table.slots_ptr().addr() % 64, 0);
+            assert!(table.slots().iter().all(|slot| slot.load(Relaxed) == 0));
+            table.slots()[len - 1].store(1, Relaxed);
+            // SAFETY: from `new_table`, and no longer borrowed.
+            unsafe { free_table(table) };
+        }
+    }
+
+    #[test]
     fn interning_is_idempotent() {
         let interner = Interner::new();
         let a = interner.intern("java/util/List");
@@ -1106,11 +1114,12 @@ mod tests {
         }
         if cfg!(miri) {
             // Table growth and chunk rollover were exercised.
-            let retired: usize = interner
+            // (A replaced heap table: a shard with two.)
+            let retired = interner
                 .shards
                 .iter()
-                .map(|s| lock(&s.w.writer).retired.len())
-                .sum();
+                .filter(|s| lock(&s.w.writer).heap.len() > 1)
+                .count();
             let rolled = interner
                 .arenas
                 .iter()
