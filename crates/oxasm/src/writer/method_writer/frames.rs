@@ -12,7 +12,7 @@ use crate::writer::frame::{
     SAME_LOCALS_1_STACK_ITEM_FRAME_EXTENDED,
 };
 use crate::writer::label_table::{FrameId, LabelTable};
-use crate::writer::method_writer::{Compute, MethodWriterState};
+use crate::writer::method_writer::{Compute, MethodWriterState, descriptor_copy};
 use crate::writer::symbol_table::SymbolTable;
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // Java's int arithmetic
@@ -40,13 +40,14 @@ impl MethodWriterState {
             if self.previous_frame.is_none() {
                 // In expanded mode, the implicit first frame is not visited: compute it from the
                 // method descriptor (it is the previous frame of the first visited one).
+                let descriptor = descriptor_copy(symbol_table, self.descriptor);
                 let arguments_size =
-                    (Type::try_get_arguments_and_return_sizes_of(&*self.descriptor)? >> 2) as usize;
+                    (Type::try_get_arguments_and_return_sizes_of(&descriptor)? >> 2) as usize;
                 let mut input_locals = Vec::new();
                 frame::input_locals_from_descriptor(
                     symbol_table,
                     self.access_flags,
-                    &self.descriptor,
+                    &descriptor,
                     arguments_size,
                     &mut input_locals,
                 )?;
@@ -183,10 +184,11 @@ impl MethodWriterState {
                 // COMPUTE_INSERTED_FRAMES can't be set if EXPAND_ASM_INSNS is not used). Its
                 // number of locals is the length of `local`.
                 let frame = labels.add_frame(Frame::new(Some(current_basic_block)));
+                let descriptor = descriptor_copy(symbol_table, self.descriptor);
                 labels.frame_mut(frame).set_input_frame_from_descriptor(
                     symbol_table,
                     self.access_flags,
-                    &self.descriptor,
+                    &descriptor,
                     local.len(),
                 )?;
                 labels.get_mut(current_basic_block).frame = Some(frame);

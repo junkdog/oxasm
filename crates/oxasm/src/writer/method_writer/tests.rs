@@ -11,7 +11,7 @@ use crate::jstr::JavaStr;
 use crate::label::Label;
 use crate::opcodes::{self, HandleKind};
 use crate::visitor::{ClassVisitor, MethodVisitor};
-use crate::writer::method_writer::{Compute, MethodWriter, MethodWriterState};
+use crate::writer::method_writer::{Compute, DebugTables, MethodWriter, MethodWriterState};
 use crate::writer::symbol_table::SymbolTable;
 use crate::writer::{ClassWriter, ClassWriterFlags};
 
@@ -195,9 +195,11 @@ fn test_get_offset() {
     let mut state = new_method_writer_state(&mut symbol_table);
     let label = Label::new();
     {
+        let mut debug_tables = DebugTables::default();
         let mut method_visitor = MethodWriter {
             symbol_table: &mut symbol_table,
             state: &mut state,
+            debug_tables: &mut debug_tables,
             hierarchy: None,
         };
         method_visitor.visit_code();

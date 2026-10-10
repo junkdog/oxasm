@@ -1184,6 +1184,219 @@ fn test_visit_constant_pool_size_is_only_a_hint() {
     }
 }
 
+/// A class writer whose methods' local variable count hints are replaced: by the given count, or
+/// by none.
+struct LocalVariableCountHint {
+    count: Option<u16>,
+    class_writer: ClassWriter<'static>,
+}
+
+impl ClassVisitor for LocalVariableCountHint {
+    fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
+        Some(&mut self.class_writer)
+    }
+
+    fn visit_method<'a>(
+        &'a mut self,
+        access: u32,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        signature: Option<&JavaStr>,
+        exceptions: &[&JavaStr],
+    ) -> Option<Box<dyn MethodVisitor + 'a>> {
+        let next = self
+            .class_writer
+            .visit_method(access, name, descriptor, signature, exceptions)?;
+        Some(Box::new(MethodLocalVariableCountHint {
+            count: self.count,
+            next,
+        }))
+    }
+}
+
+/// A method visitor whose local variable count hint is replaced: by the given count, or by none.
+struct MethodLocalVariableCountHint<'a> {
+    count: Option<u16>,
+    next: Box<dyn MethodVisitor + 'a>,
+}
+
+impl MethodVisitor for MethodLocalVariableCountHint<'_> {
+    fn delegate(&mut self) -> Option<&mut dyn MethodVisitor> {
+        Some(&mut *self.next)
+    }
+
+    fn visit_local_variable_count(&mut self, _: u16) {
+        if let Some(count) = self.count {
+            self.next.visit_local_variable_count(count);
+        }
+    }
+}
+
+/// oxasm-specific: the local variable count hint only sizes the class writer's local variable
+/// tables: with the reader's hint, none, or wrong ones, every class is written the same (W15 in
+/// oxasm-optimization.md).
+#[test]
+fn test_visit_local_variable_count_is_only_a_hint() {
+    for &class in PrecompiledClass::ALL {
+        let write = |count: Option<u16>| {
+            let mut hinted = LocalVariableCountHint {
+                count,
+                class_writer: ClassWriter::new(ClassWriterFlags::empty()),
+            };
+            ClassReader::new(class.bytes())
+                .unwrap()
+                .accept(&mut hinted, ParsingOptions::empty())
+                .unwrap();
+            hinted.class_writer.to_bytes().unwrap()
+        };
+        let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+        ClassReader::new(class.bytes())
+            .unwrap()
+            .accept(&mut class_writer, ParsingOptions::empty())
+            .unwrap();
+        let expected = class_writer.to_bytes().unwrap();
+
+        for count in [None, Some(0), Some(1), Some(u16::MAX)] {
+            assert!(write(count) == expected, "{class}, hint {count:?}");
+        }
+    }
+}
+
+/// Records the line numbers and local variables of each method visited, as `(method, entry)`.
+#[derive(Default)]
+struct DebugEntries(Vec<(String, String)>);
+
+impl ClassVisitor for DebugEntries {
+    fn visit_method<'a>(
+        &'a mut self,
+        _: u32,
+        name: &JavaStr,
+        _: &JavaStr,
+        _: Option<&JavaStr>,
+        _: &[&JavaStr],
+    ) -> Option<Box<dyn MethodVisitor + 'a>> {
+        Some(Box::new(MethodDebugEntries {
+            method: name.to_string(),
+            entries: &mut self.0,
+        }))
+    }
+}
+
+/// The method visitor of [`DebugEntries`].
+struct MethodDebugEntries<'a> {
+    method: String,
+    entries: &'a mut Vec<(String, String)>,
+}
+
+impl MethodVisitor for MethodDebugEntries<'_> {
+    fn visit_line_number(&mut self, line: u16, _: Label) {
+        self.entries
+            .push((self.method.clone(), format!("line {line}")));
+    }
+
+    fn visit_local_variable(
+        &mut self,
+        name: &JavaStr,
+        descriptor: &JavaStr,
+        signature: Option<&JavaStr>,
+        _: Label,
+        _: Label,
+        index: u16,
+    ) {
+        let signature = signature.map_or(String::new(), |s| format!(" {s}"));
+        self.entries.push((
+            self.method.clone(),
+            format!("var {index} {name} {descriptor}{signature}"),
+        ));
+    }
+}
+
+/// A method of [`test_debug_tables_of_consecutive_methods`]: its name, line numbers, and local
+/// variables as (name, signature).
+type DebugMethod<'a> = (
+    &'a JavaStr,
+    &'a [u16],
+    &'a [(&'a JavaStr, Option<&'a JavaStr>)],
+);
+
+/// oxasm-specific: the line number and local variable (type) tables of the methods of a class
+/// are kept end to end, in one vector per table (W15 in oxasm-optimization.md): each method
+/// writes its own entries, whether the methods before it had some or not.
+#[test]
+fn test_debug_tables_of_consecutive_methods() {
+    let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+    class_writer.visit(
+        V1_7,
+        ACC_PUBLIC,
+        jstr!("C"),
+        None,
+        Some(jstr!("java/lang/Object")),
+        &[],
+    );
+    let methods: [DebugMethod<'_>; 4] = [
+        (
+            jstr!("a"),
+            &[1, 2],
+            &[(jstr!("x"), None), (jstr!("y"), Some(jstr!("TT;")))],
+        ),
+        (jstr!("b"), &[], &[]),
+        (jstr!("c"), &[3], &[]),
+        (jstr!("d"), &[4, 5, 6], &[(jstr!("z"), Some(jstr!("TU;")))]),
+    ];
+    for (name, lines, variables) in methods {
+        let mut method_visitor = class_writer
+            .visit_method(ACC_STATIC, name, jstr!("()V"), None, &[])
+            .unwrap();
+        method_visitor.visit_code();
+        let start = Label::new();
+        let end = Label::new();
+        method_visitor.visit_label(start);
+        for &line in lines {
+            let label = Label::new();
+            method_visitor.visit_label(label);
+            method_visitor.visit_line_number(line, label);
+            method_visitor.visit_insn(NOP);
+        }
+        method_visitor.visit_insn(RETURN);
+        method_visitor.visit_label(end);
+        for (index, &(variable, signature)) in variables.iter().enumerate() {
+            method_visitor.visit_local_variable(
+                variable,
+                jstr!("Ljava/lang/Object;"),
+                signature,
+                start,
+                end,
+                u16::try_from(index).unwrap(),
+            );
+        }
+        method_visitor.visit_maxs(0, 2);
+        method_visitor.visit_end();
+    }
+    class_writer.visit_end();
+    let class_file = class_writer.to_bytes().unwrap();
+
+    let mut entries = DebugEntries::default();
+    ClassReader::new(&class_file)
+        .unwrap()
+        .accept(&mut entries, ParsingOptions::empty())
+        .unwrap();
+    let entry = |method: &str, entry: &str| (method.to_owned(), entry.to_owned());
+    assert_eq!(
+        entries.0,
+        [
+            entry("a", "line 1"),
+            entry("a", "line 2"),
+            entry("a", "var 0 x Ljava/lang/Object;"),
+            entry("a", "var 1 y Ljava/lang/Object; TT;"),
+            entry("c", "line 3"),
+            entry("d", "line 4"),
+            entry("d", "line 5"),
+            entry("d", "line 6"),
+            entry("d", "var 0 z Ljava/lang/Object; TU;"),
+        ]
+    );
+}
+
 // -------------------------------------------------------------------------------------------------
 // Adapters
 // -------------------------------------------------------------------------------------------------

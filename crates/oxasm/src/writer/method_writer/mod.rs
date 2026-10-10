@@ -41,7 +41,7 @@ use crate::writer::label_table::{
     FLAG_SUBROUTINE_START, LabelTable,
 };
 use crate::writer::symbol_table::{
-    CONSTANT_DOUBLE_TAG, CONSTANT_DYNAMIC_TAG, CONSTANT_LONG_TAG, Symbol, SymbolTable,
+    CONSTANT_DOUBLE_TAG, CONSTANT_DYNAMIC_TAG, CONSTANT_LONG_TAG, Span, Symbol, SymbolTable,
 };
 
 /// What a method writer must compute (ASM's `COMPUTE_*` constants of `MethodWriter`).
@@ -63,6 +63,75 @@ pub(crate) enum Compute {
     AllFrames,
 }
 
+/// The size in bytes of a `line_number_table` entry.
+pub(super) const LINE_NUMBER_SIZE: usize = 4;
+
+/// The size in bytes of a `local_variable_table` or `local_variable_type_table` entry.
+pub(super) const LOCAL_VARIABLE_SIZE: usize = 10;
+
+/// The LineNumberTable, LocalVariableTable and LocalVariableTypeTable entries of the methods of
+/// a class, each table's end to end in one byte vector (not in ASM, whose method writers each
+/// hold their own byte vectors: an allocation or more per table and method). A method is
+/// visited to its end before the next one starts (its method writer borrows the class writer),
+/// so a method's entries are contiguous in each vector, and the method keeps where they start
+/// ([`TableEntries`]).
+#[derive(Debug, Default)]
+pub(crate) struct DebugTables {
+    /// The `line_number_table` arrays.
+    line_numbers: ByteVector,
+    /// The `local_variable_table` arrays.
+    local_variables: ByteVector,
+    /// The `local_variable_type_table` arrays.
+    local_variable_types: ByteVector,
+}
+
+/// A method's entries in one of the vectors of the [`DebugTables`].
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct TableEntries {
+    /// The offset of the first entry in the vector.
+    start: usize,
+    /// The number of entries (the attribute's `*_table_length` field).
+    length: i32,
+}
+
+impl TableEntries {
+    /// Counts a new entry, and returns `table`, to put it at its end.
+    fn add<'t>(&mut self, table: &'t mut ByteVector) -> &'t mut ByteVector {
+        if self.length == 0 {
+            self.start = table.size();
+        }
+        self.length += 1;
+        table
+    }
+
+    /// Whether there are no entries (and so no attribute).
+    pub(super) fn is_empty(self) -> bool {
+        self.length == 0
+    }
+
+    /// The number of entries, for the attribute's `*_table_length` field.
+    pub(super) fn length(self) -> i32 {
+        self.length
+    }
+
+    /// The size in bytes of the entries, each of `entry_size` bytes.
+    #[allow(clippy::cast_sign_loss)] // a count, never negative
+    pub(super) fn size(self, entry_size: usize) -> usize {
+        self.length as usize * entry_size
+    }
+
+    /// The entries, each of `entry_size` bytes, in `table`.
+    pub(super) fn data(self, table: &ByteVector, entry_size: usize) -> &[u8] {
+        &table.data()[self.start..self.start + self.size(entry_size)]
+    }
+}
+
+/// A copy of a method's descriptor, given by its span in `symbol_table`, which stays valid while
+/// the table changes (computing the frames adds types to it while walking the descriptor).
+fn descriptor_copy(symbol_table: &SymbolTable, descriptor: Span) -> JavaCompactStr {
+    JavaCompactStr::new(symbol_table.text(descriptor))
+}
+
 /// A `method_info` structure being written (ASM's `MethodWriter` fields).
 #[derive(Debug)]
 pub(crate) struct MethodWriterState {
@@ -74,12 +143,12 @@ pub(crate) struct MethodWriterState {
     access_flags: u32,
     /// The `name_index` field of the `method_info` JVMS structure.
     name_index: i32,
-    /// The name of this method.
-    name: JavaCompactStr,
+    /// The name of this method, in the symbol table's strings.
+    name: Span,
     /// The `descriptor_index` field of the `method_info` JVMS structure.
     descriptor_index: i32,
-    /// The descriptor of this method.
-    descriptor: JavaCompactStr,
+    /// The descriptor of this method, in the symbol table's strings.
+    descriptor: Span,
 
     // Code attribute fields and sub attributes:
     /// The `max_stack` field of the Code attribute.
@@ -90,20 +159,15 @@ pub(crate) struct MethodWriterState {
     code: ByteVector,
     /// The `exception_table` of the Code attribute (ASM's `firstHandler` list).
     handlers: Vec<Handler>,
-    /// The `line_number_table_length` field of the LineNumberTable code attribute.
-    line_number_table_length: i32,
-    /// The `line_number_table` array of the LineNumberTable code attribute, or `None`.
-    line_number_table: Option<ByteVector>,
-    /// The `local_variable_table_length` field of the LocalVariableTable code attribute.
-    local_variable_table_length: i32,
-    /// The `local_variable_table` array of the LocalVariableTable code attribute, or `None`.
-    local_variable_table: Option<ByteVector>,
-    /// The `local_variable_type_table_length` field of the LocalVariableTypeTable code
-    /// attribute.
-    local_variable_type_table_length: i32,
-    /// The `local_variable_type_table` array of the LocalVariableTypeTable code attribute, or
-    /// `None`.
-    local_variable_type_table: Option<ByteVector>,
+    /// The `line_number_table` array of the LineNumberTable code attribute, in the class's
+    /// [`DebugTables`], and its length (none if 0).
+    line_number_table: TableEntries,
+    /// The `local_variable_table` array of the LocalVariableTable code attribute, in the class's
+    /// [`DebugTables`], and its length (none if 0).
+    local_variable_table: TableEntries,
+    /// The `local_variable_type_table` array of the LocalVariableTypeTable code attribute, in the
+    /// class's [`DebugTables`], and its length (none if 0).
+    local_variable_type_table: TableEntries,
     /// The `number_of_entries` field of the StackMapTable code attribute.
     stack_map_table_number_of_entries: i32,
     /// The `entries` array of the StackMapTable code attribute, or `None`.
@@ -232,8 +296,8 @@ impl MethodWriterState {
         } else {
             access
         };
-        let name_index = symbol_table.add_constant_utf8(name);
-        let descriptor_index = symbol_table.add_constant_utf8(descriptor);
+        let (name_index, name_span) = symbol_table.add_constant_utf8_span(name);
+        let (descriptor_index, descriptor_span) = symbol_table.add_constant_utf8_span(descriptor);
         let signature_index = signature.map_or(0, |s| symbol_table.add_constant_utf8(s));
         let exception_index_table = exceptions
             .iter()
@@ -242,19 +306,16 @@ impl MethodWriterState {
         let mut state = MethodWriterState {
             access_flags,
             name_index,
-            name: JavaCompactStr::new(name),
+            name: name_span,
             descriptor_index,
-            descriptor: JavaCompactStr::new(descriptor),
+            descriptor: descriptor_span,
             max_stack: 0,
             max_locals: 0,
             code: ByteVector::new(),
             handlers: Vec::new(),
-            line_number_table_length: 0,
-            line_number_table: None,
-            local_variable_table_length: 0,
-            local_variable_table: None,
-            local_variable_type_table_length: 0,
-            local_variable_type_table: None,
+            line_number_table: TableEntries::default(),
+            local_variable_table: TableEntries::default(),
+            local_variable_type_table: TableEntries::default(),
             stack_map_table_number_of_entries: 0,
             stack_map_table_entries: None,
             code_visible_type_annotations: Vec::new(),
@@ -457,6 +518,8 @@ impl MethodWriterState {
 pub(crate) struct MethodWriter<'a> {
     pub(crate) symbol_table: &'a mut SymbolTable,
     pub(crate) state: &'a mut MethodWriterState,
+    /// The debug tables of the class, where the method's entries are put.
+    pub(crate) debug_tables: &'a mut DebugTables,
     /// The class hierarchy that computing stack map frames uses (ASM's
     /// `ClassWriter.getCommonSuperClass`), if any.
     pub(crate) hierarchy: Option<&'a dyn ClassHierarchy>,
@@ -533,7 +596,7 @@ impl MethodVisitor for MethodWriter<'_> {
             &mut state.invisible_parameter_annotations
         };
         if parameter_annotations.is_none() {
-            match Type::try_get_argument_count_of(&*state.descriptor) {
+            match Type::try_get_argument_count_of(self.symbol_table.text(state.descriptor)) {
                 Ok(count) => *parameter_annotations = Some(vec![Vec::new(); count]),
                 Err(error) => {
                     self.symbol_table.fail(error.into());
@@ -571,6 +634,12 @@ impl MethodVisitor for MethodWriter<'_> {
 
     fn visit_code_length(&mut self, code_length: u32) {
         self.state.reserve_code(code_length);
+    }
+
+    fn visit_local_variable_count(&mut self, count: u16) {
+        self.debug_tables
+            .local_variables
+            .reserve(usize::from(count) * LOCAL_VARIABLE_SIZE);
     }
 
     fn visit_frame(
@@ -1234,24 +1303,22 @@ impl MethodVisitor for MethodWriter<'_> {
         let start_offset = state.labels.offset(start);
         let length = state.labels.offset(end).wrapping_sub(start_offset);
         if let Some(signature) = signature {
-            state.local_variable_type_table_length += 1;
             let name_index = self.symbol_table.add_constant_utf8(name);
             let signature_index = self.symbol_table.add_constant_utf8(signature);
             state
                 .local_variable_type_table
-                .get_or_insert_with(ByteVector::new)
+                .add(&mut self.debug_tables.local_variable_types)
                 .put_short(start_offset)
                 .put_short(length)
                 .put_short(name_index)
                 .put_short(signature_index)
                 .put_short(i32::from(index));
         }
-        state.local_variable_table_length += 1;
         let name_index = self.symbol_table.add_constant_utf8(name);
         let descriptor_index = self.symbol_table.add_constant_utf8(descriptor);
         state
             .local_variable_table
-            .get_or_insert_with(ByteVector::new)
+            .add(&mut self.debug_tables.local_variables)
             .put_short(start_offset)
             .put_short(length)
             .put_short(name_index)
@@ -1323,11 +1390,10 @@ impl MethodVisitor for MethodWriter<'_> {
 
     fn visit_line_number(&mut self, line: u16, start: Label) {
         let state = &mut *self.state;
-        state.line_number_table_length += 1;
         let start_offset = state.labels.offset(start);
         state
             .line_number_table
-            .get_or_insert_with(ByteVector::new)
+            .add(&mut self.debug_tables.line_numbers)
             .put_short(start_offset)
             .put_short(i32::from(line));
     }

@@ -14,7 +14,9 @@ use crate::writer::attributes::{
 };
 use crate::writer::byte_vector::ByteVector;
 use crate::writer::handler::{get_exception_table_size, put_exception_table};
-use crate::writer::method_writer::MethodWriterState;
+use crate::writer::method_writer::{
+    DebugTables, LINE_NUMBER_SIZE, LOCAL_VARIABLE_SIZE, MethodWriterState,
+};
 use crate::writer::symbol_table::SymbolTable;
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // Java's int arithmetic
@@ -135,8 +137,8 @@ impl MethodWriterState {
             if self.code.size() > 65535 {
                 symbol_table.fail(WriteError::MethodTooLarge {
                     class_name: symbol_table.class_name().to_owned(),
-                    method_name: (*self.name).to_owned(),
-                    descriptor: (*self.descriptor).to_owned(),
+                    method_name: symbol_table.text(self.name).to_owned(),
+                    descriptor: symbol_table.text(self.descriptor).to_owned(),
                     code_size: self.code.size(),
                 });
             }
@@ -155,20 +157,20 @@ impl MethodWriterState {
                 // 6 header bytes and 2 bytes for number_of_entries.
                 size += 8 + stack_map_table_entries.size();
             }
-            if let Some(line_number_table) = &self.line_number_table {
+            if !self.line_number_table.is_empty() {
                 symbol_table.add_constant_utf8(constants::LINE_NUMBER_TABLE);
                 // 6 header bytes and 2 bytes for line_number_table_length.
-                size += 8 + line_number_table.size();
+                size += 8 + self.line_number_table.size(LINE_NUMBER_SIZE);
             }
-            if let Some(local_variable_table) = &self.local_variable_table {
+            if !self.local_variable_table.is_empty() {
                 symbol_table.add_constant_utf8(constants::LOCAL_VARIABLE_TABLE);
                 // 6 header bytes and 2 bytes for local_variable_table_length.
-                size += 8 + local_variable_table.size();
+                size += 8 + self.local_variable_table.size(LOCAL_VARIABLE_SIZE);
             }
-            if let Some(local_variable_type_table) = &self.local_variable_type_table {
+            if !self.local_variable_type_table.is_empty() {
                 symbol_table.add_constant_utf8(constants::LOCAL_VARIABLE_TYPE_TABLE);
                 // 6 header bytes and 2 bytes for local_variable_type_table_length.
-                size += 8 + local_variable_type_table.size();
+                size += 8 + self.local_variable_type_table.size(LOCAL_VARIABLE_SIZE);
             }
             if !self.code_visible_type_annotations.is_empty() {
                 size += compute_annotations_size(
@@ -243,6 +245,7 @@ impl MethodWriterState {
     pub(crate) fn put_method_info(
         &mut self,
         symbol_table: &mut SymbolTable,
+        debug_tables: &DebugTables,
         output: &mut ByteVector,
     ) {
         let use_synthetic_attribute = symbol_table.major_version() < opcodes::V1_5 as i32;
@@ -307,19 +310,19 @@ impl MethodWriterState {
                 size += 8 + stack_map_table_entries.size();
                 code_attribute_count += 1;
             }
-            if let Some(line_number_table) = &self.line_number_table {
+            if !self.line_number_table.is_empty() {
                 // 6 header bytes and 2 bytes for line_number_table_length.
-                size += 8 + line_number_table.size();
+                size += 8 + self.line_number_table.size(LINE_NUMBER_SIZE);
                 code_attribute_count += 1;
             }
-            if let Some(local_variable_table) = &self.local_variable_table {
+            if !self.local_variable_table.is_empty() {
                 // 6 header bytes and 2 bytes for local_variable_table_length.
-                size += 8 + local_variable_table.size();
+                size += 8 + self.local_variable_table.size(LOCAL_VARIABLE_SIZE);
                 code_attribute_count += 1;
             }
-            if let Some(local_variable_type_table) = &self.local_variable_type_table {
+            if !self.local_variable_type_table.is_empty() {
                 // 6 header bytes and 2 bytes for local_variable_type_table_length.
-                size += 8 + local_variable_type_table.size();
+                size += 8 + self.local_variable_type_table.size(LOCAL_VARIABLE_SIZE);
                 code_attribute_count += 1;
             }
             if !self.code_visible_type_annotations.is_empty() {
@@ -376,30 +379,37 @@ impl MethodWriterState {
                     .put_short(self.stack_map_table_number_of_entries)
                     .put_byte_array(stack_map_table_entries.data());
             }
-            if let Some(line_number_table) = &self.line_number_table {
+            if !self.line_number_table.is_empty() {
                 let name_index = symbol_table.add_constant_utf8(constants::LINE_NUMBER_TABLE);
+                let entries = self.line_number_table;
                 output
                     .put_short(name_index)
-                    .put_int(2 + line_number_table.size() as i32)
-                    .put_short(self.line_number_table_length)
-                    .put_byte_array(line_number_table.data());
+                    .put_int(2 + entries.size(LINE_NUMBER_SIZE) as i32)
+                    .put_short(entries.length())
+                    .put_byte_array(entries.data(&debug_tables.line_numbers, LINE_NUMBER_SIZE));
             }
-            if let Some(local_variable_table) = &self.local_variable_table {
+            if !self.local_variable_table.is_empty() {
                 let name_index = symbol_table.add_constant_utf8(constants::LOCAL_VARIABLE_TABLE);
+                let entries = self.local_variable_table;
                 output
                     .put_short(name_index)
-                    .put_int(2 + local_variable_table.size() as i32)
-                    .put_short(self.local_variable_table_length)
-                    .put_byte_array(local_variable_table.data());
+                    .put_int(2 + entries.size(LOCAL_VARIABLE_SIZE) as i32)
+                    .put_short(entries.length())
+                    .put_byte_array(
+                        entries.data(&debug_tables.local_variables, LOCAL_VARIABLE_SIZE),
+                    );
             }
-            if let Some(local_variable_type_table) = &self.local_variable_type_table {
+            if !self.local_variable_type_table.is_empty() {
                 let name_index =
                     symbol_table.add_constant_utf8(constants::LOCAL_VARIABLE_TYPE_TABLE);
+                let entries = self.local_variable_type_table;
                 output
                     .put_short(name_index)
-                    .put_int(2 + local_variable_type_table.size() as i32)
-                    .put_short(self.local_variable_type_table_length)
-                    .put_byte_array(local_variable_type_table.data());
+                    .put_int(2 + entries.size(LOCAL_VARIABLE_SIZE) as i32)
+                    .put_short(entries.length())
+                    .put_byte_array(
+                        entries.data(&debug_tables.local_variable_types, LOCAL_VARIABLE_SIZE),
+                    );
             }
             if !self.code_visible_type_annotations.is_empty() {
                 let name_index =

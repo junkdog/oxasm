@@ -22,7 +22,7 @@ use crate::writer::annotation_writer::{
 use crate::writer::attributes::{AttributeList, AttributePrototypes};
 use crate::writer::byte_vector::ByteVector;
 use crate::writer::field_writer::{FieldWriter, FieldWriterState};
-use crate::writer::method_writer::{Compute, MethodWriter, MethodWriterState};
+use crate::writer::method_writer::{Compute, DebugTables, MethodWriter, MethodWriterState};
 use crate::writer::module_writer::{ModuleWriter, ModuleWriterState};
 use crate::writer::record_component_writer::{RecordComponentWriter, RecordComponentWriterState};
 use crate::writer::symbol_table::SymbolTable;
@@ -85,6 +85,8 @@ pub struct ClassWriter<'h> {
     fields: Vec<FieldWriterState>,
     /// The methods of this class (ASM's `firstMethod` list).
     methods: Vec<MethodWriterState>,
+    /// The line number and local variable tables of the methods (not in ASM).
+    debug_tables: DebugTables,
     /// The `number_of_classes` field of the InnerClasses attribute, or 0.
     number_of_inner_classes: i32,
     /// The `inner_classes` array of the InnerClasses attribute, or `None`.
@@ -183,6 +185,7 @@ impl<'h> ClassWriter<'h> {
             interfaces: Vec::new(),
             fields: Vec::new(),
             methods: Vec::new(),
+            debug_tables: DebugTables::default(),
             number_of_inner_classes: 0,
             inner_classes: None,
             enclosing_class_index: 0,
@@ -221,6 +224,7 @@ impl<'h> ClassWriter<'h> {
             interfaces: self.interfaces,
             fields: self.fields,
             methods: self.methods,
+            debug_tables: self.debug_tables,
             number_of_inner_classes: self.number_of_inner_classes,
             inner_classes: self.inner_classes,
             enclosing_class_index: self.enclosing_class_index,
@@ -445,7 +449,7 @@ impl<'h> ClassWriter<'h> {
         for method_writer in &mut self.methods {
             has_frames |= method_writer.has_frames();
             has_asm_instructions |= method_writer.has_asm_instructions();
-            method_writer.put_method_info(symbol_table, &mut result);
+            method_writer.put_method_info(symbol_table, &self.debug_tables, &mut result);
         }
         // For ease of reference, we use here the same attribute order as in Section 4.7 of the
         // JVMS.
@@ -962,6 +966,7 @@ impl ClassVisitor for ClassWriter<'_> {
         Some(Box::new(MethodWriter {
             symbol_table: &mut self.symbol_table,
             state: self.methods.last_mut().expect("pushed above"),
+            debug_tables: &mut self.debug_tables,
             hierarchy: self.hierarchy,
         }))
     }

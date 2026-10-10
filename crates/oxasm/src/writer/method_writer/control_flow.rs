@@ -13,7 +13,7 @@ use crate::writer::label_table::{
     BlockId, EDGE_EXCEPTION, EDGE_JUMP, EMPTY_LIST, FLAG_JUMP_TARGET, FLAG_REACHABLE,
     FLAG_SUBROUTINE_CALLER, LabelTable,
 };
-use crate::writer::method_writer::{Compute, MethodWriterState};
+use crate::writer::method_writer::{Compute, MethodWriterState, descriptor_copy};
 use crate::writer::symbol_table::SymbolTable;
 
 /// Where the constants below are not applicable.
@@ -507,12 +507,13 @@ impl MethodWriterState {
             .frame
             .expect("set by visit_label");
         let max_locals = usize::try_from(self.max_locals).unwrap_or(0);
+        let descriptor = descriptor_copy(symbol_table, self.descriptor);
         labels
             .frame_mut(first_frame)
             .set_input_frame_from_descriptor(
                 symbol_table,
                 self.access_flags,
-                &self.descriptor,
+                &descriptor,
                 max_locals,
             )?;
         self.accept_computed_frame(symbol_table, first_frame);

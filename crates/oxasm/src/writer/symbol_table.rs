@@ -1167,6 +1167,12 @@ impl SymbolTable {
         self.add_constant_utf8_text(Text::Other(value)).0
     }
 
+    /// [`Self::add_constant_utf8`], returning the index and the span of the string, which
+    /// [`text`](Self::text) reads back.
+    pub(crate) fn add_constant_utf8_span(&mut self, value: &JavaStr) -> (i32, Span) {
+        self.add_constant_utf8_text(Text::Other(value))
+    }
+
     /// [`Self::add_constant_utf8`], returning the index and the span of the string. The string
     /// is kept even if it is too large for the constant pool (ASM throws before adding the
     /// entry, and the index is 0), for the entries that refer to it.
