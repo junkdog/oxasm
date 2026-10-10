@@ -33,6 +33,7 @@ mod insn_list;
 mod method_node;
 mod module_node;
 mod nodes;
+mod packed;
 mod strings;
 mod value;
 
@@ -53,4 +54,5 @@ pub use module_node::{
     ModuleExportNode, ModuleNode, ModuleOpenNode, ModuleProvideNode, ModuleRequireNode,
 };
 pub use nodes::{InnerClassNode, LocalVariableNode, ParameterNode, TryCatchBlockNode};
+pub use packed::{Packed, PackedBox};
 pub use value::{SymConstant, SymConstantDynamic, SymFrameValue, SymHandle};

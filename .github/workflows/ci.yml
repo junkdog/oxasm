@@ -59,6 +59,8 @@ jobs:
       - run: cargo miri test -p oxasm --test type_test
       - run: cargo miri test -p oxasm-util --test check_signature_adapter_test
       - run: cargo miri test -p oxasm-analysis --lib set_arena
+      - run: cargo miri test -p oxasm-tree --lib packed
+      - run: cargo miri test -p oxasm-tree --lib frame_node
 
   oracle:
     name: oracle

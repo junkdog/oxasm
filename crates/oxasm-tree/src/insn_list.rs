@@ -105,9 +105,9 @@ struct Slot {
     node: Option<InsnNode>,
 }
 
-// The chain of owners costs no memory: `next_owner` fills what was the slot's padding.
+// Two slots per cache line (T13): a 16-byte `Insn` and four links.
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(size_of::<Slot>() == 40);
+const _: () = assert!(size_of::<Slot>() == 32);
 
 /// The positions of the instructions, built on demand (ASM's `cache`, and the `index` field of
 /// the nodes).

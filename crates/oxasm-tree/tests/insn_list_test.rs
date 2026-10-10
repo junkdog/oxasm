@@ -16,8 +16,8 @@
 use oxasm::opcodes::HandleKind;
 use oxasm::{FrameKind, Interner, Label, MethodVisitor};
 use oxasm_tree::{
-    FrameNode, Insn, InsnId, InsnList, InsnNode, SymConstant, SymConstantDynamic, SymFrameValue,
-    SymHandle,
+    FrameNode, Insn, InsnId, InsnList, InsnNode, PackedBox, SymConstant, SymConstantDynamic,
+    SymFrameValue, SymHandle,
 };
 use proptest::prelude::*;
 
@@ -1297,7 +1297,7 @@ fn int(tag: i32) -> Insn {
 }
 
 /// One instruction of each kind that owns memory, then a plain one: a box (indy, both switches,
-/// a frame) or a dynamic constant.
+/// a frame), a dynamic constant or a handle constant (T13: a handle is boxed).
 fn insns_owning_memory(interner: &Interner) -> Vec<Insn> {
     let sym = |s: &str| interner.intern(s);
     let bsm = SymHandle {
@@ -1327,7 +1327,8 @@ fn insns_owning_memory(interner: &Interner) -> Vec<Insn> {
             &[SymFrameValue::Integer],
             &[],
         )),
-        Insn::Ldc(SymConstant::Dynamic(Box::new(dynamic))),
+        Insn::Ldc(SymConstant::Dynamic(PackedBox::new(dynamic))),
+        Insn::Ldc(SymConstant::from(bsm)),
         Insn::Simple { opcode: 0 },
     ]
 }
@@ -1362,7 +1363,7 @@ fn instructions_owning_memory_are_dropped() {
     let (mut moved, _) = filled();
     edited.add_list(&mut moved);
     assert!(moved.is_empty());
-    assert_eq!(edited.len(), 11);
+    assert_eq!(edited.len(), 13);
     let (mut reused, ids) = filled();
     reused.remove(ids[3]);
     reused.add(insns_owning_memory(&interner).swap_remove(3));
@@ -1384,6 +1385,7 @@ fn instructions_owning_memory_are_dropped() {
     plain.remove(recycled);
     plain.insert_before(ids[3], owning.next().unwrap());
     plain.set(ids[4], owning.next().unwrap());
+    plain.set(ids[5], owning.next().unwrap());
     plain
         .cursor(0)
         .add(insns_owning_memory(&interner).swap_remove(3));

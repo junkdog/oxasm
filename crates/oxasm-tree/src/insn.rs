@@ -107,9 +107,11 @@ pub struct LookupSwitchInsn {
 /// A bytecode instruction, or one of the pseudo instructions an instruction list also holds
 /// (labels, stack map frames and line numbers).
 ///
-/// Its strings are [`Sym`]s of the interner of the method that holds it. The variants with
-/// vectors are boxed, which keeps an `Insn` at 24 bytes, except [`Frame`](Self::Frame), whose
-/// values are a single boxed slice (empty frames, the most common, allocate nothing).
+/// Its strings are [`Sym`]s of the interner of the method that holds it. An `Insn` is 16 bytes,
+/// which keeps an instruction list's slot at 32 (T13 in oxasm-optimization.md): the variants with
+/// vectors are boxed, a [`Frame`](Self::Frame)'s values are a single allocation behind a thin
+/// pointer (empty frames, the most common, allocate nothing), and an [`Ldc`](Self::Ldc)'s
+/// constant is 12 bytes, aligned to 4.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Insn {
     /// A zero operand instruction (ASM's `InsnNode`): `NOP`, `ACONST_NULL`, ..., `IADD`, ...,
@@ -382,9 +384,8 @@ impl Insn {
                 | SymConstant::Double(_)
                 | SymConstant::String(_)
                 | SymConstant::Type(_)
-                | SymConstant::MethodType(_)
-                | SymConstant::Handle(_) => false,
-                SymConstant::Dynamic(_) => true,
+                | SymConstant::MethodType(_) => false,
+                SymConstant::Handle(_) | SymConstant::Dynamic(_) => true,
             },
             Insn::InvokeDynamic(_) | Insn::TableSwitch(_) | Insn::LookupSwitch(_) => true,
             Insn::Frame(frame) => frame.owns_memory(),
@@ -511,9 +512,9 @@ impl Insn {
     }
 }
 
-// An unboxed frame keeps an `Insn` at 24 bytes: `FrameKind`'s spare tag values hold the variant.
+// A 12-byte frame node and constant, aligned to 4, keep an `Insn` at 16 bytes (T13).
 #[cfg(target_pointer_width = "64")]
-const _: () = assert!(size_of::<Insn>() == 24);
+const _: () = assert!(size_of::<Insn>() == 16);
 
 // The fields of the instructions that `owns_memory` says own none.
 const _: () = assert!(

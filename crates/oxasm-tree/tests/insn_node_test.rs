@@ -1,7 +1,7 @@
 //! Port of ASM's `InsnNodeTest` (a zero operand instruction, here `Insn::Simple`).
 
 use oxasm::opcodes::ACONST_NULL;
-use oxasm_tree::{Insn, InsnKind, InsnNode};
+use oxasm_tree::{FrameNode, Insn, InsnKind, InsnNode, SymConstant};
 
 #[test]
 fn test_constructor() {
@@ -40,8 +40,11 @@ fn insn_kinds_have_asm_values() {
 }
 
 /// oxasm-specific: an instruction stays small, since a method holds thousands of them (the
-/// variants with vectors are boxed).
+/// variants with vectors are boxed, frames and constants are 12 bytes aligned to 4; T13).
 #[test]
 fn insn_is_small() {
-    assert_eq!(size_of::<Insn>(), 24);
+    assert_eq!(size_of::<Insn>(), 16);
+    assert_eq!(size_of::<Option<InsnNode>>(), 16);
+    assert_eq!(size_of::<FrameNode>(), 12);
+    assert_eq!(size_of::<SymConstant>(), 12);
 }

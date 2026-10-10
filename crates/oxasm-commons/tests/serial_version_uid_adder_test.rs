@@ -9,7 +9,7 @@ use oxasm::opcodes::*;
 use oxasm::{ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags, ParsingOptions, jstr};
 use oxasm_commons::SerialVersionUidAdder;
 use oxasm_testkit::{ClassFile, PrecompiledClass, t0_resource};
-use oxasm_tree::{ClassNode, SymConstant};
+use oxasm_tree::{ClassNode, Packed, SymConstant};
 
 /// ASM's `null` class visitor.
 struct NoDelegate;
@@ -110,7 +110,7 @@ fn test_added_field_value() {
     assert_eq!(field.access, ACC_FINAL + ACC_STATIC);
     assert_eq!(
         field.value,
-        Some(SymConstant::Long(4_654_798_559_887_898_126))
+        Some(SymConstant::Long(Packed(4_654_798_559_887_898_126)))
     );
 
     // Visiting the result again finds the field.

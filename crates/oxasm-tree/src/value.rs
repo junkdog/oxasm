@@ -13,6 +13,7 @@ use std::hash::{Hash, Hasher};
 use oxasm::constant::{Constant, FrameValue};
 use oxasm::{ConstantDynamic, Handle, HandleKind, Interner, Label, Sym, Type, TypeSort};
 
+use crate::packed::{Packed, PackedBox};
 use crate::strings::Strings;
 
 /// A reference to a field or a method (a [`Handle`] whose strings are interned).
@@ -121,12 +122,16 @@ impl SymConstantDynamic {
 ///
 /// Floating point values compare and hash like Java's `Float.equals`/`Double.equals`, as
 /// [`Constant`]'s do.
+///
+/// A constant is 12 bytes, aligned to 4, which keeps an [`Insn::Ldc`](crate::Insn::Ldc) in a
+/// 16-byte instruction (T13 in oxasm-optimization.md): `long` and `double` values are
+/// [`Packed`], and handles and dynamic constants are in a [`PackedBox`].
 #[derive(Clone, Debug)]
 pub enum SymConstant {
     Integer(i32),
     Float(f32),
-    Long(i64),
-    Double(f64),
+    Long(Packed<i64>),
+    Double(Packed<f64>),
     String(Sym),
     /// A class type constant (a [`Type`] of sort `OBJECT` or `ARRAY`), as its descriptor.
     Type(Sym),
@@ -134,9 +139,12 @@ pub enum SymConstant {
     /// apart from [`Type`](Self::Type) because `Type::get_method_type` keeps any string as is,
     /// which `Type::get_type` would not give back (an empty `CONSTANT_MethodType`, say).
     MethodType(Sym),
-    Handle(SymHandle),
-    Dynamic(Box<SymConstantDynamic>),
+    Handle(PackedBox<SymHandle>),
+    Dynamic(PackedBox<SymConstantDynamic>),
 }
+
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<SymConstant>() == 12 && align_of::<SymConstant>() == 4);
 
 impl SymConstant {
     /// The given constant, with its strings interned.
@@ -148,16 +156,18 @@ impl SymConstant {
         match constant {
             Constant::Integer(v) => SymConstant::Integer(*v),
             Constant::Float(v) => SymConstant::Float(*v),
-            Constant::Long(v) => SymConstant::Long(*v),
-            Constant::Double(v) => SymConstant::Double(*v),
+            Constant::Long(v) => SymConstant::Long(Packed(*v)),
+            Constant::Double(v) => SymConstant::Double(Packed(*v)),
             Constant::String(s) => SymConstant::String(strings.get(s)),
             Constant::Type(t) if t.get_sort() == TypeSort::Method => {
                 SymConstant::MethodType(strings.get(&t.get_descriptor()))
             }
             Constant::Type(t) => SymConstant::Type(strings.get(&t.get_descriptor())),
-            Constant::Handle(h) => SymConstant::Handle(SymHandle::from_visited(h, strings)),
+            Constant::Handle(h) => {
+                SymConstant::Handle(PackedBox::new(SymHandle::from_visited(h, strings)))
+            }
             Constant::Dynamic(d) => {
-                SymConstant::Dynamic(Box::new(SymConstantDynamic::from_visited(d, strings)))
+                SymConstant::Dynamic(PackedBox::new(SymConstantDynamic::from_visited(d, strings)))
             }
         }
     }
@@ -167,8 +177,8 @@ impl SymConstant {
         match self {
             SymConstant::Integer(v) => Constant::Integer(*v),
             SymConstant::Float(v) => Constant::Float(*v),
-            SymConstant::Long(v) => Constant::Long(*v),
-            SymConstant::Double(v) => Constant::Double(*v),
+            SymConstant::Long(v) => Constant::Long(v.get()),
+            SymConstant::Double(v) => Constant::Double(v.get()),
             SymConstant::String(s) => Constant::String(Cow::Borrowed(interner.resolve(*s))),
             SymConstant::Type(t) => Constant::Type(resolve_type(interner, *t)),
             SymConstant::MethodType(t) => {
@@ -218,7 +228,9 @@ impl PartialEq for SymConstant {
             (SymConstant::Integer(a), SymConstant::Integer(b)) => a == b,
             (SymConstant::Float(a), SymConstant::Float(b)) => float_bits(*a) == float_bits(*b),
             (SymConstant::Long(a), SymConstant::Long(b)) => a == b,
-            (SymConstant::Double(a), SymConstant::Double(b)) => double_bits(*a) == double_bits(*b),
+            (SymConstant::Double(a), SymConstant::Double(b)) => {
+                double_bits(a.get()) == double_bits(b.get())
+            }
             (SymConstant::String(a), SymConstant::String(b))
             | (SymConstant::Type(a), SymConstant::Type(b))
             | (SymConstant::MethodType(a), SymConstant::MethodType(b)) => a == b,
@@ -238,7 +250,7 @@ impl Hash for SymConstant {
             SymConstant::Integer(v) => v.hash(state),
             SymConstant::Float(v) => float_bits(*v).hash(state),
             SymConstant::Long(v) => v.hash(state),
-            SymConstant::Double(v) => double_bits(*v).hash(state),
+            SymConstant::Double(v) => double_bits(v.get()).hash(state),
             SymConstant::String(s) | SymConstant::Type(s) | SymConstant::MethodType(s) => {
                 s.hash(state);
             }
@@ -262,25 +274,25 @@ impl From<f32> for SymConstant {
 
 impl From<i64> for SymConstant {
     fn from(v: i64) -> Self {
-        SymConstant::Long(v)
+        SymConstant::Long(Packed(v))
     }
 }
 
 impl From<f64> for SymConstant {
     fn from(v: f64) -> Self {
-        SymConstant::Double(v)
+        SymConstant::Double(Packed(v))
     }
 }
 
 impl From<SymHandle> for SymConstant {
     fn from(v: SymHandle) -> Self {
-        SymConstant::Handle(v)
+        SymConstant::Handle(PackedBox::new(v))
     }
 }
 
 impl From<SymConstantDynamic> for SymConstant {
     fn from(v: SymConstantDynamic) -> Self {
-        SymConstant::Dynamic(Box::new(v))
+        SymConstant::Dynamic(PackedBox::new(v))
     }
 }
 
