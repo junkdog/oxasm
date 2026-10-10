@@ -105,6 +105,7 @@ fn bench(
     }
     let fixture = Fixture::load(pack, hierarchy)?;
     let ops = scenario.ops(&fixture);
+    fixture.prepare(scenario);
     for pass in 0..warmup + iterations {
         let start = Instant::now();
         let check = std::hint::black_box(run(scenario, std::hint::black_box(&fixture)));

@@ -628,7 +628,12 @@ impl Shard {
 
     /// The `Sym` of `bytes` in this shard, and its interned bytes.
     #[inline]
-    fn find<'a>(&self, arenas: &'a [Arena], tag: u32, bytes: &[u8]) -> Option<(u32, &'a [u8])> {
+    fn find<'a>(
+        &self,
+        arenas: &'a [Arena; ARENAS],
+        tag: u32,
+        bytes: &[u8],
+    ) -> Option<(u32, &'a [u8])> {
         let slots = self.table().slots();
         let mask = slots.len() - 1;
         let mut i = tag as usize & mask;
@@ -778,8 +783,8 @@ fn thread_arena() -> (usize, bool) {
 // Aligned so that in an `Arc`, its fields are not on the cache line of the reference counts.
 #[repr(align(128))]
 pub struct Interner {
-    shards: Box<[Shard]>,
-    arenas: Box<[Arena]>,
+    shards: Box<[Shard; SHARDS]>,
+    arenas: Box<[Arena; ARENAS]>,
 }
 
 impl Interner {
@@ -789,10 +794,11 @@ impl Interner {
         // It starts with the shared well-known strings and tables.
         let shared = shared();
         Interner {
-            shards: shared.tables.iter().map(Shard::new).collect(),
-            arenas: std::iter::once(Arena::with_well_known_chunks(shared))
-                .chain((1..ARENAS).map(|_| Arena::new()))
-                .collect(),
+            shards: boxed_array(shared.tables.iter().map(Shard::new)),
+            arenas: boxed_array(
+                std::iter::once(Arena::with_well_known_chunks(shared))
+                    .chain((1..ARENAS).map(|_| Arena::new())),
+            ),
         }
     }
 
@@ -810,11 +816,6 @@ impl Interner {
     /// The symbol of the given string, and its interned bytes. See [`intern`](Self::intern).
     #[inline]
     pub(super) fn intern_bytes(&self, bytes: &[u8]) -> (u32, &[u8]) {
-        assert!(
-            bytes.len() <= MAX_LEN,
-            "a string of {} bytes, longer than MAX_LEN",
-            bytes.len()
-        );
         let hash = hash(bytes);
         let shard = &self.shards[shard_index(hash)];
         match shard.find(&self.arenas, tag(hash), bytes) {
@@ -826,6 +827,12 @@ impl Interner {
     /// Interns `bytes`, staged in the arena of this thread, unless another thread did meanwhile.
     #[cold]
     fn insert(&self, bytes: &[u8], hash: u64) -> (u32, &[u8]) {
+        // (No interned string is longer: a lookup of one finds nothing.)
+        assert!(
+            bytes.len() <= MAX_LEN,
+            "a string of {} bytes, longer than MAX_LEN",
+            bytes.len()
+        );
         let shard = &self.shards[shard_index(hash)];
         let tag = tag(hash);
         let (arena_index, owned) = thread_arena();
@@ -925,6 +932,15 @@ impl fmt::Debug for Interner {
             .field("len", &self.len())
             .field("string_bytes", &self.string_bytes())
             .finish_non_exhaustive()
+    }
+}
+
+/// The `N` items in a boxed array.
+fn boxed_array<T, const N: usize>(items: impl Iterator<Item = T>) -> Box<[T; N]> {
+    let items: Box<[T]> = items.collect();
+    match items.try_into() {
+        Ok(array) => array,
+        Err(_) => unreachable!("{N} items"),
     }
 }
 

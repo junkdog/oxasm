@@ -49,6 +49,10 @@ pub enum Scenario {
     /// As `read_tree`, with one interner per pass (as sift shares one for a classpath). It has
     /// no ASM analogue of its own and compares with ASM's `read_tree`.
     ReadTreeShared,
+    /// As `read_tree`, with one interner for the whole run, which already holds the pack's
+    /// strings before the first pass: sift's steady state, a classpath's interner once its first
+    /// classes are read, where every string is a lookup. Compares with ASM's `read_tree`.
+    ReadTreeWarm,
     /// `AdapterBenchmark.readAndWrite(false)`: reader into `ClassWriter(0)`.
     ReadWrite,
     /// `AdapterBenchmark.readAndWriteWithCopyPool`: reader into `ClassWriter(reader, 0)`.
@@ -82,11 +86,12 @@ pub enum Scenario {
 }
 
 impl Scenario {
-    pub const ALL: [Scenario; 15] = [
+    pub const ALL: [Scenario; 16] = [
         Scenario::ClassInfo,
         Scenario::Read,
         Scenario::ReadTree,
         Scenario::ReadTreeShared,
+        Scenario::ReadTreeWarm,
         Scenario::ReadWrite,
         Scenario::ReadWriteCopyPool,
         Scenario::ReadWriteComputeMaxs,
@@ -106,6 +111,7 @@ impl Scenario {
             Scenario::Read => "read",
             Scenario::ReadTree => "read_tree",
             Scenario::ReadTreeShared => "read_tree_shared",
+            Scenario::ReadTreeWarm => "read_tree_warm",
             Scenario::ReadWrite => "read_write",
             Scenario::ReadWriteCopyPool => "read_write_copy_pool",
             Scenario::ReadWriteComputeMaxs => "read_write_compute_maxs",
@@ -127,7 +133,7 @@ impl Scenario {
     /// The name of the oracle's scenario this one compares with.
     pub fn asm_name(self) -> &'static str {
         match self {
-            Scenario::ReadTreeShared => Scenario::ReadTree.name(),
+            Scenario::ReadTreeShared | Scenario::ReadTreeWarm => Scenario::ReadTree.name(),
             other => other.name(),
         }
     }
@@ -153,7 +159,8 @@ impl Scenario {
 
 /// What a scenario runs on: the classes of a pack, the hierarchy for computing frames, the
 /// descriptors of the `type_*` scenarios, collected from the classes as `TypeBenchmark` does,
-/// and the trees of the `analyze_*` scenarios, read on first use.
+/// and, made on first use (or by [`prepare`](Fixture::prepare)), the trees of the `analyze_*`
+/// scenarios and the interner of `read_tree_warm`.
 #[derive(Debug)]
 pub struct Fixture {
     pub classes: Vec<Vec<u8>>,
@@ -161,6 +168,7 @@ pub struct Fixture {
     descriptors: Vec<JavaString>,
     method_descriptors: Vec<JavaString>,
     trees: OnceLock<Vec<ClassNode>>,
+    warm_interner: OnceLock<Arc<Interner>>,
 }
 
 impl Fixture {
@@ -179,6 +187,7 @@ impl Fixture {
             descriptors: Vec::new(),
             method_descriptors: Vec::new(),
             trees: OnceLock::new(),
+            warm_interner: OnceLock::new(),
         };
         for (index, class) in fixture.classes.iter().enumerate() {
             let mut collect = CollectTypes {
@@ -209,6 +218,39 @@ impl Fixture {
                 .map(|(index, class)| tree(class).unwrap_or_else(|e| panic!("class {index}: {e}")))
                 .collect()
         })
+    }
+
+    /// The interner of `read_tree_warm`, which holds the strings of every class.
+    ///
+    /// # Panics
+    ///
+    /// If a class is malformed.
+    pub fn warm_interner(&self) -> &Arc<Interner> {
+        self.warm_interner.get_or_init(|| {
+            let interner = Arc::new(Interner::new());
+            for (index, class) in self.classes.iter().enumerate() {
+                read_tree(class, Some(&interner)).unwrap_or_else(|e| panic!("class {index}: {e}"));
+            }
+            interner
+        })
+    }
+
+    /// Makes what the scenario's passes use beforehand (the trees of the `analyze_*` scenarios,
+    /// the interner of `read_tree_warm`), so that no pass includes it.
+    ///
+    /// # Panics
+    ///
+    /// If a class is malformed.
+    pub fn prepare(&self, scenario: Scenario) {
+        match scenario {
+            Scenario::AnalyzeBasic | Scenario::AnalyzeSource => {
+                self.trees();
+            }
+            Scenario::ReadTreeWarm => {
+                self.warm_interner();
+            }
+            _ => {}
+        }
     }
 }
 
@@ -281,6 +323,10 @@ pub fn run(scenario: Scenario, fixture: &Fixture) -> u64 {
             let interner = Arc::new(Interner::new());
             sum_classes(fixture, |class| read_tree(class, Some(&interner)))
         }
+        Scenario::ReadTreeWarm => {
+            let interner = fixture.warm_interner();
+            sum_classes(fixture, |class| read_tree(class, Some(interner)))
+        }
         Scenario::AnalyzeBasic | Scenario::AnalyzeSource => fixture
             .trees()
             .iter()
@@ -334,7 +380,10 @@ pub fn run_class(
             Ok(counter.count)
         }
         Scenario::ReadTree => read_tree(class, None),
-        Scenario::ReadTreeShared => read_tree(class, Some(&Arc::new(Interner::new()))),
+        // One class has no pass to warm an interner with.
+        Scenario::ReadTreeShared | Scenario::ReadTreeWarm => {
+            read_tree(class, Some(&Arc::new(Interner::new())))
+        }
         Scenario::ReadWrite
         | Scenario::ReadWriteCopyPool
         | Scenario::ReadWriteComputeMaxs
