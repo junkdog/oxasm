@@ -289,8 +289,13 @@ fn compile(class_path: &str) -> Result<PathBuf> {
     let fingerprint = sha256_hex(&fingerprint);
 
     let classes = root_path("target/oracle/classes");
-    let stamp = classes.join(".fingerprint");
-    if std::fs::read_to_string(&stamp).is_ok_and(|s| s == fingerprint) {
+    // Not `.fingerprint`: Swatinem/rust-cache takes a directory holding one for a cargo profile,
+    // and keeps only that, so a restored cache had the stamp without the classes. The stamp is
+    // also checked against a class it vouches for.
+    let stamp = classes.join("oracle.sha256");
+    if std::fs::read_to_string(&stamp).is_ok_and(|s| s == fingerprint)
+        && classes.join("Oracle.class").is_file()
+    {
         return Ok(classes);
     }
     if classes.exists() {

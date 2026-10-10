@@ -295,6 +295,7 @@ fn last_jvm_insn_index(method: &MethodNode) -> Option<usize> {
 /// Tests that the precompiled classes can be successfully analyzed from their existing stack
 /// map frames with a `BasicVerifier`.
 #[test]
+#[ignore = "needs the JVM oracle"]
 fn test_analyze_basic_verifier() {
     for &class_parameter in PrecompiledClass::ALL {
         if has_jsr_or_ret_instructions(class_parameter) {
@@ -323,6 +324,7 @@ fn test_analyze_basic_verifier() {
 /// map frames with a `BasicVerifier`, even if the method node's max locals and max stack size
 /// are not set.
 #[test]
+#[ignore = "needs the JVM oracle"]
 fn test_analyze_and_compute_maxs_basic_verifier() {
     for &class_parameter in PrecompiledClass::ALL {
         if has_jsr_or_ret_instructions(class_parameter) {

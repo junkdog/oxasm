@@ -651,6 +651,7 @@ fn test_visit_methods_no_member_delegate_precompiled_class() {
 }
 
 #[test]
+#[ignore = "needs the JVM oracle"]
 fn test_verify_precompiled_class() {
     for &class_parameter in PrecompiledClass::ALL {
         let class_reader = ClassReader::new(class_parameter.bytes()).unwrap();
@@ -725,6 +726,7 @@ fn test_main_class_name() {
 
 /// Adapted: on a T0 class file, with the hierarchy of T0 and the JDK.
 #[test]
+#[ignore = "needs the JVM oracle"]
 fn test_main_class_file() {
     let path = oxasm_testkit::corpus_t0().join("jdk8/AllStructures.class");
     let mut logger = Vec::new();
@@ -791,6 +793,7 @@ fn check_class_adapter_test_class() -> Vec<u8> {
 /// Adapted: on a class with the methods of ASM's test class that its test checks, comparing the
 /// whole output with ASM's.
 #[test]
+#[ignore = "needs the JVM oracle"]
 fn test_verify_valid_class() {
     let class_file = check_class_adapter_test_class();
     let class_reader = ClassReader::new(&class_file).unwrap();
@@ -820,6 +823,7 @@ fn test_verify_valid_class() {
 }
 
 #[test]
+#[ignore = "needs the JVM oracle"]
 fn test_verify_invalid_class() {
     let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
     class_writer.visit(V1_1, ACC_PUBLIC, jstr!("C"), None, OBJECT, &[]);

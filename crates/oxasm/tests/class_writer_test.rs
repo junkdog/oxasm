@@ -523,6 +523,7 @@ fn merge_long_or_double_class() -> Result<Vec<u8>, WriteError> {
 }
 
 #[test]
+#[ignore = "needs the JVM oracle"]
 fn test_to_byte_array_compute_frames_merge_long_or_double() {
     let class_file = merge_long_or_double_class().unwrap();
     oxasm_testkit::jvm::verify_class(&class_file).unwrap();

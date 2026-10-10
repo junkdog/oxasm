@@ -95,9 +95,12 @@ jobs:
           cargo xtask parity --tier t0
           cargo xtask parity --tier t1 --sample 2000
       # ASM's ClassFile.newInstance() checks: the JVM verifies the classes the tests write
-      # (the compute_frames tests also need corpus/t1, for the JDK's class hierarchy).
+      # (the compute_frames tests also need corpus/t1, for the JDK's class hierarchy), and the
+      # check adapter and CheckFrameAnalyzer tests that take their hierarchy from the oracle.
       - name: JVM verification of written classes
-        run: cargo test --workspace -- --ignored new_instance written_classes_are_valid compute_frames
+        run: |
+          cargo test --workspace -- --ignored new_instance written_classes_are_valid compute_frames \
+            test_verify_ test_main_class_file basic_verifier
 
   fuzz-smoke:
     name: fuzz smoke (60 s per target)
