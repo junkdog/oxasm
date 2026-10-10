@@ -1,0 +1,30 @@
+#!/bin/sh
+# Drops the page cache and compacts memory before a benchmark run, so that transparent huge pages
+# find free 2 MiB blocks instead of falling back to 4 KiB pages (`cargo xtask bench --drop-caches`
+# runs it with `sudo -n` before each process). Takes no arguments.
+#
+# Install it root-owned (sudoers then runs it as root, so no one else may write it), with a
+# sudoers rule that allows exactly this command, without arguments or a password:
+#
+#   sudo install -o root -g root -m 0755 xtask/scripts/oxasm-drop-caches /usr/local/sbin/
+#   echo "$USER ALL=(root) NOPASSWD: /usr/local/sbin/oxasm-drop-caches \"\"" > drop-caches.sudoers
+#   sudo visudo -cf drop-caches.sudoers &&
+#     sudo install -o root -g root -m 0440 drop-caches.sudoers /etc/sudoers.d/oxasm-drop-caches
+set -eu
+
+if [ "$#" -ne 0 ]; then
+    echo "usage: oxasm-drop-caches (no arguments)" >&2
+    exit 2
+fi
+
+# Free memory (MiB) and free 2 MiB blocks (order 9, and order 10 as two) of every Normal zone.
+state() {
+    awk '/^MemFree:/ { printf "free %d MiB, ", $2 / 1024 }' /proc/meminfo
+    awk '$4 == "Normal" { n += $14 + 2 * $15 } END { printf "%d free 2 MiB blocks\n", n }' /proc/buddyinfo
+}
+
+printf 'before: '; state
+sync
+echo 1 > /proc/sys/vm/drop_caches
+echo 1 > /proc/sys/vm/compact_memory
+printf 'after:  '; state

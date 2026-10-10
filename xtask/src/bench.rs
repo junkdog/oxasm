@@ -5,6 +5,12 @@
 //! oracle's `bench` command, one process per scenario and side, run in turn for a number of
 //! rounds (the order of the sides alternates between rounds). Each process prints the time of
 //! each measured pass and a check value, which must be the same on both sides.
+//!
+//! Transparent huge pages: when memory is fragmented, the kernel backs a process's heap with
+//! 4 KiB pages instead of 2 MiB ones, which slows the side that faults most (ASM's JVM, in the
+//! tree scenarios). The summary counts each side's huge page faults and fallbacks (the system's
+//! counters around each process), and `--drop-caches` makes free 2 MiB blocks before each
+//! process with a root-owned script that sudoers lets run without a password.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -27,6 +33,15 @@ const DEFAULT_T1_SAMPLE: usize = 2000;
 /// The P9 gate: oxasm's time per operation at most this many times ASM's.
 const GATE: f64 = 1.5;
 
+/// The script `--drop-caches` runs with `sudo -n`: it drops the page cache and compacts memory,
+/// and takes no arguments. `xtask/scripts/oxasm-drop-caches` is its source, with how to install
+/// it and its sudoers rule.
+const DROP_CACHES: &str = "/usr/local/sbin/oxasm-drop-caches";
+
+/// The share of a side's huge page faults that may fall back to 4 KiB pages before the summary
+/// warns that the ratios may be skewed.
+const FALLBACK_WARNING: f64 = 0.05;
+
 pub fn cli(mut args: Args) -> Result<()> {
     let tier = args.value("--tier")?;
     let sample = args
@@ -42,6 +57,7 @@ pub fn cli(mut args: Args) -> Result<()> {
     let warmup = number(args.value("--warmup")?, "--warmup", 10)?;
     let iterations = number(args.value("--iterations")?, "--iterations", 20)?;
     let cpus = args.value("--cpus")?;
+    let drop_caches = args.flag("--drop-caches");
     let prepare = args.flag("--prepare");
     args.finish()?;
     ensure!(
@@ -72,6 +88,13 @@ pub fn cli(mut args: Args) -> Result<()> {
     if prepare {
         return Ok(());
     }
+    if drop_caches {
+        // Once with its report, to fail before the first round if it cannot run.
+        let report = run_drop_caches()?;
+        eprint!("xtask: {DROP_CACHES}: {report}");
+    }
+    let blocks_at_start = free_huge_blocks();
+    let mut thp: BTreeMap<(Side, &str), Thp> = BTreeMap::new();
 
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -110,8 +133,17 @@ pub fn cli(mut args: Args) -> Result<()> {
                     .arg(set.hierarchy())
                     .args(["--warmup", &warmup.to_string()])
                     .args(["--iterations", &iterations.to_string()]);
+                if drop_caches {
+                    run_drop_caches()?;
+                }
+                let before = Thp::now();
                 let passes = run_side(pin(command, cpus.as_deref()), name)
                     .with_context(|| format!("{} {name}, round {}", side.label(), round + 1))?;
+                if let (Some(before), Some(after)) = (before, Thp::now()) {
+                    let total = thp.entry((side, name)).or_default();
+                    total.faults += after.faults.saturating_sub(before.faults);
+                    total.fallbacks += after.fallbacks.saturating_sub(before.fallbacks);
+                }
                 ensure!(
                     passes.len() == iterations,
                     "{} {name} printed {} passes, not {iterations}",
@@ -146,7 +178,7 @@ pub fn cli(mut args: Args) -> Result<()> {
         }
     }
 
-    let summary = summarize(
+    let mut summary = summarize(
         &scenarios,
         &samples,
         &set,
@@ -154,6 +186,13 @@ pub fn cli(mut args: Args) -> Result<()> {
         iterations,
         cpus.as_deref(),
     )?;
+    summary.push_str(&summarize_thp(
+        &scenarios,
+        &thp,
+        drop_caches,
+        blocks_at_start,
+        free_huge_blocks(),
+    )?);
     print!("{summary}");
     let summary_path = set.dir.join(format!("summary-{stamp}.txt"));
     fs::write(&summary_path, &summary)?;
@@ -378,6 +417,145 @@ fn run_side(mut command: Command, scenario: &str) -> Result<Vec<Pass>> {
         });
     }
     Ok(passes)
+}
+
+/// Runs [`DROP_CACHES`] through `sudo -n`, and returns its report.
+fn run_drop_caches() -> Result<String> {
+    let output = Command::new("sudo")
+        .args(["-n", DROP_CACHES])
+        .stderr(Stdio::inherit())
+        .output()
+        .context("cannot run sudo")?;
+    ensure!(
+        output.status.success(),
+        "--drop-caches: `sudo -n {DROP_CACHES}` exited with {}; install it and its sudoers \
+         rule as xtask/scripts/oxasm-drop-caches says",
+        output.status
+    );
+    String::from_utf8(output.stdout).context("its output is not UTF-8")
+}
+
+/// Transparent huge page faults, and those that fell back to 4 KiB pages: the system's counters
+/// (`/proc/vmstat`), or their growth while a side ran.
+#[derive(Clone, Copy, Debug, Default)]
+struct Thp {
+    faults: u64,
+    fallbacks: u64,
+}
+
+impl Thp {
+    /// The system's counters, or `None` where `/proc/vmstat` lacks them (not Linux, no THP).
+    fn now() -> Option<Thp> {
+        let vmstat = fs::read_to_string("/proc/vmstat").ok()?;
+        let counter = |name: &str| {
+            vmstat.lines().find_map(|line| {
+                let (key, value) = line.split_once(' ')?;
+                (key == name).then(|| value.parse::<u64>().ok()).flatten()
+            })
+        };
+        // A fault that fell back is counted in `thp_fault_fallback` only.
+        let fallbacks = counter("thp_fault_fallback")?;
+        Some(Thp {
+            faults: counter("thp_fault_alloc")? + fallbacks,
+            fallbacks,
+        })
+    }
+
+    #[allow(clippy::cast_precision_loss)] // counts far below 2^52
+    fn fallback_share(self) -> f64 {
+        if self.faults == 0 {
+            0.0
+        } else {
+            self.fallbacks as f64 / self.faults as f64
+        }
+    }
+}
+
+/// The free 2 MiB blocks of memory (order 9, and order 10 as two, of every zone), or `None`
+/// without `/proc/buddyinfo`.
+fn free_huge_blocks() -> Option<u64> {
+    let buddyinfo = fs::read_to_string("/proc/buddyinfo").ok()?;
+    let mut blocks = 0;
+    for line in buddyinfo.lines() {
+        // `Node 0, zone Normal <free blocks of order 0> ... <order 10>`
+        let counts: Vec<u64> = line
+            .split_whitespace()
+            .skip(4)
+            .map(str::parse)
+            .collect::<Result<_, _>>()
+            .ok()?;
+        blocks += counts.get(9).copied().unwrap_or(0) + 2 * counts.get(10).copied().unwrap_or(0);
+    }
+    Some(blocks)
+}
+
+/// The huge page section of the summary: each side's faults and fallbacks per scenario, the free
+/// 2 MiB blocks before and after, and a warning when a side fell back often enough to skew the
+/// ratios. Empty without the system's counters.
+fn summarize_thp(
+    scenarios: &[Scenario],
+    thp: &BTreeMap<(Side, &str), Thp>,
+    drop_caches: bool,
+    blocks_at_start: Option<u64>,
+    blocks_at_end: Option<u64>,
+) -> Result<String> {
+    let mut out = String::new();
+    if thp.is_empty() {
+        return Ok(out);
+    }
+    let blocks = |blocks: Option<u64>| blocks.map_or_else(|| "?".to_owned(), |b| b.to_string());
+    writeln!(out)?;
+    writeln!(
+        out,
+        "transparent huge pages: faults while each side ran (system-wide), and the share that fell \
+         back to 4 KiB pages; caches {}dropped before each process; free 2 MiB blocks {} at the \
+         start, {} at the end",
+        if drop_caches { "" } else { "not " },
+        blocks(blocks_at_start),
+        blocks(blocks_at_end)
+    )?;
+    writeln!(
+        out,
+        "{:<26} {:>12} {:>9} {:>12} {:>9}",
+        "scenario", "oxasm faults", "fallback", "asm faults", "fallback"
+    )?;
+    let mut skewed = Vec::new();
+    for scenario in scenarios {
+        let oxasm = thp
+            .get(&(Side::Oxasm, scenario.name()))
+            .copied()
+            .unwrap_or_default();
+        let asm = thp
+            .get(&(Side::Asm, scenario.asm_name()))
+            .copied()
+            .unwrap_or_default();
+        writeln!(
+            out,
+            "{:<26} {:>12} {:>8.1}% {:>12} {:>8.1}%",
+            scenario.name(),
+            oxasm.faults,
+            100.0 * oxasm.fallback_share(),
+            asm.faults,
+            100.0 * asm.fallback_share()
+        )?;
+        if oxasm.fallback_share().max(asm.fallback_share()) > FALLBACK_WARNING {
+            skewed.push(scenario.name());
+        }
+    }
+    if !skewed.is_empty() {
+        writeln!(
+            out,
+            "WARNING huge page fallbacks above {:.0}% in {}: the ratios may be skewed{}",
+            100.0 * FALLBACK_WARNING,
+            skewed.join(", "),
+            if drop_caches {
+                ""
+            } else {
+                "; rerun with --drop-caches"
+            }
+        )?;
+    }
+    Ok(out)
 }
 
 /// The value at quantile `q` of sorted values (nearest rank).

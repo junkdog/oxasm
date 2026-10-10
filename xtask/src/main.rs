@@ -48,7 +48,7 @@ tasks:
         and the analysis ones (analyze-basic, analyze-basicverifier, analyze-simpleverifier,
         analyze-source)
   bench [--tier <t0|t1|t2|dir:<path>> [--sample <n>]] [--scenario <name>]... [--rounds <n>]
-        [--warmup <n>] [--iterations <n>] [--cpus <list>] [--prepare]
+        [--warmup <n>] [--iterations <n>] [--cpus <list>] [--drop-caches] [--prepare]
         oxasm against ASM 9.10.1 on the scenarios of crates/oxasm-bench (ASM's JMH benchmarks):
         one release `oxasm-bench run` and one oracle `bench` process per scenario, side and round
         (5 rounds of 10 warm-up and 20 measured passes by default; --cpus pins both with
@@ -56,7 +56,10 @@ tasks:
         2000-class T1 sample by default, filtered to those every scenario accepts and packed
         under target/bench/<set>/ (--prepare rebuilds the pack and stops, e.g. for
         `cargo bench -p oxasm-bench`); results go to target/bench/<set>/summary-*.txt and
-        runs-*.tsv
+        runs-*.tsv. The summary counts each side's transparent huge page faults that fell back to
+        4 KiB pages, and warns above 5%; --drop-caches runs `sudo -n
+        /usr/local/sbin/oxasm-drop-caches` (drop the page cache, compact memory) before each
+        process, so that both sides find free 2 MiB blocks
 ";
 
 fn main() -> ExitCode {
