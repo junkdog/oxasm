@@ -406,9 +406,67 @@ impl InsnList {
     }
 
     /// Adds the given instruction to the end of this list, and returns its handle.
+    ///
+    /// A list being built (room reserved, no free slot, no cache built) takes a fast path: a new
+    /// slot pushed and linked after the last one (T11 in oxasm-optimization.md). Anything else
+    /// takes the general path, out of line.
     #[inline(always)]
     pub fn add(&mut self, node: impl Into<InsnNode>) -> InsnId {
-        let slot = self.alloc(node.into());
+        let node = node.into();
+        // The caches' tests come first: they are atomic loads, which the slots' length and
+        // capacity would otherwise be loaded again after, keeping `push`'s growth path.
+        if self.positions.get().is_none()
+            && self.labels.get().is_none()
+            && self.free.is_empty()
+            && self.slots.len() < self.slots.capacity()
+            && self.slots.len() < UNCHAINED as usize
+        {
+            self.push(node)
+        } else {
+            self.add_slow(node)
+        }
+    }
+
+    /// Appends the given node in a new slot, which the caller checked is within the capacity and
+    /// below `UNCHAINED`, when no cache is built: there is nothing to invalidate, and the new
+    /// slot's generation is 0. The slot joins the chain of owners if the node owns memory: a test
+    /// that the inlined call sites of [`add`](Self::add) resolve at compile time, since they know
+    /// the node's variant.
+    #[inline(always)]
+    fn push(&mut self, node: InsnNode) -> InsnId {
+        #[allow(clippy::cast_possible_truncation)] // below `UNCHAINED`
+        let slot = self.slots.len() as u32;
+        let last = self.last;
+        let next_owner = if node.insn.owns_memory() {
+            std::mem::replace(&mut self.owners, slot)
+        } else {
+            UNCHAINED
+        };
+        self.slots.push(ManuallyDrop::new(Slot {
+            generation: 0,
+            previous: last,
+            next: NIL,
+            next_owner,
+            node: Some(node),
+        }));
+        // `NIL` is out of bounds, so the bounds check is the test for an empty list.
+        match self.slots.get_mut(last as usize) {
+            Some(previous) => previous.next = slot,
+            None => self.first = slot,
+        }
+        self.last = slot;
+        self.len += 1;
+        InsnId {
+            list: self.id,
+            slot,
+            generation: 0,
+        }
+    }
+
+    /// [`add`](Self::add)'s general path.
+    #[inline(never)]
+    fn add_slow(&mut self, node: InsnNode) -> InsnId {
+        let slot = self.alloc(node);
         self.link(slot, self.last, NIL);
         self.invalidate();
         self.id_of(slot).expect("just linked")
@@ -572,8 +630,7 @@ impl InsnList {
     }
 
     /// Stores the given node in a free slot, and returns the slot (not linked yet). The slot
-    /// joins the chain of owners if the node owns memory: a test that the inlined call sites of
-    /// [`add`](Self::add) resolve at compile time, since they know the node's variant.
+    /// joins the chain of owners if the node owns memory.
     #[inline(always)]
     fn alloc(&mut self, node: InsnNode) -> u32 {
         let owns_memory = node.insn.owns_memory();

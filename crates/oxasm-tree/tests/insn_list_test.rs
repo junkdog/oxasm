@@ -825,6 +825,41 @@ fn label_position_finds_label_nodes() {
     assert_eq!(insn_list.label_position(l2), Some(n1));
 }
 
+/// oxasm-specific: an instruction added at the end of a list is in each cache built before
+/// (T11 in oxasm-optimization.md: `add` takes its fast path only when no cache is built).
+#[test]
+fn add_after_a_cache_is_built() {
+    let (l1, l2) = (Label::new(), Label::new());
+    let mut insn_list = new_insn_list();
+    insn_list.add(Insn::Label(l1));
+    assert_eq!(insn_list.label_position(l2), None);
+    let n2 = insn_list.add(Insn::Label(l2));
+    assert_eq!(insn_list.label_position(l2), Some(n2));
+
+    let mut insn_list = new_insn_list();
+    insn_list.add(new_insn(0));
+    assert_eq!(insn_list.get(1), None);
+    let n1 = insn_list.add(new_insn(1));
+    assert_eq!(insn_list.get(1).and_then(InsnNode::opcode), Some(1));
+    assert_eq!(insn_list.index_of(n1), Some(1));
+}
+
+/// oxasm-specific: the first addition to an empty list with room (the fast path of T11 in
+/// oxasm-optimization.md, as when a method node reserves room from the code length) makes it
+/// the first and last instruction.
+#[test]
+fn add_to_a_list_with_room() {
+    let mut insn_list = new_insn_list();
+    insn_list.reserve(2);
+    let insn1 = insn_list.add(new_insn(0));
+    assert_eq!(insn_list.first(), Some(insn1));
+    assert_eq!(insn_list.last(), Some(insn1));
+    let insn2 = insn_list.add(new_insn(1));
+    assert_eq!(ids(&insn_list), [insn1, insn2]);
+    assert_eq!(insn_list.ids().rev().collect::<Vec<_>>(), [insn2, insn1]);
+    assert_eq!(opcodes(&insn_list), [0, 1]);
+}
+
 #[test]
 fn iterators_are_double_ended_and_exact() {
     let (insn_list, insn1, insn2) = new_insn_list_2();
@@ -982,7 +1017,9 @@ fn insn_list_is_send_and_sync() {
 /// An edit of a list, whose positions are taken modulo the list length.
 #[derive(Clone, Debug)]
 enum Op {
-    Add,
+    /// Adds 1 to 3 instructions: the second and third find no cache built (the first, after
+    /// `check`, finds the position cache).
+    Add(u8),
     Insert,
     InsertAfter(usize),
     InsertBefore(usize),
@@ -998,13 +1035,17 @@ enum Op {
     CursorSet(usize),
     IndexOf(usize),
     Clear,
+    /// Reserves room for 0 to 7 more instructions: the next additions go to `add`'s fast path
+    /// (without, a list cleared or new has no room, and its first addition takes the general
+    /// path).
+    Reserve(u8),
 }
 
 fn op() -> impl Strategy<Value = Op> {
     let i = || 0..64usize;
     let n = || 0..4u8;
     prop_oneof![
-        3 => Just(Op::Add),
+        3 => (1..4u8).prop_map(Op::Add),
         1 => Just(Op::Insert),
         2 => i().prop_map(Op::InsertAfter),
         2 => i().prop_map(Op::InsertBefore),
@@ -1020,6 +1061,7 @@ fn op() -> impl Strategy<Value = Op> {
         1 => i().prop_map(Op::CursorSet),
         2 => i().prop_map(Op::IndexOf),
         1 => Just(Op::Clear),
+        1 => (0..8u8).prop_map(Op::Reserve),
     ]
 }
 
@@ -1073,10 +1115,12 @@ impl Model {
         let len = self.model.len();
         let at = |i: usize| i % len.max(1);
         match op {
-            Op::Add => {
-                let (tag, node) = self.node();
-                let id = self.list.add(node);
-                self.model.push((tag, id));
+            Op::Add(n) => {
+                for _ in 0..n {
+                    let (tag, node) = self.node();
+                    let id = self.list.add(node);
+                    self.model.push((tag, id));
+                }
             }
             Op::Insert => {
                 let (tag, node) = self.node();
@@ -1178,6 +1222,7 @@ impl Model {
                     assert!(!self.list.contains(id));
                 }
             }
+            Op::Reserve(n) => self.list.reserve(n.into()),
             _ => {} // an edit at a position of an empty list
         }
     }

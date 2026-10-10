@@ -704,14 +704,17 @@ impl MethodVisitor for MethodNode {
         self.add_frame(None, kind, locals, stack);
     }
 
+    #[inline]
     fn visit_insn(&mut self, opcode: u8) {
         self.instructions.add(Insn::Simple { opcode });
     }
 
+    #[inline]
     fn visit_int_insn(&mut self, opcode: u8, operand: i32) {
         self.instructions.add(Insn::Int { opcode, operand });
     }
 
+    #[inline]
     fn visit_var_insn(&mut self, opcode: u8, var_index: u16) {
         self.instructions.add(Insn::Var {
             opcode,
@@ -760,6 +763,7 @@ impl MethodVisitor for MethodNode {
         );
     }
 
+    #[inline]
     fn visit_jump_insn(&mut self, opcode: u8, label: Label) {
         self.instructions.add(Insn::Jump {
             opcode,
@@ -767,6 +771,7 @@ impl MethodVisitor for MethodNode {
         });
     }
 
+    #[inline]
     fn visit_label(&mut self, label: Label) {
         self.instructions.add(Insn::Label(plain(label)));
     }
@@ -775,6 +780,7 @@ impl MethodVisitor for MethodNode {
         self.add_ldc_insn(None, value);
     }
 
+    #[inline]
     fn visit_iinc_insn(&mut self, var_index: u16, increment: i16) {
         self.instructions.add(Insn::Iinc {
             var: var_index,
@@ -865,6 +871,7 @@ impl MethodVisitor for MethodNode {
         )
     }
 
+    #[inline]
     fn visit_line_number(&mut self, line: u16, start: Label) {
         self.instructions.add(Insn::Line {
             line,
@@ -892,6 +899,37 @@ pub(crate) struct PooledMethodNode<'a> {
 impl MethodVisitor for PooledMethodNode<'_> {
     fn delegate(&mut self) -> Option<&mut dyn MethodVisitor> {
         Some(self.node)
+    }
+
+    // The instructions without strings call the method node's methods directly: through the
+    // default methods, each would take a second dyn call, by `delegate` (T11).
+
+    fn visit_insn(&mut self, opcode: u8) {
+        self.node.visit_insn(opcode);
+    }
+
+    fn visit_int_insn(&mut self, opcode: u8, operand: i32) {
+        self.node.visit_int_insn(opcode, operand);
+    }
+
+    fn visit_var_insn(&mut self, opcode: u8, var_index: u16) {
+        self.node.visit_var_insn(opcode, var_index);
+    }
+
+    fn visit_jump_insn(&mut self, opcode: u8, label: Label) {
+        self.node.visit_jump_insn(opcode, label);
+    }
+
+    fn visit_label(&mut self, label: Label) {
+        self.node.visit_label(label);
+    }
+
+    fn visit_iinc_insn(&mut self, var_index: u16, increment: i16) {
+        self.node.visit_iinc_insn(var_index, increment);
+    }
+
+    fn visit_line_number(&mut self, line: u16, start: Label) {
+        self.node.visit_line_number(line, start);
     }
 
     fn visit_parameter(&mut self, name: Option<&JavaStr>, access: u32) {
