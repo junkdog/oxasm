@@ -26,13 +26,9 @@ pub(super) struct Context<'a> {
     pub(super) current_method_name: Option<&'a JavaStr>,
     /// The descriptor of the current method.
     pub(super) current_method_descriptor: Option<&'a JavaStr>,
-    /// The labels of the current method, indexed by bytecode offset: the thread's table,
-    /// given back when the context is dropped.
+    /// The labels of the current method, indexed by bytecode offset, and its line numbers: the
+    /// thread's table, given back when the context is dropped.
     pub(super) current_method_labels: MethodLabels,
-    /// The `(start_pc, line_number)` entries of the current method's line number tables (ASM's
-    /// `Label.lineNumber` and `Label.otherLineNumbers`), sorted by `start_pc` once read, and in
-    /// the order they were read for each `start_pc`.
-    pub(super) current_method_line_numbers: Vec<(u16, u16)>,
 
     // Information about the current type annotation target, i.e. the one read in the current
     // (or latest) call to `read_type_annotation_target`.
@@ -92,7 +88,6 @@ impl<'a> Context<'a> {
             current_method_name: None,
             current_method_descriptor: None,
             current_method_labels: MethodLabels::take(),
-            current_method_line_numbers: Vec::new(),
             current_type_annotation_target: 0,
             current_type_annotation_target_path: None,
             current_local_variable_annotation_range_starts: Vec::new(),

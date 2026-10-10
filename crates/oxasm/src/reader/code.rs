@@ -43,8 +43,8 @@ fn invalid_bytecode_offset(bytecode_offset: i64) -> ReadError {
 /// ASM allocates the array for each method. Here the slots stay allocated, at the length of the
 /// longest method so far, and a new method only empties the slots the previous one filled: every
 /// slot not listed in `filled` is `None`, including those past the current method's offsets. A
-/// thread's table also outlives the class: a reader borrows it with [`take`](Self::take) and
-/// gives it back with [`put_back`](Self::put_back).
+/// thread's table also outlives the class, with its line number list: a reader borrows it with
+/// [`take`](Self::take) and gives it back with [`put_back`](Self::put_back).
 #[derive(Debug, Default)]
 pub(super) struct MethodLabels {
     /// The label of each bytecode offset, if any; at least `len` slots.
@@ -53,16 +53,29 @@ pub(super) struct MethodLabels {
     len: usize,
     /// The bytecode offsets whose slot holds a label.
     filled: Vec<usize>,
+    /// The `(start_pc, line_number)` entries of the current method's line number tables (ASM's
+    /// `Label.lineNumber` and `Label.otherLineNumbers`), sorted by `start_pc` once read, and in
+    /// the order they were read for each `start_pc`.
+    pub(super) line_numbers: Vec<(u16, u16)>,
 }
 
 /// The most slots a thread's table keeps between classes: one per bytecode offset of the
 /// longest method the JVMS allows (`code_length` < 65536), plus one.
 const MAX_KEPT_SLOTS: usize = 1 << 16;
 
+/// The most line number entries a thread's table keeps between classes, as many as it keeps
+/// slots: javac writes at most one per instruction.
+const MAX_KEPT_LINE_NUMBERS: usize = MAX_KEPT_SLOTS;
+
 thread_local! {
     /// The label table of the thread's last class reader.
     static THREAD_METHOD_LABELS: Cell<MethodLabels> = const {
-        Cell::new(MethodLabels { slots: Vec::new(), len: 0, filled: Vec::new() })
+        Cell::new(MethodLabels {
+            slots: Vec::new(),
+            len: 0,
+            filled: Vec::new(),
+            line_numbers: Vec::new(),
+        })
     };
 }
 
@@ -79,20 +92,25 @@ impl MethodLabels {
     }
 
     /// Gives `labels` back to the thread, for the next [`take`](Self::take), unless it is larger
-    /// than a valid method needs.
-    pub(super) fn put_back(labels: MethodLabels) {
+    /// than a valid method needs (a line number list longer than javac writes is dropped alone).
+    pub(super) fn put_back(mut labels: MethodLabels) {
+        if labels.line_numbers.capacity() > MAX_KEPT_LINE_NUMBERS {
+            labels.line_numbers = Vec::new();
+        }
         if labels.slots.len() <= MAX_KEPT_SLOTS {
             // During the thread's exit there is nothing to give it back to.
             let _ = THREAD_METHOD_LABELS.try_with(|kept| kept.set(labels));
         }
     }
 
-    /// Empties the table for a method with `len` bytecode offsets (its code length + 1).
+    /// Empties the table and its line number list for a method with `len` bytecode offsets (its
+    /// code length + 1).
     pub(super) fn reset(&mut self, len: usize) {
         for &i in &self.filled {
             self.slots[i] = None;
         }
         self.filled.clear();
+        self.line_numbers.clear();
         if self.slots.len() < len {
             self.slots.resize(len, None);
         }
@@ -422,7 +440,6 @@ impl<'b> ClassReader<'b> {
         };
         method_visitor.visit_code_length(u32::try_from(code_length).unwrap_or(0));
         context.current_method_labels.reset(labels_length);
-        context.current_method_line_numbers.clear();
         let labels = &mut context.current_method_labels;
         // The bytecode offset of the current instruction.
         let mut pc: usize = 0;
@@ -604,7 +621,8 @@ impl<'b> ClassReader<'b> {
                                 .current_method_labels
                                 .create_debug_label(i64::from(start_pc))?;
                             context
-                                .current_method_line_numbers
+                                .current_method_labels
+                                .line_numbers
                                 .push((start_pc, line_number));
                         }
                     }
@@ -683,7 +701,7 @@ impl<'b> ClassReader<'b> {
         }
         // Javac's tables are mostly in bytecode order already. The sort is stable, so the line
         // numbers of an offset stay in the order they were read.
-        let line_numbers = &mut context.current_method_line_numbers;
+        let line_numbers = &mut context.current_method_labels.line_numbers;
         if !line_numbers.is_sorted_by_key(|&(start_pc, _)| start_pc) {
             line_numbers.sort_by_key(|&(start_pc, _)| start_pc);
         }
@@ -788,7 +806,7 @@ impl<'b> ClassReader<'b> {
                 method_visitor.visit_label(current_label);
                 // Skip the entries of offsets that are not an instruction's, which ASM's
                 // readCode never visits either.
-                let line_numbers = &context.current_method_line_numbers;
+                let line_numbers = &labels.line_numbers;
                 while let Some(&(start_pc, line_number)) = line_numbers.get(line_number_index)
                     && usize::from(start_pc) <= pc
                 {

@@ -1047,6 +1047,80 @@ fn test_accept_visits_no_label_of_a_previous_method() {
     );
 }
 
+/// A class `C` whose static methods `()V` are, in order: `with_line_number` methods that are a
+/// label with line number 1, a `NOP` and a `RETURN`; then one without line numbers whose label at
+/// offset 0 is the target of a `GOTO`.
+fn class_with_a_jump_after(with_line_number: usize) -> Vec<u8> {
+    let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+    class_writer.visit(
+        V1_1,
+        ACC_PUBLIC,
+        jstr!("C"),
+        None,
+        Some(jstr!("java/lang/Object")),
+        &[],
+    );
+    for i in 0..=with_line_number {
+        let name = format!("m{i}");
+        let mut method_visitor = class_writer
+            .visit_method(
+                ACC_STATIC,
+                JavaStr::from_str(&name),
+                jstr!("()V"),
+                None,
+                &[],
+            )
+            .unwrap();
+        let start = Label::new();
+        method_visitor.visit_code();
+        method_visitor.visit_label(start);
+        if i < with_line_number {
+            method_visitor.visit_line_number(1, start);
+            method_visitor.visit_insn(NOP);
+        } else {
+            method_visitor.visit_insn(NOP);
+            method_visitor.visit_jump_insn(GOTO, start);
+        }
+        method_visitor.visit_insn(RETURN);
+        method_visitor.visit_maxs(0, 0);
+        method_visitor.visit_end();
+    }
+    class_writer.visit_end();
+    class_writer.to_bytes().unwrap()
+}
+
+/// oxasm-specific: a method's labels get none of the line numbers of the methods read before it,
+/// in its class or in a class read before on the same thread (R6 in oxasm-optimization.md: the
+/// reader's line number list is kept per thread with its label table).
+#[test]
+fn test_accept_visits_no_line_number_of_a_previous_method() {
+    let first = class_with_a_jump_after(1);
+    let second = class_with_a_jump_after(0);
+    let mut first_events = LineNumberEvents::default();
+    let mut second_events = LineNumberEvents::default();
+
+    ClassReader::new(&first)
+        .unwrap()
+        .accept(&mut first_events, ParsingOptions::empty())
+        .unwrap();
+    ClassReader::new(&second)
+        .unwrap()
+        .accept(&mut second_events, ParsingOptions::empty())
+        .unwrap();
+
+    assert_eq!(
+        first_events.0.into_inner(),
+        [
+            "label", "line 1", "insn 0", "insn 177", // m0
+            "label", "insn 0", "insn 177", // m1
+        ]
+    );
+    assert_eq!(
+        second_events.0.into_inner(),
+        ["label", "insn 0", "insn 177"]
+    );
+}
+
 /// oxasm-specific: a jump past the end of a method's code is invalid, even when an earlier
 /// method's code was long enough (R2 in oxasm-optimization.md: the reader's label table keeps
 /// the slots of the longest method so far).
