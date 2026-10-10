@@ -306,6 +306,53 @@ fn test_accept_visits_the_member_counts() {
     }
 }
 
+/// oxasm-specific: a member node read from a class allocates its rarely used parts only if it
+/// has some (T12 in oxasm-optimization.md: most members have none, and the box keeps their
+/// nodes small).
+#[test]
+fn test_read_members_allocate_extras_only_when_needed() {
+    let (mut without, mut with) = (0, 0);
+    for &class in PrecompiledClass::ALL {
+        let class_node = read_class_node(class);
+        for method in &class_node.methods {
+            let Some(extras) = &method.extras else {
+                without += 1;
+                continue;
+            };
+            with += 1;
+            let empty = extras.parameters.is_empty()
+                && extras.visible_annotations.is_empty()
+                && extras.invisible_annotations.is_empty()
+                && extras.visible_type_annotations.is_empty()
+                && extras.invisible_type_annotations.is_empty()
+                && extras.attrs.is_empty()
+                && extras.annotation_default.is_none()
+                && extras.visible_annotable_parameter_count == 0
+                && extras.visible_parameter_annotations.is_empty()
+                && extras.invisible_annotable_parameter_count == 0
+                && extras.invisible_parameter_annotations.is_empty()
+                && extras.visible_local_variable_annotations.is_empty()
+                && extras.invisible_local_variable_annotations.is_empty();
+            assert!(!empty, "{class}: empty extras");
+        }
+        for field in &class_node.fields {
+            let Some(extras) = &field.extras else {
+                without += 1;
+                continue;
+            };
+            with += 1;
+            let empty = extras.visible_annotations.is_empty()
+                && extras.invisible_annotations.is_empty()
+                && extras.visible_type_annotations.is_empty()
+                && extras.invisible_type_annotations.is_empty()
+                && extras.attrs.is_empty();
+            assert!(!empty, "{class}: empty extras");
+        }
+    }
+    // T0 has members of both kinds.
+    assert!(without > 0 && with > 0, "{without} without, {with} with");
+}
+
 /// Records the constant pool size hint.
 #[derive(Default)]
 struct ConstantPoolSize(Option<(u16, u32)>);

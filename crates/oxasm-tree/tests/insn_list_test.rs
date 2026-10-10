@@ -860,6 +860,48 @@ fn add_to_a_list_with_room() {
     assert_eq!(opcodes(&insn_list), [0, 1]);
 }
 
+/// oxasm-specific: the free slots are chained through their links (T12 in
+/// oxasm-optimization.md), so instructions in reused slots must link as in new ones, in either
+/// direction, whatever their slots linked to while free; and a clone's free slots are its own.
+#[test]
+fn freed_slots_are_reused() {
+    let mut insn_list = new_insn_list();
+    let ids5: Vec<InsnId> = (0..5).map(|i| insn_list.add(new_insn(i))).collect();
+    insn_list.remove(ids5[1]);
+    insn_list.remove(ids5[3]);
+    insn_list.remove(ids5[0]);
+    assert_eq!(opcodes(&insn_list), [2, 4]);
+    let mut clone = insn_list.clone();
+
+    let a = insn_list.add(new_insn(10));
+    let b = insn_list.insert_before(ids5[4], new_insn(11));
+    let c = insn_list.insert(new_insn(12));
+    let d = insn_list.add(new_insn(13)); // no free slot left: a new one
+    let (e, _) = insn_list.set(ids5[2], new_insn(14));
+    assert_eq!(opcodes(&insn_list), [12, 14, 11, 4, 10, 13]);
+    assert_eq!(ids(&insn_list), [c, e, b, ids5[4], a, d]);
+    assert_eq!(
+        insn_list.ids().rev().collect::<Vec<_>>(),
+        [d, a, ids5[4], b, e, c]
+    );
+    for removed in [ids5[0], ids5[1], ids5[2], ids5[3]] {
+        assert!(!insn_list.contains(removed));
+    }
+
+    // The clone kept the three free slots, unchanged by the edits of the original.
+    clone.add(new_insn(20));
+    clone.insert(new_insn(21));
+    clone.add(new_insn(22));
+    clone.add(new_insn(23));
+    assert_eq!(opcodes(&clone), [21, 2, 4, 20, 22, 23]);
+    let reversed: Vec<u8> = clone
+        .iter()
+        .rev()
+        .map(|node| node.opcode().unwrap())
+        .collect();
+    assert_eq!(reversed, [23, 22, 20, 4, 2, 21]);
+}
+
 #[test]
 fn iterators_are_double_ended_and_exact() {
     let (insn_list, insn1, insn2) = new_insn_list_2();

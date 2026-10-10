@@ -118,6 +118,22 @@ pub struct FieldNode {
     /// The field's initial value: an `Integer`, a `Float`, a `Long`, a `Double` or a `String`
     /// constant, or `None`.
     pub value: Option<SymConstant>,
+    /// The rarely used parts of this field, or `None` if it has none (see
+    /// [`extras`](Self::extras) and [`extras_mut`](Self::extras_mut)).
+    pub extras: Option<Box<FieldExtras>>,
+}
+
+// The rarely used parts are behind one box (T12).
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<FieldNode>() == 48);
+
+/// The rarely used parts of a [`FieldNode`]: its annotations and non standard attributes,
+/// which most fields don't have.
+///
+/// Like [`MethodExtras`](crate::MethodExtras), they are behind one box, which only the fields
+/// that have some allocate, so that a field node takes 48 bytes instead of 160.
+#[derive(Clone, Debug, Default)]
+pub struct FieldExtras {
     /// The runtime visible annotations of this field.
     pub visible_annotations: Vec<AnnotationNode>,
     /// The runtime invisible annotations of this field.
@@ -129,6 +145,15 @@ pub struct FieldNode {
     /// The non standard attributes of this field.
     pub attrs: Vec<Attribute>,
 }
+
+/// The extras of a field node that has none.
+static NO_EXTRAS: FieldExtras = FieldExtras {
+    visible_annotations: Vec::new(),
+    invisible_annotations: Vec::new(),
+    visible_type_annotations: Vec::new(),
+    invisible_type_annotations: Vec::new(),
+    attrs: Vec::new(),
+};
 
 impl FieldNode {
     /// Constructs a new field node, with no annotations nor attributes, whose strings are
@@ -148,12 +173,20 @@ impl FieldNode {
             desc: descriptor,
             signature,
             value,
-            visible_annotations: Vec::new(),
-            invisible_annotations: Vec::new(),
-            visible_type_annotations: Vec::new(),
-            invisible_type_annotations: Vec::new(),
-            attrs: Vec::new(),
+            extras: None,
         }
+    }
+
+    /// The rarely used parts of this field: empty ones if it has none.
+    #[inline]
+    pub fn extras(&self) -> &FieldExtras {
+        self.extras.as_deref().unwrap_or(&NO_EXTRAS)
+    }
+
+    /// The rarely used parts of this field, which are allocated (empty) if it has none.
+    #[inline]
+    pub fn extras_mut(&mut self) -> &mut FieldExtras {
+        self.extras.get_or_insert_with(Box::default)
     }
 
     /// The interner of this node's strings.
@@ -184,8 +217,9 @@ impl FieldNode {
         ) else {
             return;
         };
-        accept_annotations!(interner, self, &mut *field_visitor);
-        for attribute in &self.attrs {
+        let extras = self.extras();
+        accept_annotations!(interner, extras, &mut *field_visitor);
+        for attribute in &extras.attrs {
             field_visitor.visit_attribute(attribute);
         }
         field_visitor.visit_end();
@@ -206,9 +240,10 @@ impl FieldVisitor for FieldNode {
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        let extras = self.extras.get_or_insert_with(Box::default);
         add_annotation(
-            &mut self.visible_annotations,
-            &mut self.invisible_annotations,
+            &mut extras.visible_annotations,
+            &mut extras.invisible_annotations,
             Strings::Direct(&self.interner),
             descriptor,
             visible,
@@ -222,9 +257,10 @@ impl FieldVisitor for FieldNode {
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        let extras = self.extras.get_or_insert_with(Box::default);
         add_type_annotation(
-            &mut self.visible_type_annotations,
-            &mut self.invisible_type_annotations,
+            &mut extras.visible_type_annotations,
+            &mut extras.invisible_type_annotations,
             Strings::Direct(&self.interner),
             type_ref,
             type_path,
@@ -234,7 +270,7 @@ impl FieldVisitor for FieldNode {
     }
 
     fn visit_attribute(&mut self, attribute: &Attribute) {
-        self.attrs.push(attribute.clone());
+        self.extras_mut().attrs.push(attribute.clone());
     }
 
     fn visit_end(&mut self) {

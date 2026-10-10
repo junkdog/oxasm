@@ -73,7 +73,7 @@ pub struct ClassNode {
     /// The correspondence between source and compiled elements of this class, or `None`.
     pub source_debug: Option<Sym>,
     /// The module stored in this class, or `None`.
-    pub module: Option<ModuleNode>,
+    pub module: Option<Box<ModuleNode>>,
     /// The internal name of the enclosing class of this class (see `visit_outer_class`), or
     /// `None`.
     pub outer_class: Option<Sym>,
@@ -316,10 +316,9 @@ impl ClassVisitor for ClassNode {
         let name = self.strings.intern(name);
         let version = self.strings.intern_opt(version);
         let interner = self.strings.interner().clone();
-        Some(Box::new(
-            self.module
-                .insert(ModuleNode::new(interner, name, access, version)),
-        ))
+        Some(Box::new(&mut **self.module.insert(Box::new(
+            ModuleNode::new(interner, name, access, version),
+        ))))
     }
 
     fn visit_nest_host(&mut self, nest_host: &JavaStr) {

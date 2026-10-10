@@ -56,6 +56,37 @@ pub struct MethodNode {
     pub signature: Option<Sym>,
     /// The internal names of the method's exception classes.
     pub exceptions: Vec<Sym>,
+    /// The rarely used parts of this method, or `None` if it has none (see
+    /// [`extras`](Self::extras) and [`extras_mut`](Self::extras_mut)).
+    pub extras: Option<Box<MethodExtras>>,
+    /// The instructions of this method.
+    pub instructions: InsnList,
+    /// The try catch blocks of this method.
+    pub try_catch_blocks: Vec<TryCatchBlockNode>,
+    /// The maximum stack size of this method.
+    pub max_stack: u16,
+    /// The maximum number of local variables of this method.
+    pub max_locals: u16,
+    /// The local variables of this method.
+    pub local_variables: Vec<LocalVariableNode>,
+    /// The code length this node was visited with, if any (see
+    /// [`MethodVisitor::visit_code_length`]), which [`accept`](Self::accept) passes on.
+    visited_code_length: Option<u32>,
+}
+
+// The rarely used parts are behind one box (T12).
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<MethodNode>() == 208);
+
+/// The rarely used parts of a [`MethodNode`]: its parameters, annotations, non standard
+/// attributes and annotation default, which most methods don't have.
+///
+/// They are behind one box, which only the methods that have some allocate (where ASM leaves
+/// their lists `null`), so that a method node takes 208 bytes instead of 584: sift keeps the
+/// trees of whole class paths, and a smaller node is cheaper to make, move and drop (T12 in
+/// oxasm-optimization.md).
+#[derive(Clone, Debug, Default)]
+pub struct MethodExtras {
     /// The method parameter info (access flags and name).
     pub parameters: Vec<ParameterNode>,
     /// The runtime visible annotations of this method.
@@ -86,24 +117,28 @@ pub struct MethodNode {
     /// The runtime invisible parameter annotations of this method, per parameter; see
     /// [`visible_parameter_annotations`](Self::visible_parameter_annotations).
     pub invisible_parameter_annotations: Vec<Vec<AnnotationNode>>,
-    /// The instructions of this method.
-    pub instructions: InsnList,
-    /// The try catch blocks of this method.
-    pub try_catch_blocks: Vec<TryCatchBlockNode>,
-    /// The maximum stack size of this method.
-    pub max_stack: u16,
-    /// The maximum number of local variables of this method.
-    pub max_locals: u16,
-    /// The local variables of this method.
-    pub local_variables: Vec<LocalVariableNode>,
     /// The visible local variable annotations of this method.
     pub visible_local_variable_annotations: Vec<LocalVariableAnnotationNode>,
     /// The invisible local variable annotations of this method.
     pub invisible_local_variable_annotations: Vec<LocalVariableAnnotationNode>,
-    /// The code length this node was visited with, if any (see
-    /// [`MethodVisitor::visit_code_length`]), which [`accept`](Self::accept) passes on.
-    visited_code_length: Option<u32>,
 }
+
+/// The extras of a method node that has none.
+static NO_EXTRAS: MethodExtras = MethodExtras {
+    parameters: Vec::new(),
+    visible_annotations: Vec::new(),
+    invisible_annotations: Vec::new(),
+    visible_type_annotations: Vec::new(),
+    invisible_type_annotations: Vec::new(),
+    attrs: Vec::new(),
+    annotation_default: None,
+    visible_annotable_parameter_count: 0,
+    visible_parameter_annotations: Vec::new(),
+    invisible_annotable_parameter_count: 0,
+    invisible_parameter_annotations: Vec::new(),
+    visible_local_variable_annotations: Vec::new(),
+    invisible_local_variable_annotations: Vec::new(),
+};
 
 impl MethodNode {
     /// Constructs a new method node, with no content, whose strings are symbols of the given
@@ -123,24 +158,12 @@ impl MethodNode {
             desc: descriptor,
             signature,
             exceptions,
-            parameters: Vec::new(),
-            visible_annotations: Vec::new(),
-            invisible_annotations: Vec::new(),
-            visible_type_annotations: Vec::new(),
-            invisible_type_annotations: Vec::new(),
-            attrs: Vec::new(),
-            annotation_default: None,
-            visible_annotable_parameter_count: 0,
-            visible_parameter_annotations: Vec::new(),
-            invisible_annotable_parameter_count: 0,
-            invisible_parameter_annotations: Vec::new(),
+            extras: None,
             instructions: InsnList::new(),
             try_catch_blocks: Vec::new(),
             max_stack: 0,
             max_locals: 0,
             local_variables: Vec::new(),
-            visible_local_variable_annotations: Vec::new(),
-            invisible_local_variable_annotations: Vec::new(),
             visited_code_length: None,
         }
     }
@@ -173,6 +196,18 @@ impl MethodNode {
             None,
             Vec::new(),
         )
+    }
+
+    /// The rarely used parts of this method: empty ones if it has none.
+    #[inline]
+    pub fn extras(&self) -> &MethodExtras {
+        self.extras.as_deref().unwrap_or(&NO_EXTRAS)
+    }
+
+    /// The rarely used parts of this method, which are allocated (empty) if it has none.
+    #[inline]
+    pub fn extras_mut(&mut self) -> &mut MethodExtras {
+        self.extras.get_or_insert_with(Box::default)
     }
 
     /// The interner of this node's strings.
@@ -215,27 +250,28 @@ impl MethodNode {
     /// nodes, see [`TryCatchBlockNode::update_index`]).
     pub fn accept_method_visitor(&self, method_visitor: &mut dyn MethodVisitor) {
         let interner = &*self.interner;
+        let extras = self.extras();
         // Visit the parameters.
-        for parameter in &self.parameters {
+        for parameter in &extras.parameters {
             parameter.accept(interner, method_visitor);
         }
         // Visit the annotations.
-        if let Some(annotation_default) = &self.annotation_default
+        if let Some(annotation_default) = &extras.annotation_default
             && let Some(mut annotation_visitor) = method_visitor.visit_annotation_default()
         {
             annotation_default.accept(interner, &mut *annotation_visitor, None);
             annotation_visitor.visit_end();
         }
-        accept_annotations!(interner, self, &mut *method_visitor);
+        accept_annotations!(interner, extras, &mut *method_visitor);
         for (count, parameter_annotations, visible) in [
             (
-                self.visible_annotable_parameter_count,
-                &self.visible_parameter_annotations,
+                extras.visible_annotable_parameter_count,
+                &extras.visible_parameter_annotations,
                 true,
             ),
             (
-                self.invisible_annotable_parameter_count,
-                &self.invisible_parameter_annotations,
+                extras.invisible_annotable_parameter_count,
+                &extras.invisible_parameter_annotations,
                 false,
             ),
         ] {
@@ -258,7 +294,7 @@ impl MethodNode {
             }
         }
         // Visit the non standard attributes.
-        for attribute in &self.attrs {
+        for attribute in &extras.attrs {
             method_visitor.visit_attribute(attribute);
         }
         // Visit the code.
@@ -280,10 +316,10 @@ impl MethodNode {
                 local_variable.accept(interner, method_visitor);
             }
             // Visits the local variable annotations.
-            for annotation in &self.visible_local_variable_annotations {
+            for annotation in &extras.visible_local_variable_annotations {
                 annotation.accept(interner, method_visitor, true);
             }
-            for annotation in &self.invisible_local_variable_annotations {
+            for annotation in &extras.invisible_local_variable_annotations {
                 annotation.accept(interner, method_visitor, false);
             }
             method_visitor.visit_maxs(self.max_stack, self.max_locals);
@@ -330,7 +366,9 @@ impl MethodNode {
         access: u32,
     ) {
         let name = Self::strings(&self.interner, memo).get_opt(name);
-        self.parameters.push(ParameterNode::new(name, access));
+        self.extras_mut()
+            .parameters
+            .push(ParameterNode::new(name, access));
     }
 
     fn add_type_insn(&mut self, memo: Option<&mut InternMemo>, opcode: u8, type_: &JavaStr) {
@@ -473,9 +511,10 @@ impl MethodNode {
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        let extras = self.extras.get_or_insert_with(Box::default);
         add_annotation(
-            &mut self.visible_annotations,
-            &mut self.invisible_annotations,
+            &mut extras.visible_annotations,
+            &mut extras.invisible_annotations,
             Self::strings(&self.interner, memo),
             descriptor,
             visible,
@@ -490,9 +529,10 @@ impl MethodNode {
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        let extras = self.extras.get_or_insert_with(Box::default);
         add_type_annotation(
-            &mut self.visible_type_annotations,
-            &mut self.invisible_type_annotations,
+            &mut extras.visible_type_annotations,
+            &mut extras.invisible_type_annotations,
             Self::strings(&self.interner, memo),
             type_ref,
             type_path,
@@ -505,8 +545,9 @@ impl MethodNode {
         &'a mut self,
         memo: Option<&'a mut InternMemo>,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        let extras = self.extras.get_or_insert_with(Box::default);
         Some(Box::new(ValuesVisitor {
-            values: Values::Default(&mut self.annotation_default),
+            values: Values::Default(&mut extras.annotation_default),
             strings: Self::strings(&self.interner, memo),
         }))
     }
@@ -522,10 +563,11 @@ impl MethodNode {
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        let extras = self.extras.get_or_insert_with(Box::default);
         let parameter_annotations = if visible {
-            &mut self.visible_parameter_annotations
+            &mut extras.visible_parameter_annotations
         } else {
-            &mut self.invisible_parameter_annotations
+            &mut extras.invisible_parameter_annotations
         };
         if parameter_annotations.is_empty() {
             let params =
@@ -610,10 +652,11 @@ impl MethodNode {
         descriptor: &JavaStr,
         visible: bool,
     ) -> Option<Box<dyn AnnotationVisitor + 'a>> {
+        let extras = self.extras.get_or_insert_with(Box::default);
         let annotations = if visible {
-            &mut self.visible_local_variable_annotations
+            &mut extras.visible_local_variable_annotations
         } else {
-            &mut self.invisible_local_variable_annotations
+            &mut extras.invisible_local_variable_annotations
         };
         let mut strings = Self::strings(&self.interner, memo);
         annotations.push(LocalVariableAnnotationNode::new(
@@ -663,9 +706,9 @@ impl MethodVisitor for MethodNode {
 
     fn visit_annotable_parameter_count(&mut self, parameter_count: u8, visible: bool) {
         if visible {
-            self.visible_annotable_parameter_count = parameter_count;
+            self.extras_mut().visible_annotable_parameter_count = parameter_count;
         } else {
-            self.invisible_annotable_parameter_count = parameter_count;
+            self.extras_mut().invisible_annotable_parameter_count = parameter_count;
         }
     }
 
@@ -679,7 +722,7 @@ impl MethodVisitor for MethodNode {
     }
 
     fn visit_attribute(&mut self, attribute: &Attribute) {
-        self.attrs.push(attribute.clone());
+        self.extras_mut().attrs.push(attribute.clone());
     }
 
     fn visit_code(&mut self) {

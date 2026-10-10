@@ -96,6 +96,8 @@ struct Slot {
     /// Incremented each time the slot is freed, so that handles to its former node are stale.
     generation: u32,
     previous: u32,
+    /// The next slot in the list, or, for a free slot, the next free slot (`NIL` at the end of
+    /// either).
     next: u32,
     /// The next slot in the chain of the slots that may hold a node owning memory (`NIL` at
     /// its end), or `UNCHAINED`. It fits in the slot's padding.
@@ -139,17 +141,24 @@ pub struct InsnList {
     /// every slot that was given such a node, or lent out mutably. A slot stays in the chain
     /// once in it, whatever it holds later.
     owners: u32,
-    /// The free slots.
-    free: Vec<u32>,
+    /// The first free slot, or `NIL`: the free slots are chained by their `next` link.
+    free: u32,
     first: u32,
     last: u32,
-    len: usize,
-    positions: OnceLock<Positions>,
-    labels: OnceLock<FxHashMap<Label, InsnId>>,
-    /// The type annotations of the instructions that have some, by slot. Few instructions have
-    /// any, so they are not in the nodes.
-    annotations: FxHashMap<u32, InsnTypeAnnotations>,
+    /// Below `UNCHAINED`, as the slots' count.
+    len: u32,
+    // The caches and the annotations are boxed: most lists never build them, and every method
+    // node holds a list (T12 in oxasm-optimization.md).
+    positions: OnceLock<Box<Positions>>,
+    labels: OnceLock<Box<FxHashMap<Label, InsnId>>>,
+    /// The type annotations of the instructions that have some, by slot, or `None` if none has
+    /// any. Few instructions have any, so they are not in the nodes.
+    annotations: Option<Box<FxHashMap<u32, InsnTypeAnnotations>>>,
 }
+
+// A list takes 88 bytes, instead of 200 with its caches, annotations and free list inline (T12).
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<InsnList>() == 88);
 
 impl InsnList {
     /// Constructs an empty list.
@@ -158,13 +167,13 @@ impl InsnList {
             id: next_list_id(),
             slots: Vec::new(),
             owners: NIL,
-            free: Vec::new(),
+            free: NIL,
             first: NIL,
             last: NIL,
             len: 0,
             positions: OnceLock::new(),
             labels: OnceLock::new(),
-            annotations: FxHashMap::default(),
+            annotations: None,
         }
     }
 
@@ -176,7 +185,7 @@ impl InsnList {
 
     /// The number of instructions in this list (ASM's `size()`).
     pub fn len(&self) -> usize {
-        self.len
+        self.len as usize
     }
 
     /// Whether this list is empty.
@@ -203,7 +212,7 @@ impl InsnList {
 
     /// The handle of the instruction at the given index; see [`get`](Self::get).
     pub fn id_at(&self, index: usize) -> Option<InsnId> {
-        if index >= self.len {
+        if index >= self.len as usize {
             return None;
         }
         self.id_of(self.positions().slots[index])
@@ -266,7 +275,7 @@ impl InsnList {
                         labels.entry(label).or_insert(id);
                     }
                 }
-                labels
+                Box::new(labels)
             })
             .get(&label)
             .copied()
@@ -290,7 +299,7 @@ impl InsnList {
             list: self,
             front: self.first,
             back: self.last,
-            remaining: self.len,
+            remaining: self.len as usize,
         }
     }
 
@@ -349,9 +358,9 @@ impl InsnList {
             .expect("a linked slot holds a node");
         node.insn
             .accept_with(interner, method_visitor, frame_values);
-        if !self.annotations.is_empty()
+        if let Some(annotations) = &self.annotations
             && node.opcode().is_some()
-            && let Some(annotations) = self.annotations.get(&slot)
+            && let Some(annotations) = annotations.get(&slot)
         {
             annotations.accept(interner, method_visitor);
         }
@@ -361,7 +370,7 @@ impl InsnList {
     /// `visibleTypeAnnotations` and `invisibleTypeAnnotations` of the node).
     pub fn type_annotations(&self, id: InsnId) -> Option<&InsnTypeAnnotations> {
         let slot = self.slot_of(id)?;
-        self.annotations.get(&slot)
+        self.annotations.as_ref()?.get(&slot)
     }
 
     /// The type annotations of the given instruction, which are created (empty) if it has none.
@@ -373,7 +382,10 @@ impl InsnList {
     /// If `id` is not an instruction of this list.
     pub fn type_annotations_mut(&mut self, id: InsnId) -> &mut InsnTypeAnnotations {
         let slot = self.expect_slot(id);
-        self.annotations.entry(slot).or_default()
+        self.annotations
+            .get_or_insert_with(Box::default)
+            .entry(slot)
+            .or_default()
     }
 
     /// Replaces an instruction of this list with another instruction. Returns the handle of the
@@ -417,7 +429,7 @@ impl InsnList {
         // capacity would otherwise be loaded again after, keeping `push`'s growth path.
         if self.positions.get().is_none()
             && self.labels.get().is_none()
-            && self.free.is_empty()
+            && self.free == NIL
             && self.slots.len() < self.slots.capacity()
             && self.slots.len() < UNCHAINED as usize
         {
@@ -580,11 +592,11 @@ impl InsnList {
     /// If `index > len()` (where ASM throws `IndexOutOfBoundsException`).
     pub fn cursor(&mut self, index: usize) -> InsnCursor<'_> {
         assert!(
-            index <= self.len,
+            index <= self.len as usize,
             "cursor index {index} out of bounds for length {}",
             self.len
         );
-        let (next, previous) = if index == self.len {
+        let (next, previous) = if index == self.len as usize {
             (NIL, self.last)
         } else {
             let mut current = self.first;
@@ -634,8 +646,12 @@ impl InsnList {
     #[inline(always)]
     fn alloc(&mut self, node: InsnNode) -> u32 {
         let owns_memory = node.insn.owns_memory();
-        if let Some(slot) = self.free.pop() {
-            self.slots[slot as usize].node = Some(node);
+        if self.free != NIL {
+            let slot = self.free;
+            let entry = &mut self.slots[slot as usize];
+            self.free = entry.next;
+            entry.next = NIL;
+            entry.node = Some(node);
             if owns_memory {
                 self.chain_owner(slot);
             }
@@ -673,12 +689,13 @@ impl InsnList {
 
     /// Frees the given (unlinked) slot, and returns its node.
     fn free(&mut self, slot: u32) -> InsnNode {
-        if !self.annotations.is_empty() {
-            self.annotations.remove(&slot);
+        if let Some(annotations) = &mut self.annotations {
+            annotations.remove(&slot);
         }
         let entry = &mut self.slots[slot as usize];
         entry.generation = entry.generation.wrapping_add(1);
-        self.free.push(slot);
+        entry.next = self.free;
+        self.free = slot;
         entry.node.take().expect("freeing an occupied slot")
     }
 
@@ -741,8 +758,14 @@ impl InsnList {
             let node = entry.node.take().expect("a linked slot holds a node");
             let slot = self.alloc(node);
             self.link(slot, previous, next);
-            if let Some(annotations) = other.annotations.remove(&other_slot) {
-                self.annotations.insert(slot, annotations);
+            if let Some(annotations) = other
+                .annotations
+                .as_mut()
+                .and_then(|other| other.remove(&other_slot))
+            {
+                self.annotations
+                    .get_or_insert_with(Box::default)
+                    .insert(slot, annotations);
             }
             if first == NIL {
                 first = slot;
@@ -767,7 +790,7 @@ impl InsnList {
     /// The position cache, built if needed.
     fn positions(&self) -> &Positions {
         self.positions.get_or_init(|| {
-            let mut slots = Vec::with_capacity(self.len);
+            let mut slots = Vec::with_capacity(self.len as usize);
             let mut of_slot = vec![0; self.slots.len()];
             let mut current = self.first;
             while current != NIL {
@@ -776,7 +799,7 @@ impl InsnList {
                 slots.push(current);
                 current = self.slots[current as usize].next;
             }
-            Positions { slots, of_slot }
+            Box::new(Positions { slots, of_slot })
         })
     }
 
@@ -814,7 +837,7 @@ impl Clone for InsnList {
             id: next_list_id(),
             slots: self.slots.clone(),
             owners: self.owners,
-            free: self.free.clone(),
+            free: self.free,
             first: self.first,
             last: self.last,
             len: self.len,

@@ -210,9 +210,9 @@ fn malformed_events_do_not_panic() {
             .visit_parameter_annotation(3, jstr!("LA;"), true)
             .is_some()
     );
-    assert_eq!(method_node.visible_parameter_annotations.len(), 4);
+    assert_eq!(method_node.extras().visible_parameter_annotations.len(), 4);
     assert_eq!(
-        interner.resolve(method_node.visible_parameter_annotations[3][0].desc),
+        interner.resolve(method_node.extras().visible_parameter_annotations[3][0].desc),
         "LA;"
     );
     // A malformed descriptor (ASM: StringIndexOutOfBoundsException).
@@ -222,7 +222,7 @@ fn malformed_events_do_not_panic() {
             .visit_parameter_annotation(0, jstr!("LA;"), false)
             .is_some()
     );
-    assert_eq!(malformed.invisible_parameter_annotations.len(), 1);
+    assert_eq!(malformed.extras().invisible_parameter_annotations.len(), 1);
     // An instruction annotation before any instruction (ASM: NullPointerException).
     method_node.visit_label(Label::new());
     let type_ref = TypeReference::new(0x4300_0000);
