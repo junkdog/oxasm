@@ -35,6 +35,10 @@ use crate::visitors::{CollectTypes, Counter};
 /// The number of classes `generate_hello_world` generates per pass.
 pub const HELLO_WORLDS_PER_PASS: usize = 10_000;
 
+/// About how many strings a class adds to an interner, for `read_tree_shared`'s capacity hint:
+/// the bench pack's 2,054 classes hold 81,678 distinct strings.
+pub const STRINGS_PER_CLASS: usize = 40;
+
 /// One benchmark scenario.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scenario {
@@ -46,8 +50,9 @@ pub enum Scenario {
     /// `AdapterBenchmark.getClassObjectModel`: the class read into a `ClassNode`, with a new
     /// interner per class (as `new ClassNode()`).
     ReadTree,
-    /// As `read_tree`, with one interner per pass (as sift shares one for a classpath). It has
-    /// no ASM analogue of its own and compares with ASM's `read_tree`.
+    /// As `read_tree`, with one interner per pass (as sift shares one for a classpath), sized
+    /// for [`STRINGS_PER_CLASS`] a class, as an application that knows its number of classes
+    /// would. It has no ASM analogue of its own and compares with ASM's `read_tree`.
     ReadTreeShared,
     /// As `read_tree`, with one interner for the whole run, which already holds the pack's
     /// strings before the first pass: sift's steady state, a classpath's interner once its first
@@ -320,7 +325,9 @@ pub fn run(scenario: Scenario, fixture: &Fixture) -> u64 {
         Scenario::TypeArgumentsAndReturn => type_arguments_and_return(&fixture.method_descriptors),
         Scenario::TypeSizes => type_sizes(&fixture.method_descriptors),
         Scenario::ReadTreeShared => {
-            let interner = Arc::new(Interner::new());
+            let interner = Arc::new(Interner::with_capacity(
+                fixture.classes.len() * STRINGS_PER_CLASS,
+            ));
             sum_classes(fixture, |class| read_tree(class, Some(&interner)))
         }
         Scenario::ReadTreeWarm => {
