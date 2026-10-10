@@ -183,7 +183,7 @@ fn test_visit_frame_remaps_and_compacts_locals() {
         })
         .unwrap();
     assert_eq!(
-        frame.local,
+        frame.local(),
         [
             SymFrameValue::Integer,
             SymFrameValue::Long,
@@ -191,5 +191,5 @@ fn test_visit_frame_remaps_and_compacts_locals() {
             SymFrameValue::Double,
         ]
     );
-    assert_eq!(frame.stack, [SymFrameValue::Null]);
+    assert_eq!(frame.stack(), [SymFrameValue::Null]);
 }

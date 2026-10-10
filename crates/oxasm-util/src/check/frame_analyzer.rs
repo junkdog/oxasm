@@ -190,7 +190,7 @@ where
                 if frame_node.kind != FrameKind::Append {
                     current_local = 0;
                 }
-                for ty in &frame_node.local {
+                for ty in frame_node.local() {
                     let value = self.new_frame_value(owner, interner, insn_list, ty)?;
                     let size = value.get_size();
                     if current_local + size > frame.get_locals() {
@@ -240,7 +240,7 @@ where
         }
 
         frame.clear_stack();
-        for ty in &frame_node.stack {
+        for ty in frame_node.stack() {
             let value = self.new_frame_value(owner, interner, insn_list, ty)?;
             frame.try_push(value)?;
         }

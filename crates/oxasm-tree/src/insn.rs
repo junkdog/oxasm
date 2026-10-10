@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::hash::BuildHasher;
 
+use oxasm::constant::FrameValue;
 use oxasm::opcodes::{
     IINC, INVOKEDYNAMIC, INVOKEINTERFACE, LDC, LOOKUPSWITCH, MULTIANEWARRAY, TABLESWITCH,
 };
@@ -107,7 +108,8 @@ pub struct LookupSwitchInsn {
 /// (labels, stack map frames and line numbers).
 ///
 /// Its strings are [`Sym`]s of the interner of the method that holds it. The variants with
-/// vectors are boxed, which keeps an `Insn` at 24 bytes.
+/// vectors are boxed, which keeps an `Insn` at 24 bytes, except [`Frame`](Self::Frame), whose
+/// values are a single boxed slice (empty frames, the most common, allocate nothing).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Insn {
     /// A zero operand instruction (ASM's `InsnNode`): `NOP`, `ACONST_NULL`, ..., `IADD`, ...,
@@ -200,7 +202,7 @@ pub enum Insn {
         dims: u8,
     },
     /// A stack map frame (ASM's `FrameNode`).
-    Frame(Box<FrameNode>),
+    Frame(FrameNode),
     /// A line number declaration (ASM's `LineNumberNode`).
     Line {
         /// A line number, which refers to the source file from which the class was compiled.
@@ -275,7 +277,7 @@ impl Insn {
 
     /// A stack map frame.
     pub fn frame(frame: FrameNode) -> Insn {
-        Insn::Frame(Box::new(frame))
+        Insn::Frame(frame)
     }
 
     /// A `MULTIANEWARRAY` instruction.
@@ -357,8 +359,9 @@ impl Insn {
         }
     }
 
-    /// Whether this instruction owns heap memory (a box, or a [`SymConstant::Dynamic`]): the
-    /// others have no drop glue, which lets an [`InsnList`](crate::InsnList) drop only these.
+    /// Whether this instruction owns heap memory (a box, a non-empty frame, or a
+    /// [`SymConstant::Dynamic`]): the others have no drop glue, which lets an
+    /// [`InsnList`](crate::InsnList) drop only these.
     pub(crate) fn owns_memory(&self) -> bool {
         match self {
             Insn::Simple { .. }
@@ -383,10 +386,8 @@ impl Insn {
                 | SymConstant::Handle(_) => false,
                 SymConstant::Dynamic(_) => true,
             },
-            Insn::InvokeDynamic(_)
-            | Insn::TableSwitch(_)
-            | Insn::LookupSwitch(_)
-            | Insn::Frame(_) => true,
+            Insn::InvokeDynamic(_) | Insn::TableSwitch(_) | Insn::LookupSwitch(_) => true,
+            Insn::Frame(frame) => frame.owns_memory(),
         }
     }
 
@@ -401,6 +402,18 @@ impl Insn {
     /// Makes the given visitor visit this instruction (without its type annotations), with
     /// the strings of the given interner.
     pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
+        self.accept_with(interner, method_visitor, &mut Vec::new());
+    }
+
+    /// [`accept`](Self::accept), with the values of a frame resolved into the given buffer,
+    /// which a list reuses for all its frames.
+    #[inline]
+    pub(crate) fn accept_with<'i>(
+        &self,
+        interner: &'i Interner,
+        method_visitor: &mut dyn MethodVisitor,
+        frame_values: &mut Vec<FrameValue<'i>>,
+    ) {
         let resolve = |sym: &Sym| interner.resolve(*sym);
         match self {
             Insn::Simple { opcode } => method_visitor.visit_insn(*opcode),
@@ -457,7 +470,7 @@ impl Insn {
             Insn::MultiANewArray { desc, dims } => {
                 method_visitor.visit_multi_a_new_array_insn(resolve(desc), *dims);
             }
-            Insn::Frame(frame) => frame.accept(interner, method_visitor),
+            Insn::Frame(frame) => frame.accept_with(interner, method_visitor, frame_values),
             Insn::Line { line, start } => method_visitor.visit_line_number(*line, *start),
         }
     }
@@ -481,22 +494,13 @@ impl Insn {
                 Insn::lookup_switch_insn(clone(&insn.dflt), insn.keys.clone(), clones(&insn.labels))
             }
             Insn::Frame(frame) => {
-                let clone_values = |values: &[SymFrameValue]| {
-                    values
-                        .iter()
-                        .map(|value| match value {
-                            SymFrameValue::Uninitialized(label) => {
-                                SymFrameValue::Uninitialized(clone(label))
-                            }
-                            value => *value,
-                        })
-                        .collect()
-                };
-                Insn::frame(FrameNode {
-                    kind: frame.kind,
-                    local: clone_values(&frame.local),
-                    stack: clone_values(&frame.stack),
-                })
+                let mut frame = frame.clone();
+                for value in frame.values_mut() {
+                    if let SymFrameValue::Uninitialized(label) = value {
+                        *label = clone(label);
+                    }
+                }
+                Insn::Frame(frame)
             }
             Insn::Line { line, start } => Insn::Line {
                 line: *line,
@@ -506,6 +510,10 @@ impl Insn {
         }
     }
 }
+
+// An unboxed frame keeps an `Insn` at 24 bytes: `FrameKind`'s spare tag values hold the variant.
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(size_of::<Insn>() == 24);
 
 // The fields of the instructions that `owns_memory` says own none.
 const _: () = assert!(

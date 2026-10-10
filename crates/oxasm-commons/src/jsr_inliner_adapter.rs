@@ -648,7 +648,7 @@ impl<'n> Inliner<'n> {
                 labels.iter().for_each(|&label| add(label));
             }
             Insn::Frame(frame) => {
-                for value in frame.local.iter().chain(&frame.stack) {
+                for value in frame.local().iter().chain(frame.stack()) {
                     if let oxasm_tree::SymFrameValue::Uninitialized(label) = value {
                         add(*label);
                     }

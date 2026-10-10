@@ -21,5 +21,5 @@ fn test_as_array_list_with_length_and_array() {
 
     let frame_node = FrameNode::new(FrameKind::Same1, &[], &stack);
 
-    assert_eq!(frame_node.stack, [SymFrameValue::Integer]);
+    assert_eq!(frame_node.stack(), [SymFrameValue::Integer]);
 }

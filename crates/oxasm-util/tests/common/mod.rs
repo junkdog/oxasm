@@ -212,17 +212,17 @@ impl MethodNodeBuilder {
         stack: &[FrameValue<'static>],
     ) -> Self {
         let interner = self.method_node.interner().clone();
-        let intern = |values: &[FrameValue<'static>]| {
+        let intern = |values: &[FrameValue<'static>]| -> Vec<_> {
             values
                 .iter()
                 .map(|v| SymFrameValue::intern(v, &interner))
                 .collect()
         };
-        self.method_node.instructions.add(FrameNode {
+        self.method_node.instructions.add(FrameNode::from_parts(
             kind,
-            local: intern(local),
-            stack: intern(stack),
-        });
+            &intern(local),
+            &intern(stack),
+        ));
         self
     }
 

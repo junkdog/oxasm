@@ -9,6 +9,7 @@ use std::ops::{Index, IndexMut};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use oxasm::constant::FrameValue;
 use oxasm::{Interner, Label, MethodVisitor};
 use rustc_hash::FxHashMap;
 
@@ -303,9 +304,12 @@ impl InsnList {
     /// Makes the given visitor visit all the instructions in this list, with the strings of the
     /// given interner (that of the method that holds the list).
     pub fn accept(&self, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
+        // The values of the frames, resolved, for one allocation per list instead of one per
+        // frame.
+        let mut frame_values = Vec::new();
         let mut current = self.first;
         while current != NIL {
-            self.accept_slot(current, interner, method_visitor);
+            self.accept_slot(current, interner, method_visitor, &mut frame_values);
             current = self.slots[current as usize].next;
         }
     }
@@ -323,16 +327,28 @@ impl InsnList {
         interner: &Interner,
         method_visitor: &mut dyn MethodVisitor,
     ) {
-        self.accept_slot(self.expect_slot(id), interner, method_visitor);
+        self.accept_slot(
+            self.expect_slot(id),
+            interner,
+            method_visitor,
+            &mut Vec::new(),
+        );
     }
 
     /// [`accept_insn`](Self::accept_insn) for the instruction in the given (linked) slot.
-    fn accept_slot(&self, slot: u32, interner: &Interner, method_visitor: &mut dyn MethodVisitor) {
+    fn accept_slot<'i>(
+        &self,
+        slot: u32,
+        interner: &'i Interner,
+        method_visitor: &mut dyn MethodVisitor,
+        frame_values: &mut Vec<FrameValue<'i>>,
+    ) {
         let node = self.slots[slot as usize]
             .node
             .as_ref()
             .expect("a linked slot holds a node");
-        node.insn.accept(interner, method_visitor);
+        node.insn
+            .accept_with(interner, method_visitor, frame_values);
         if !self.annotations.is_empty()
             && node.opcode().is_some()
             && let Some(annotations) = self.annotations.get(&slot)

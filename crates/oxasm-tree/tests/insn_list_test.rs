@@ -1304,6 +1304,42 @@ fn instructions_owning_memory_are_dropped() {
     drop((plain, copy));
 }
 
+/// oxasm-specific: a frame owns memory only if it has values (T7 in oxasm-optimization.md: an
+/// empty frame allocates nothing, and the list leaves it out of its chain of owners); every
+/// other one is freed, however it leaves the list (Miri reports a leak).
+#[test]
+fn frames_with_values_are_dropped() {
+    let interner = Interner::new();
+    let object = SymFrameValue::Object(interner.intern("A"));
+    let frames = || {
+        [
+            FrameNode::new(FrameKind::Same, &[], &[]),
+            FrameNode::new(FrameKind::Same1, &[], &[object]),
+            FrameNode::new(FrameKind::Full, &[object, SymFrameValue::Long], &[object]),
+            FrameNode::from_parts(FrameKind::Chop(1), &[object], &[]),
+            FrameNode::new(FrameKind::Chop(1), &[], &[]),
+        ]
+        .map(Insn::frame)
+    };
+    let mut insn_list = InsnList::new();
+    let ids = frames().map(|frame| insn_list.add(frame));
+    drop(insn_list.remove(ids[1]));
+    drop(insn_list.set(ids[0], frames()[2].clone()));
+    insn_list[ids[3]].insn = frames()[1].clone();
+    let no_labels = std::collections::HashMap::<Label, Label>::new();
+    let mut other = InsnList::new();
+    for node in insn_list.iter() {
+        other.add(node.clone_with(&no_labels));
+    }
+    let mut moved = InsnList::new();
+    for frame in frames() {
+        moved.add(frame);
+    }
+    insn_list.add_list(&mut moved);
+    assert_eq!(insn_list.len(), 9);
+    drop((insn_list.clone(), insn_list, other));
+}
+
 proptest! {
     #[test]
     fn random_edits_match_a_vec_model(ops in proptest::collection::vec(op(), 0..200)) {

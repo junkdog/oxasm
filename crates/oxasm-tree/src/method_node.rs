@@ -19,7 +19,7 @@ use crate::insn::{Insn, InvokeDynamicInsn};
 use crate::insn_list::InsnList;
 use crate::nodes::{LocalVariableNode, ParameterNode, TryCatchBlockNode, try_catch_type_ref};
 use crate::strings::{Strings, resolve_all};
-use crate::value::{SymConstant, SymFrameValue, SymHandle};
+use crate::value::{SymConstant, SymHandle};
 
 /// The label a method node stores for a visited label.
 ///
@@ -27,7 +27,7 @@ use crate::value::{SymConstant, SymFrameValue, SymHandle};
 /// when the node is visited, without the reader's `FLAG_DEBUG_ONLY`. Here the visited label is
 /// the node's identity, so the flag is cleared instead, for a method writer to see what it sees
 /// in ASM (ADR-03).
-fn plain(label: Label) -> Label {
+pub(crate) fn plain(label: Label) -> Label {
     label.with_debug_only(false)
 }
 
@@ -423,12 +423,7 @@ impl MethodNode {
         stack: &[FrameValue<'_>],
     ) {
         let mut strings = Self::strings(&self.interner, memo);
-        let mut frame = FrameNode::from_visited(kind, locals, stack, &mut strings);
-        for value in frame.local.iter_mut().chain(&mut frame.stack) {
-            if let SymFrameValue::Uninitialized(label) = value {
-                *label = plain(*label);
-            }
-        }
+        let frame = FrameNode::from_visited(kind, locals, stack, &mut strings);
         self.instructions.add(frame);
     }
 
