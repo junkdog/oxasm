@@ -305,3 +305,37 @@ fn test_accept_visits_the_member_counts() {
         );
     }
 }
+
+/// Records the constant pool size hint.
+#[derive(Default)]
+struct ConstantPoolSize(Option<(u16, u32)>);
+
+impl ClassVisitor for ConstantPoolSize {
+    fn visit_constant_pool_size(&mut self, constant_pool_count: u16, length: u32) {
+        self.0 = Some((constant_pool_count, length));
+    }
+}
+
+/// oxasm-specific: a class node visits the constant pool size it was read with, as the class
+/// reader does, and a node that was not read visits none (W14 in oxasm-optimization.md: a writer
+/// sizes its symbol table from it).
+#[test]
+fn test_accept_visits_the_constant_pool_size() {
+    for &class in PrecompiledClass::ALL {
+        let mut read = ConstantPoolSize::default();
+        ClassReader::new(class.bytes())
+            .unwrap()
+            .accept(&mut read, ParsingOptions::empty())
+            .unwrap();
+        let class_node = read_class_node(class);
+        let mut accepted = ConstantPoolSize::default();
+
+        class_node.accept(&mut accepted);
+        assert!(read.0.is_some(), "{class}");
+        assert_eq!(accepted.0, read.0, "{class}");
+    }
+
+    let mut accepted = ConstantPoolSize::default();
+    ClassNode::with_interner(Arc::default()).accept(&mut accepted);
+    assert_eq!(accepted.0, None);
+}

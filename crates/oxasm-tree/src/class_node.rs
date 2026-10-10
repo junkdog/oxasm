@@ -106,6 +106,9 @@ pub struct ClassNode {
     pub fields: Vec<FieldNode>,
     /// The methods of this class.
     pub methods: Vec<MethodNode>,
+    /// The constant pool size this node was visited with, if any (see
+    /// [`ClassVisitor::visit_constant_pool_size`]), which [`accept`](Self::accept) passes on.
+    visited_constant_pool_size: Option<(u16, u32)>,
     /// The interner of this node's strings, with the memo of the strings visited so far
     /// (emptied by `visit_end`).
     strings: InternMemo,
@@ -140,6 +143,7 @@ impl ClassNode {
             record_components: Vec::new(),
             fields: Vec::new(),
             methods: Vec::new(),
+            visited_constant_pool_size: None,
             strings: InternMemo::new(interner),
         }
     }
@@ -176,6 +180,12 @@ impl ClassNode {
             u16::try_from(self.fields.len()).unwrap_or(u16::MAX),
             u16::try_from(self.methods.len()).unwrap_or(u16::MAX),
         );
+        // The size of the constant pool this node was read from: only a hint, so a size that the
+        // node's changes since have made stale costs a visitor at most some growth or some
+        // unused capacity.
+        if let Some((constant_pool_count, length)) = self.visited_constant_pool_size {
+            class_visitor.visit_constant_pool_size(constant_pool_count, length);
+        }
         // Visit the source.
         if self.source_file.is_some() || self.source_debug.is_some() {
             class_visitor.visit_source(
@@ -259,6 +269,10 @@ impl ClassVisitor for ClassNode {
     fn visit_member_counts(&mut self, fields_count: u16, methods_count: u16) {
         self.fields.reserve(usize::from(fields_count));
         self.methods.reserve(usize::from(methods_count));
+    }
+
+    fn visit_constant_pool_size(&mut self, constant_pool_count: u16, length: u32) {
+        self.visited_constant_pool_size = Some((constant_pool_count, length));
     }
 
     fn visit_source(&mut self, source: Option<&JavaStr>, debug: Option<&JavaStr>) {
