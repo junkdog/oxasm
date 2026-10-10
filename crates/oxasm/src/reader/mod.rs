@@ -90,6 +90,31 @@ bitflags::bitflags! {
     }
 }
 
+/// The bytes of the class file a [`ClassReader`] visits, which it shows its visitor with
+/// [`ClassVisitor::visit_class_file`]: most strings it visits are borrowed from them. Only a
+/// class reader makes one, and the bytes can't change while it visits them, so until
+/// [`visit_end`](ClassVisitor::visit_end), a visitor may take a string within them to be the
+/// string it saw before at the same address and length (an
+/// [`InternMemo`](crate::sym::InternMemo) does).
+#[derive(Clone, Copy, Debug)]
+pub struct ClassFileBytes<'b> {
+    bytes: &'b [u8],
+}
+
+impl<'b> ClassFileBytes<'b> {
+    /// The class file being visited, which can't change while `'b` lasts.
+    pub(crate) fn new(bytes: &'b [u8]) -> ClassFileBytes<'b> {
+        ClassFileBytes { bytes }
+    }
+
+    /// The addresses of the class file's bytes.
+    #[inline]
+    #[must_use]
+    pub fn as_ptr_range(&self) -> std::ops::Range<*const u8> {
+        self.bytes.as_ptr_range()
+    }
+}
+
 /// The source of the reader ids, which the method copy optimization compares (ADR-08): the start
 /// of the next block of [`READER_ID_BLOCK`] ids.
 static NEXT_READER_ID: AtomicU64 = AtomicU64::new(1);
@@ -407,6 +432,29 @@ impl<'b> ClassReader<'b> {
         codecs: &[&dyn AttributeCodec],
         parsing_options: ParsingOptions,
     ) -> Result<(), ReadError> {
+        let mut class_file_shown = false;
+        let result = self.accept_events(
+            class_visitor,
+            codecs,
+            parsing_options,
+            &mut class_file_shown,
+        );
+        // Without `visit_end`, the visitor is told the class file is no longer visited.
+        if result.is_err() && class_file_shown {
+            class_visitor.visit_class_file(None);
+        }
+        result
+    }
+
+    /// [`accept_with_codecs`](Self::accept_with_codecs), which `class_file_shown` tells whether
+    /// the visitor was shown the class file.
+    fn accept_events(
+        &self,
+        class_visitor: &mut dyn ClassVisitor,
+        codecs: &[&dyn AttributeCodec],
+        parsing_options: ParsingOptions,
+        class_file_shown: &mut bool,
+    ) -> Result<(), ReadError> {
         let mut context = Context::new(codecs, parsing_options);
 
         // Read the access_flags, this_class, super_class, interface_count and interfaces fields.
@@ -588,6 +636,8 @@ impl<'b> ClassReader<'b> {
             self.get_item_count() as u16,
             (self.header - (version_offset + 6)) as u32,
         );
+        class_visitor.visit_class_file(Some(ClassFileBytes::new(self.class_file)));
+        *class_file_shown = true;
 
         // Visit the SourceFile and SourceDebugExtension attributes.
         if !parsing_options.contains(ParsingOptions::SKIP_DEBUG)

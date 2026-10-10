@@ -10,6 +10,7 @@ use oxasm::error::ReadErrorKind;
 use oxasm::opcodes::{
     ACC_ABSTRACT, ACC_PUBLIC, ACC_STATIC, ACC_SUPER, GOTO, NOP, RETURN, V_PREVIEW, V1_1,
 };
+use oxasm::reader::ClassFileBytes;
 use oxasm::{
     AnnotationVisitor, Attribute, ClassReader, ClassVisitor, ClassWriter, ClassWriterFlags,
     FieldVisitor, JavaStr, Label, MethodVisitor, ModuleVisitor, ParsingOptions,
@@ -767,6 +768,78 @@ fn test_accept_visits_the_constant_pool_size() {
             "{class}"
         );
     }
+}
+
+/// Records the class header, the class files shown (as the addresses of their bytes) and the
+/// end of a visit, in order; and visits the rest with an empty visitor.
+#[derive(Default)]
+struct ClassFileEvents(Vec<String>, EmptyClassVisitor);
+
+impl ClassVisitor for ClassFileEvents {
+    fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
+        Some(&mut self.1)
+    }
+
+    fn visit(
+        &mut self,
+        _: u32,
+        _: u32,
+        _: &JavaStr,
+        _: Option<&JavaStr>,
+        _: Option<&JavaStr>,
+        _: &[&JavaStr],
+    ) {
+        self.0.push("visit".into());
+    }
+
+    fn visit_class_file(&mut self, class_file: Option<ClassFileBytes<'_>>) {
+        self.0
+            .push(format!("{:?}", class_file.map(|c| c.as_ptr_range())));
+    }
+
+    fn visit_end(&mut self) {
+        self.0.push("visit_end".into());
+    }
+}
+
+/// oxasm-specific: a reader shows its visitor the class file once, after the header (T6 in
+/// oxasm-optimization.md: a tree's memo trusts the strings within it until `visit_end`).
+#[test]
+fn test_accept_visits_the_class_file() {
+    for &class in PrecompiledClass::ALL {
+        let mut events = ClassFileEvents::default();
+
+        reader(class)
+            .accept(&mut events, ParsingOptions::empty())
+            .unwrap();
+
+        let class_file = format!("{:?}", Some(class.bytes().as_ptr_range()));
+        assert_eq!(events.0, ["visit", &class_file, "visit_end"], "{class}");
+    }
+}
+
+/// oxasm-specific: a reader that stops with an error after showing its visitor the class file
+/// tells it the class file is no longer visited; one that stops before the header shows none.
+#[test]
+fn test_accept_invalid_class_takes_back_the_class_file() {
+    let mut taken_back = 0;
+    for &invalid_class in InvalidClass::ALL {
+        let Ok(class_reader) = ClassReader::new(invalid_class.bytes()) else {
+            continue;
+        };
+        let mut events = ClassFileEvents::default();
+
+        let result = class_reader.accept(&mut events, ParsingOptions::empty());
+
+        assert!(result.is_err(), "{invalid_class}");
+        if events.0.is_empty() {
+            continue;
+        }
+        let class_file = format!("{:?}", Some(invalid_class.bytes().as_ptr_range()));
+        assert_eq!(events.0, ["visit", &class_file, "None"], "{invalid_class}");
+        taken_back += 1;
+    }
+    assert!(taken_back > 0);
 }
 
 /// Records the labels, line numbers and instructions of the methods a reader visits.

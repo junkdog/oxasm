@@ -3,6 +3,7 @@
 use crate::attribute::Attribute;
 use crate::constant::Constant;
 use crate::jstr::JavaStr;
+use crate::reader::ClassFileBytes;
 use crate::type_path::TypePath;
 use crate::type_reference::TypeReference;
 use crate::visitor::{
@@ -81,6 +82,20 @@ pub trait ClassVisitor {
     fn visit_constant_pool_size(&mut self, constant_pool_count: u16, length: u32) {
         if let Some(d) = self.delegate() {
             d.visit_constant_pool_size(constant_pool_count, length);
+        }
+    }
+
+    /// Visits the bytes of the class file the events come from: an oxasm extension, which ASM
+    /// does not have. A class reader calls it right after [`visit`](Self::visit) with
+    /// `Some(class_file)`. Most of the strings it visits are borrowed from these bytes, which
+    /// don't change until [`visit_end`](Self::visit_end), so a visitor which caches strings by
+    /// address (an [`InternMemo`](crate::sym::InternMemo)) can take a string within them to be
+    /// the one it saw before at the same address. If the class file turns out to be malformed,
+    /// the reader stops without `visit_end`, and calls it again with `None`: the bytes may then
+    /// change. It is only a hint: other sources of events need not call it.
+    fn visit_class_file(&mut self, class_file: Option<ClassFileBytes<'_>>) {
+        if let Some(d) = self.delegate() {
+            d.visit_class_file(class_file);
         }
     }
 
@@ -348,6 +363,9 @@ macro_rules! forward_class_visitor {
             }
             fn visit_constant_pool_size(&mut self, constant_pool_count: u16, length: u32) {
                 (**self).visit_constant_pool_size(constant_pool_count, length);
+            }
+            fn visit_class_file(&mut self, class_file: Option<ClassFileBytes<'_>>) {
+                (**self).visit_class_file(class_file);
             }
             fn visit_source(&mut self, source: Option<&JavaStr>, debug: Option<&JavaStr>) {
                 (**self).visit_source(source, debug);

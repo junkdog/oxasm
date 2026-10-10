@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use oxasm::constant::Constant;
+use oxasm::reader::ClassFileBytes;
 use oxasm::sym::InternMemo;
 use oxasm::{
     AnnotationVisitor, Attribute, ClassVisitor, FieldVisitor, Interner, JavaStr, MethodVisitor,
@@ -260,6 +261,9 @@ impl ClassVisitor for ClassNode {
         self.version = version;
         self.access = access;
         let strings = &mut self.strings;
+        // Already empty, unless the last class's visit stopped without `visit_end` or a class
+        // file taken back (a visitor panicked): then its class file's bytes may have changed.
+        strings.clear();
         self.name = strings.intern(name);
         self.signature = strings.intern_opt(signature);
         self.super_name = strings.intern_opt(super_name);
@@ -273,6 +277,10 @@ impl ClassVisitor for ClassNode {
 
     fn visit_constant_pool_size(&mut self, constant_pool_count: u16, length: u32) {
         self.visited_constant_pool_size = Some((constant_pool_count, length));
+    }
+
+    fn visit_class_file(&mut self, class_file: Option<ClassFileBytes<'_>>) {
+        self.strings.set_class_file(class_file);
     }
 
     fn visit_source(&mut self, source: Option<&JavaStr>, debug: Option<&JavaStr>) {
