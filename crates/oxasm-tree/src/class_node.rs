@@ -108,7 +108,8 @@ pub struct ClassNode {
     /// The methods of this class.
     pub methods: Vec<MethodNode>,
     /// The constant pool size this node was visited with, if any (see
-    /// [`ClassVisitor::visit_constant_pool_size`]), which [`accept`](Self::accept) passes on.
+    /// [`ClassVisitor::visit_constant_pool_size`]), which [`accept`](Self::accept) passes on
+    /// (otherwise an estimate).
     visited_constant_pool_size: Option<(u16, u32)>,
     /// The interner of this node's strings, with the memo of the strings visited so far
     /// (emptied by `visit_end`).
@@ -181,12 +182,8 @@ impl ClassNode {
             u16::try_from(self.fields.len()).unwrap_or(u16::MAX),
             u16::try_from(self.methods.len()).unwrap_or(u16::MAX),
         );
-        // The size of the constant pool this node was read from: only a hint, so a size that the
-        // node's changes since have made stale costs a visitor at most some growth or some
-        // unused capacity.
-        if let Some((constant_pool_count, length)) = self.visited_constant_pool_size {
-            class_visitor.visit_constant_pool_size(constant_pool_count, length);
-        }
+        let (constant_pool_count, length) = self.constant_pool_size_hint();
+        class_visitor.visit_constant_pool_size(constant_pool_count, length);
         // Visit the source.
         if self.source_file.is_some() || self.source_debug.is_some() {
             class_visitor.visit_source(
@@ -241,6 +238,28 @@ impl ClassNode {
             method.accept(class_visitor);
         }
         class_visitor.visit_end();
+    }
+
+    /// The size of the constant pool to send to [`ClassVisitor::visit_constant_pool_size`]: the
+    /// one this node was visited with, if any, otherwise an estimate. It is only a hint, so a
+    /// size that the node's changes since have made stale costs a visitor at most some growth or
+    /// some unused capacity.
+    ///
+    /// The estimate is 16 entries, plus 3 per field, 4 per method and one per two instructions,
+    /// of 17 bytes each. Against a corpus' constant pools, it is short for a third of the
+    /// classes (by less than 1.4× for 90% of them) and long by 1.2× at the median: a node
+    /// without a size took 4.8% longer to read and write than with the read one, and 0.5% less
+    /// with this estimate (W16 in oxasm-optimization.md).
+    fn constant_pool_size_hint(&self) -> (u16, u32) {
+        if let Some(size) = self.visited_constant_pool_size {
+            return size;
+        }
+        let instructions: usize = self.methods.iter().map(|m| m.instructions.len()).sum();
+        let count = (16 + 3 * self.fields.len() + 4 * self.methods.len())
+            .saturating_add(instructions / 2)
+            .min(usize::from(u16::MAX));
+        let length = u32::try_from(count * 17).unwrap_or(u32::MAX);
+        (u16::try_from(count).unwrap_or(u16::MAX), length)
     }
 }
 

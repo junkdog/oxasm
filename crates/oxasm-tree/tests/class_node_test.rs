@@ -317,8 +317,8 @@ impl ClassVisitor for ConstantPoolSize {
 }
 
 /// oxasm-specific: a class node visits the constant pool size it was read with, as the class
-/// reader does, and a node that was not read visits none (W14 in oxasm-optimization.md: a writer
-/// sizes its symbol table from it).
+/// reader does (W14 in oxasm-optimization.md: a writer sizes its symbol table from it), and a node
+/// that was not read visits an estimate from its members and instructions (W16).
 #[test]
 fn test_accept_visits_the_constant_pool_size() {
     for &class in PrecompiledClass::ALL {
@@ -337,5 +337,43 @@ fn test_accept_visits_the_constant_pool_size() {
 
     let mut accepted = ConstantPoolSize::default();
     ClassNode::with_interner(Arc::default()).accept(&mut accepted);
-    assert_eq!(accepted.0, None);
+    assert_eq!(accepted.0, Some((16, 16 * 17)));
+}
+
+/// A class node that drops the constant pool size hint, as if it was built by hand.
+struct WithoutConstantPoolSize(ClassNode);
+
+impl ClassVisitor for WithoutConstantPoolSize {
+    fn delegate(&mut self) -> Option<&mut dyn ClassVisitor> {
+        Some(&mut self.0)
+    }
+
+    fn visit_constant_pool_size(&mut self, _: u16, _: u32) {}
+}
+
+/// oxasm-specific: a class node without the constant pool size it was read with sends its
+/// estimate instead, which only sizes a writer's symbol table: the class is written the same
+/// (W16 in oxasm-optimization.md).
+#[test]
+fn test_accept_estimates_the_constant_pool_size() {
+    for &class in PrecompiledClass::ALL {
+        let write = |class_node: &ClassNode| {
+            let mut class_writer = ClassWriter::new(ClassWriterFlags::empty());
+            class_node.accept(&mut class_writer as &mut dyn ClassVisitor);
+            class_writer.to_bytes().unwrap()
+        };
+        let mut unsized_node = WithoutConstantPoolSize(ClassNode::with_interner(Arc::default()));
+        ClassReader::new(class.bytes())
+            .unwrap()
+            .accept_with_codecs(&mut unsized_node, &attributes(), ParsingOptions::empty())
+            .unwrap();
+        let mut hint = ConstantPoolSize::default();
+        unsized_node.0.accept(&mut hint);
+        assert!(hint.0.is_some(), "{class}");
+
+        assert!(
+            write(&unsized_node.0) == write(&read_class_node(class)),
+            "{class}"
+        );
+    }
 }
