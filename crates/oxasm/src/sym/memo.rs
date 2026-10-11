@@ -214,7 +214,7 @@ impl InternMemo {
             }
             return sym;
         }
-        let (id, interned) = self.interner.intern_bytes(bytes);
+        let (id, interned) = self.interner.intern_bytes_inserting(bytes);
         let sym = super::interner::sym(id);
         self.cache.entries[index] = Entry {
             address: bytes.as_ptr() as usize,

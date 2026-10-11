@@ -273,6 +273,7 @@ impl Arena {
 
     /// Writes `bytes`, prefixed by their length, past the arena's end (unpublished), and returns
     /// their offset and the arena's end after them. Under the arena's lock.
+    #[inline]
     fn stage(&self, state: &mut ArenaState, bytes: &[u8]) -> (usize, usize) {
         let (offset, new_end) = place(state.end, bytes.len());
         assert!(
@@ -781,9 +782,28 @@ impl Interner {
         }
     }
 
-    /// Interns `bytes`, staged in the arena of this thread, unless another thread did meanwhile.
+    /// As [`intern_bytes`](Self::intern_bytes), with the insert inline: for
+    /// [`InternMemo`](super::InternMemo)'s miss, where an interner made for one class inserts
+    /// most strings, while a lookup of an application's mostly finds them.
+    #[inline]
+    pub(super) fn intern_bytes_inserting(&self, bytes: &[u8]) -> (u32, &[u8]) {
+        let hash = hash(bytes);
+        match self.find(shard_index(hash), tag(hash), bytes) {
+            Some(found) => found,
+            None => self.insert_inline(bytes, hash),
+        }
+    }
+
+    /// [`insert_inline`](Self::insert_inline) out of line, for [`intern`](Self::intern)'s callers,
+    /// whose interner mostly finds what they look up.
     #[cold]
     fn insert(&self, bytes: &[u8], hash: u64) -> (u32, &[u8]) {
+        self.insert_inline(bytes, hash)
+    }
+
+    /// Interns `bytes`, staged in the arena of this thread, unless another thread did meanwhile.
+    #[inline]
+    fn insert_inline(&self, bytes: &[u8], hash: u64) -> (u32, &[u8]) {
         // (No interned string is longer: a lookup of one finds nothing.)
         assert!(
             bytes.len() <= MAX_LEN,
