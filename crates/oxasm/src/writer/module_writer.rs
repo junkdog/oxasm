@@ -2,7 +2,7 @@
 //! [`ModuleWriter`], the module visitor a class writer returns, borrows it with the symbol
 //! table.
 
-use crate::constants;
+use crate::constants::AttributeName;
 use crate::jstr::JavaStr;
 use crate::visitor::ModuleVisitor;
 use crate::writer::byte_vector::ByteVector;
@@ -79,7 +79,7 @@ impl ModuleWriterState {
     /// Returns the size of the Module, ModulePackages and ModuleMainClass attributes generated
     /// by this writer, and adds their names to the constant pool.
     pub(crate) fn compute_attributes_size(&self, symbol_table: &mut SymbolTable) -> usize {
-        symbol_table.add_constant_utf8(constants::MODULE);
+        symbol_table.add_attribute_name(AttributeName::Module);
         // 6 attribute header bytes, 6 bytes for name, flags and version, and 5 * 2 bytes for
         // counts.
         let mut size = 22
@@ -89,12 +89,12 @@ impl ModuleWriterState {
             + self.uses_index.size()
             + self.provides.size();
         if self.package_count > 0 {
-            symbol_table.add_constant_utf8(constants::MODULE_PACKAGES);
+            symbol_table.add_attribute_name(AttributeName::ModulePackages);
             // 6 attribute header bytes, and 2 bytes for package_count.
             size += 8 + self.package_index.size();
         }
         if self.main_class_index > 0 {
-            symbol_table.add_constant_utf8(constants::MODULE_MAIN_CLASS);
+            symbol_table.add_attribute_name(AttributeName::ModuleMainClass);
             // 6 attribute header bytes, and 2 bytes for main_class_index.
             size += 8;
         }
@@ -111,7 +111,7 @@ impl ModuleWriterState {
             + self.opens.size()
             + self.uses_index.size()
             + self.provides.size();
-        let name_index = symbol_table.add_constant_utf8(constants::MODULE);
+        let name_index = symbol_table.add_attribute_name(AttributeName::Module);
         output
             .put_short(name_index)
             .put_int(module_attribute_length as i32)
@@ -129,7 +129,7 @@ impl ModuleWriterState {
             .put_short(self.provides_count)
             .put_byte_array(self.provides.data());
         if self.package_count > 0 {
-            let name_index = symbol_table.add_constant_utf8(constants::MODULE_PACKAGES);
+            let name_index = symbol_table.add_attribute_name(AttributeName::ModulePackages);
             output
                 .put_short(name_index)
                 .put_int(2 + self.package_index.size() as i32)
@@ -137,7 +137,7 @@ impl ModuleWriterState {
                 .put_byte_array(self.package_index.data());
         }
         if self.main_class_index > 0 {
-            let name_index = symbol_table.add_constant_utf8(constants::MODULE_MAIN_CLASS);
+            let name_index = symbol_table.add_attribute_name(AttributeName::ModuleMainClass);
             output
                 .put_short(name_index)
                 .put_int(2)

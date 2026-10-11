@@ -10,13 +10,13 @@
 //! share a bucket under any hash.
 
 use std::hash::{Hash, Hasher};
-use std::num::NonZeroU32;
+use std::num::{NonZeroU16, NonZeroU32};
 
 use rustc_hash::{FxHashMap, FxHasher};
 
 use crate::constant::Constant;
 use crate::constant_dynamic::ConstantDynamic;
-use crate::constants;
+use crate::constants::{self, AttributeName};
 use crate::error::{ReadError, ReadErrorKind, WriteError};
 use crate::handle::Handle;
 use crate::hierarchy::{ClassHierarchy, HierarchyError};
@@ -260,6 +260,9 @@ pub(crate) struct SymbolTable {
     /// The first error ASM would have thrown while writing this class (ADR-06): it is reported by
     /// `ClassWriter::to_bytes`.
     error: Option<WriteError>,
+    /// The constant pool index of each attribute name, once added by
+    /// [`add_attribute_name`](Self::add_attribute_name).
+    attribute_names: [Option<NonZeroU16>; AttributeName::COUNT],
 }
 
 /// The hash code of a symbol of the given tag and components.
@@ -298,6 +301,7 @@ impl SymbolTable {
             label_table: Vec::new(),
             label_entries: FxHashMap::default(),
             error: None,
+            attribute_names: [None; AttributeName::COUNT],
         }
     }
 
@@ -337,6 +341,7 @@ impl SymbolTable {
             label_table: Vec::new(),
             label_entries: FxHashMap::default(),
             error: None,
+            attribute_names: [None; AttributeName::COUNT],
         };
         // The span of each CONSTANT_Utf8 entry, by constant pool index, once added: the entries
         // that refer to it share it.
@@ -665,7 +670,7 @@ impl SymbolTable {
     pub(crate) fn compute_bootstrap_methods_size(&mut self) -> usize {
         if let Some(bootstrap_methods) = &self.bootstrap_methods {
             let length = bootstrap_methods.size();
-            self.add_constant_utf8(constants::BOOTSTRAP_METHODS);
+            self.add_attribute_name(AttributeName::BootstrapMethods);
             8 + length
         } else {
             0
@@ -676,7 +681,7 @@ impl SymbolTable {
     /// includes the 6 attribute header bytes and the `num_bootstrap_methods` value.
     pub(crate) fn put_bootstrap_methods(&mut self, output: &mut ByteVector) {
         if self.bootstrap_methods.is_some() {
-            let name_index = self.add_constant_utf8(constants::BOOTSTRAP_METHODS);
+            let name_index = self.add_attribute_name(AttributeName::BootstrapMethods);
             let bootstrap_methods = self.bootstrap_methods.as_ref().expect("checked above");
             output
                 .put_short(name_index)
@@ -1165,6 +1170,25 @@ impl SymbolTable {
     /// constant pool already contains a similar item. Returns its index.
     pub(crate) fn add_constant_utf8(&mut self, value: &JavaStr) -> i32 {
         self.add_constant_utf8_text(Text::Other(value)).0
+    }
+
+    /// [`Self::add_constant_utf8`] for an attribute name. The index is kept after the first
+    /// call, so that the next ones, a few per method and per pass, are a load.
+    #[inline(always)]
+    pub(crate) fn add_attribute_name(&mut self, name: AttributeName) -> i32 {
+        match self.attribute_names[name as usize] {
+            Some(index) => i32::from(index.get()),
+            None => self.add_attribute_name_first(name),
+        }
+    }
+
+    /// [`Self::add_attribute_name`] when its index is not known yet.
+    #[inline(never)]
+    fn add_attribute_name_first(&mut self, name: AttributeName) -> i32 {
+        let index = self.add_constant_utf8(name.name());
+        // Not kept past 65535 constant pool entries (`to_bytes` fails with `ClassTooLarge` then).
+        self.attribute_names[name as usize] = u16::try_from(index).ok().and_then(NonZeroU16::new);
+        index
     }
 
     /// [`Self::add_constant_utf8`], returning the index and the span of the string, which
@@ -1869,5 +1893,54 @@ mod tests {
         assert!(matches!(table.error(), Some(WriteError::Utf8TooLarge)));
         assert_eq!(table.text(fieldref.name), name);
         assert_eq!(table.text(fieldref.value), descriptor);
+    }
+
+    #[test]
+    fn an_attribute_name_is_the_utf8_constant_of_its_name() {
+        let mut table = SymbolTable::new();
+        // A constant equal to an attribute name before the attribute name.
+        let code = table.add_constant_utf8(constants::CODE);
+        let count = table.constant_pool_count;
+        assert_eq!(table.add_attribute_name(AttributeName::Code), code);
+        assert_eq!(table.add_attribute_name(AttributeName::Code), code);
+        assert_eq!(table.constant_pool_count, count);
+        // An attribute name before a constant equal to it.
+        let stack_map = table.add_attribute_name(AttributeName::StackMap);
+        assert_eq!(stack_map, count);
+        assert_eq!(table.add_attribute_name(AttributeName::StackMap), stack_map);
+        assert_eq!(
+            table.add_constant_utf8(JavaStr::from_str("StackMap")),
+            stack_map
+        );
+        assert_eq!(
+            table.add_constant_utf8(constants::STACK_MAP_TABLE),
+            count + 1
+        );
+        assert_eq!(
+            table.add_attribute_name(AttributeName::StackMapTable),
+            count + 1
+        );
+        // Each name has its own index.
+        assert_eq!(
+            table.add_attribute_name(AttributeName::ConstantValue),
+            count + 2
+        );
+        assert_eq!(table.add_attribute_name(AttributeName::Code), code);
+        assert_eq!(table.constant_pool_count, count + 3);
+    }
+
+    #[test]
+    fn an_attribute_name_past_65535_constants_is_looked_up_each_time() {
+        let mut table = SymbolTable::new();
+        for i in 1..0xFFFF {
+            table.add_constant_integer(i);
+        }
+        assert_eq!(table.add_attribute_name(AttributeName::Record), 0xFFFF);
+        table.add_constant_integer(0xFFFF);
+        assert_eq!(table.add_attribute_name(AttributeName::Code), 0x10001);
+        assert_eq!(table.attribute_names[AttributeName::Code as usize], None);
+        assert_eq!(table.add_attribute_name(AttributeName::Code), 0x10001);
+        assert_eq!(table.add_attribute_name(AttributeName::Record), 0xFFFF);
+        assert_eq!(table.constant_pool_count, 0x10002);
     }
 }

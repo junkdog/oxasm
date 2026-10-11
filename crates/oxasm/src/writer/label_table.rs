@@ -309,10 +309,17 @@ impl LabelTable {
     }
 
     /// The index of the state of the given label, created if needed.
+    #[inline(always)]
     pub(crate) fn id(&mut self, label: Label) -> BlockId {
-        if let Some(id) = self.find(label) {
-            return id;
+        match self.find(label) {
+            Some(id) => id,
+            None => self.insert(label),
         }
+    }
+
+    /// The index of the state of a new label.
+    #[inline(never)]
+    fn insert(&mut self, label: Label) -> BlockId {
         let id = self.blocks.len() as BlockId;
         if self.blocks.len() >= self.slots.len() / 2 {
             self.reserve_slots(self.blocks.len() + 1);
@@ -328,13 +335,14 @@ impl LabelTable {
     }
 
     /// The state of the given label, created if needed.
+    #[inline(always)]
     pub(crate) fn block_mut(&mut self, label: Label) -> &mut Block {
         let id = self.id(label);
         &mut self.blocks[id as usize]
     }
 
     /// The index of the state of the given label, if seen.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn find(&self, label: Label) -> Option<BlockId> {
         if self.slots.is_empty() {
             return None;
@@ -344,8 +352,14 @@ impl LabelTable {
             NO_BLOCK => None,
             id if self.blocks[id as usize].label == label => Some(id),
             _ if self.overflow.is_empty() => None,
-            _ => self.overflow.get(&label).copied(),
+            _ => self.find_overflow(label),
         }
+    }
+
+    /// [`Self::find`] for a label whose slot holds another label's state.
+    #[inline(never)]
+    fn find_overflow(&self, label: Label) -> Option<BlockId> {
+        self.overflow.get(&label).copied()
     }
 
     /// The state of the given label, if seen.
@@ -544,19 +558,41 @@ impl LabelTable {
     /// Sets the bytecode offset of the given label to the given value and resolves the forward
     /// references to this label, if any (ASM's `Label.resolve`). Returns whether a forward
     /// reference needed an ASM specific instruction (a jump too far for a 2 bytes offset).
+    #[inline(always)]
     pub(crate) fn resolve(
         &mut self,
         label: Label,
         code: &mut ByteVector,
-        mut stack_map_table_entries: Option<&mut ByteVector>,
+        stack_map_table_entries: Option<&mut ByteVector>,
         bytecode_offset: i32,
     ) -> bool {
         let block = self.block_mut(label);
         block.flags |= FLAG_RESOLVED;
         block.bytecode_offset = bytecode_offset;
+        match block.last_forward_reference {
+            NO_REFERENCE => false,
+            last => self.resolve_forward_references(
+                last,
+                code,
+                stack_map_table_entries,
+                bytecode_offset,
+            ),
+        }
+    }
+
+    /// Resolves the forward references to a label, from the last one given, for
+    /// [`Self::resolve`].
+    #[inline(never)]
+    fn resolve_forward_references(
+        &mut self,
+        last: u32,
+        code: &mut ByteVector,
+        mut stack_map_table_entries: Option<&mut ByteVector>,
+        bytecode_offset: i32,
+    ) -> bool {
         let mut has_asm_instructions = false;
         // The references from the last one to the first, as ASM walks its array.
-        let mut next = block.last_forward_reference;
+        let mut next = last;
         while next != NO_REFERENCE {
             let ForwardReference {
                 source_insn_bytecode_offset,

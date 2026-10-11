@@ -208,12 +208,18 @@ pub(super) fn stack_size_delta(opcode: u8) -> Result<i32, WriteError> {
     STACK_SIZE_DELTA
         .get(usize::from(opcode))
         .map(|&delta| i32::from(delta))
-        .ok_or_else(|| {
-            WriteError::IndexOutOfBounds(format!(
-                "Index {opcode} out of bounds for length {}",
-                STACK_SIZE_DELTA.len()
-            ))
-        })
+        .ok_or_else(|| stack_size_delta_out_of_bounds(opcode))
+}
+
+/// The error of [`stack_size_delta`], out of line: its formatting would make every instruction
+/// visit save registers and reserve stack for it.
+#[cold]
+#[inline(never)]
+fn stack_size_delta_out_of_bounds(opcode: u8) -> WriteError {
+    WriteError::IndexOutOfBounds(format!(
+        "Index {opcode} out of bounds for length {}",
+        STACK_SIZE_DELTA.len()
+    ))
 }
 
 /// ASM's `NullPointerException` where the control flow graph of a method is inconsistent: a jump
@@ -225,7 +231,9 @@ fn null_pointer(what: &str) -> WriteError {
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // Java's int arithmetic
 impl MethodWriterState {
-    /// ASM's `visitLabel`.
+    /// ASM's `visitLabel`. Inline up to its basic block bookkeeping, which a writer that
+    /// computes nothing skips.
+    #[inline(always)]
     pub(super) fn visit_label(&mut self, label: Label) {
         // Resolve the forward references to this label, if any.
         let code_length = self.code_length();
@@ -237,9 +245,16 @@ impl MethodWriterState {
         );
         // visitLabel starts a new basic block (except for debug only labels), so we need to
         // update the previous and current block references and list of successors.
-        if label.is_debug_only() {
+        if label.is_debug_only() || self.compute == Compute::Nothing {
             return;
         }
+        self.visit_label_block(label);
+    }
+
+    /// The basic block bookkeeping of [`Self::visit_label`], for a label that is not debug only
+    /// and a writer that computes something.
+    #[inline(never)]
+    fn visit_label_block(&mut self, label: Label) {
         let block = self.labels.id(label);
         match self.compute {
             Compute::AllFrames => {

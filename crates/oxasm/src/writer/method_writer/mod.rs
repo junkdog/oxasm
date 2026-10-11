@@ -424,7 +424,9 @@ impl MethodWriterState {
     }
 
     /// Simulates the given instruction on the frame of the current basic block, if the stack
-    /// map frames are computed (ASM's `currentBasicBlock.frame.execute`).
+    /// map frames are computed (ASM's `currentBasicBlock.frame.execute`). Inline: every
+    /// instruction visit calls it, and most writers compute no frames.
+    #[inline(always)]
     fn execute(
         &mut self,
         symbol_table: &mut SymbolTable,
@@ -432,13 +434,27 @@ impl MethodWriterState {
         arg: i32,
         arg_symbol: Option<&SymbolArg<'_>>,
     ) {
-        let Some(current_basic_block) = self.current_basic_block else {
-            return;
-        };
+        if let Some(current_basic_block) = self.current_basic_block
+            && self.computes_frames()
+        {
+            self.execute_frame(symbol_table, current_basic_block, opcode, arg, arg_symbol);
+        }
+    }
+
+    /// [`Self::execute`] when the frames are computed, in reachable code.
+    #[inline(never)]
+    fn execute_frame(
+        &mut self,
+        symbol_table: &mut SymbolTable,
+        current_basic_block: BlockId,
+        opcode: u8,
+        arg: i32,
+        arg_symbol: Option<&SymbolArg<'_>>,
+    ) {
         // After an error, which ASM would have thrown, the class cannot be written: skip the
         // frame computation, the costly part of the visit ASM never does (it stops at its first
         // exception).
-        if !self.computes_frames() || symbol_table.error().is_some() {
+        if symbol_table.error().is_some() {
             return;
         }
         let inserted = self.compute == Compute::InsertedFrames;
