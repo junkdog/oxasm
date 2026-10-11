@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::attribute::{Attribute, AttributeCodec};
 use crate::constant::Constant;
-use crate::constants;
+use crate::constants::AttributeName;
 use crate::handle::Handle;
 use crate::jstr::{JavaStr, JavaString};
 use crate::label::Label;
@@ -329,18 +329,18 @@ pub(crate) fn compute_standard_attributes_size(
         && symbol_table.major_version() < opcodes::V1_5 as i32
     {
         // Synthetic attributes always use 6 bytes.
-        symbol_table.add_constant_utf8(constants::SYNTHETIC);
+        symbol_table.add_attribute_name(AttributeName::Synthetic);
         size += 6;
     }
     if signature_index != 0 {
         // Signature attributes always use 8 bytes.
-        symbol_table.add_constant_utf8(constants::SIGNATURE);
+        symbol_table.add_attribute_name(AttributeName::Signature);
         size += 8;
     }
     // ACC_DEPRECATED is ASM specific, the ClassFile format uses a Deprecated attribute instead.
     if access_flags & opcodes::ACC_DEPRECATED != 0 {
         // Deprecated attributes always use 6 bytes.
-        symbol_table.add_constant_utf8(constants::DEPRECATED);
+        symbol_table.add_attribute_name(AttributeName::Deprecated);
         size += 6;
     }
     size
@@ -366,18 +366,18 @@ pub(crate) fn put_standard_attributes(
     if access_flags & opcodes::ACC_SYNTHETIC != 0
         && symbol_table.major_version() < opcodes::V1_5 as i32
     {
-        let name_index = symbol_table.add_constant_utf8(constants::SYNTHETIC);
+        let name_index = symbol_table.add_attribute_name(AttributeName::Synthetic);
         output.put_short(name_index).put_int(0);
     }
     if signature_index != 0 {
-        let name_index = symbol_table.add_constant_utf8(constants::SIGNATURE);
+        let name_index = symbol_table.add_attribute_name(AttributeName::Signature);
         output
             .put_short(name_index)
             .put_int(2)
             .put_short(signature_index);
     }
     if access_flags & opcodes::ACC_DEPRECATED != 0 {
-        let name_index = symbol_table.add_constant_utf8(constants::DEPRECATED);
+        let name_index = symbol_table.add_attribute_name(AttributeName::Deprecated);
         output.put_short(name_index).put_int(0);
     }
 }

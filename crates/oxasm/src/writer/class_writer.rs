@@ -2,7 +2,7 @@
 
 use crate::attribute::{Attribute, AttributeCodec};
 use crate::constant::Constant;
-use crate::constants;
+use crate::constants::AttributeName;
 use crate::error::{ReadError, WriteError};
 use crate::handle::Handle;
 use crate::hierarchy::ClassHierarchy;
@@ -331,38 +331,38 @@ impl<'h> ClassWriter<'h> {
         if let Some(inner_classes) = &self.inner_classes {
             attributes_count += 1;
             size += 8 + inner_classes.size();
-            symbol_table.add_constant_utf8(constants::INNER_CLASSES);
+            symbol_table.add_attribute_name(AttributeName::InnerClasses);
         }
         if self.enclosing_class_index != 0 {
             attributes_count += 1;
             size += 10;
-            symbol_table.add_constant_utf8(constants::ENCLOSING_METHOD);
+            symbol_table.add_attribute_name(AttributeName::EnclosingMethod);
         }
         let major_version = self.version & 0xFFFF;
         if self.access_flags & opcodes::ACC_SYNTHETIC != 0 && major_version < opcodes::V1_5 {
             attributes_count += 1;
             size += 6;
-            symbol_table.add_constant_utf8(constants::SYNTHETIC);
+            symbol_table.add_attribute_name(AttributeName::Synthetic);
         }
         if self.signature_index != 0 {
             attributes_count += 1;
             size += 8;
-            symbol_table.add_constant_utf8(constants::SIGNATURE);
+            symbol_table.add_attribute_name(AttributeName::Signature);
         }
         if self.source_file_index != 0 {
             attributes_count += 1;
             size += 8;
-            symbol_table.add_constant_utf8(constants::SOURCE_FILE);
+            symbol_table.add_attribute_name(AttributeName::SourceFile);
         }
         if let Some(debug_extension) = &self.debug_extension {
             attributes_count += 1;
             size += 6 + debug_extension.size();
-            symbol_table.add_constant_utf8(constants::SOURCE_DEBUG_EXTENSION);
+            symbol_table.add_attribute_name(AttributeName::SourceDebugExtension);
         }
         if self.access_flags & opcodes::ACC_DEPRECATED != 0 {
             attributes_count += 1;
             size += 6;
-            symbol_table.add_constant_utf8(constants::DEPRECATED);
+            symbol_table.add_attribute_name(AttributeName::Deprecated);
         }
         attributes_count += self.annotations.attribute_count();
         size += compute_member_annotations_size(symbol_table, &self.annotations);
@@ -377,17 +377,17 @@ impl<'h> ClassWriter<'h> {
         if self.nest_host_class_index != 0 {
             attributes_count += 1;
             size += 8;
-            symbol_table.add_constant_utf8(constants::NEST_HOST);
+            symbol_table.add_attribute_name(AttributeName::NestHost);
         }
         if let Some(nest_member_classes) = &self.nest_member_classes {
             attributes_count += 1;
             size += 8 + nest_member_classes.size();
-            symbol_table.add_constant_utf8(constants::NEST_MEMBERS);
+            symbol_table.add_attribute_name(AttributeName::NestMembers);
         }
         if let Some(permitted_subclasses) = &self.permitted_subclasses {
             attributes_count += 1;
             size += 8 + permitted_subclasses.size();
-            symbol_table.add_constant_utf8(constants::PERMITTED_SUBCLASSES);
+            symbol_table.add_attribute_name(AttributeName::PermittedSubclasses);
         }
         let mut record_size = 0;
         let has_record =
@@ -399,7 +399,7 @@ impl<'h> ClassWriter<'h> {
             }
             attributes_count += 1;
             size += 8 + record_size;
-            symbol_table.add_constant_utf8(constants::RECORD);
+            symbol_table.add_attribute_name(AttributeName::Record);
         }
         if !self.attributes.is_empty() {
             attributes_count += self.attributes.len();
@@ -455,7 +455,7 @@ impl<'h> ClassWriter<'h> {
         // JVMS.
         result.put_short(attributes_count as i32);
         if let Some(inner_classes) = &self.inner_classes {
-            let name_index = symbol_table.add_constant_utf8(constants::INNER_CLASSES);
+            let name_index = symbol_table.add_attribute_name(AttributeName::InnerClasses);
             result
                 .put_short(name_index)
                 .put_int(inner_classes.size() as i32 + 2)
@@ -463,7 +463,7 @@ impl<'h> ClassWriter<'h> {
                 .put_byte_array(inner_classes.data());
         }
         if self.enclosing_class_index != 0 {
-            let name_index = symbol_table.add_constant_utf8(constants::ENCLOSING_METHOD);
+            let name_index = symbol_table.add_attribute_name(AttributeName::EnclosingMethod);
             result
                 .put_short(name_index)
                 .put_int(4)
@@ -471,18 +471,18 @@ impl<'h> ClassWriter<'h> {
                 .put_short(self.enclosing_method_index);
         }
         if self.access_flags & opcodes::ACC_SYNTHETIC != 0 && major_version < opcodes::V1_5 {
-            let name_index = symbol_table.add_constant_utf8(constants::SYNTHETIC);
+            let name_index = symbol_table.add_attribute_name(AttributeName::Synthetic);
             result.put_short(name_index).put_int(0);
         }
         if self.signature_index != 0 {
-            let name_index = symbol_table.add_constant_utf8(constants::SIGNATURE);
+            let name_index = symbol_table.add_attribute_name(AttributeName::Signature);
             result
                 .put_short(name_index)
                 .put_int(2)
                 .put_short(self.signature_index);
         }
         if self.source_file_index != 0 {
-            let name_index = symbol_table.add_constant_utf8(constants::SOURCE_FILE);
+            let name_index = symbol_table.add_attribute_name(AttributeName::SourceFile);
             result
                 .put_short(name_index)
                 .put_int(2)
@@ -490,14 +490,14 @@ impl<'h> ClassWriter<'h> {
         }
         if let Some(debug_extension) = &self.debug_extension {
             let length = debug_extension.size();
-            let name_index = symbol_table.add_constant_utf8(constants::SOURCE_DEBUG_EXTENSION);
+            let name_index = symbol_table.add_attribute_name(AttributeName::SourceDebugExtension);
             result
                 .put_short(name_index)
                 .put_int(length as i32)
                 .put_byte_array(debug_extension.data());
         }
         if self.access_flags & opcodes::ACC_DEPRECATED != 0 {
-            let name_index = symbol_table.add_constant_utf8(constants::DEPRECATED);
+            let name_index = symbol_table.add_attribute_name(AttributeName::Deprecated);
             result.put_short(name_index).put_int(0);
         }
         put_member_annotations(symbol_table, &self.annotations, &mut result);
@@ -506,14 +506,14 @@ impl<'h> ClassWriter<'h> {
             module_writer.put_attributes(symbol_table, &mut result);
         }
         if self.nest_host_class_index != 0 {
-            let name_index = symbol_table.add_constant_utf8(constants::NEST_HOST);
+            let name_index = symbol_table.add_attribute_name(AttributeName::NestHost);
             result
                 .put_short(name_index)
                 .put_int(2)
                 .put_short(self.nest_host_class_index);
         }
         if let Some(nest_member_classes) = &self.nest_member_classes {
-            let name_index = symbol_table.add_constant_utf8(constants::NEST_MEMBERS);
+            let name_index = symbol_table.add_attribute_name(AttributeName::NestMembers);
             result
                 .put_short(name_index)
                 .put_int(nest_member_classes.size() as i32 + 2)
@@ -521,7 +521,7 @@ impl<'h> ClassWriter<'h> {
                 .put_byte_array(nest_member_classes.data());
         }
         if let Some(permitted_subclasses) = &self.permitted_subclasses {
-            let name_index = symbol_table.add_constant_utf8(constants::PERMITTED_SUBCLASSES);
+            let name_index = symbol_table.add_attribute_name(AttributeName::PermittedSubclasses);
             result
                 .put_short(name_index)
                 .put_int(permitted_subclasses.size() as i32 + 2)
@@ -529,7 +529,7 @@ impl<'h> ClassWriter<'h> {
                 .put_byte_array(permitted_subclasses.data());
         }
         if has_record {
-            let name_index = symbol_table.add_constant_utf8(constants::RECORD);
+            let name_index = symbol_table.add_attribute_name(AttributeName::Record);
             result
                 .put_short(name_index)
                 .put_int(record_size as i32 + 2)

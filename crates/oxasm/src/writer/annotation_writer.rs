@@ -7,6 +7,7 @@
 //! array writers fill their parent's byte vector, as in ASM.
 
 use crate::constant::AnnotationValue;
+use crate::constants::AttributeName;
 use crate::error::WriteError;
 use crate::jstr::JavaStr;
 use crate::type_path::TypePath;
@@ -306,10 +307,10 @@ impl AnnotationVisitor for AnnotationWriter<'_> {
 pub(crate) fn compute_annotations_size(
     symbol_table: &mut SymbolTable,
     annotations: &AnnotationList,
-    attribute_name: Option<&JavaStr>,
+    attribute_name: Option<AttributeName>,
 ) -> usize {
     if let Some(attribute_name) = attribute_name {
-        symbol_table.add_constant_utf8(attribute_name);
+        symbol_table.add_attribute_name(attribute_name);
     }
     // The attribute_name_index, attribute_length and num_annotations fields use 8 bytes.
     8 + annotations.iter().map(ByteVector::size).sum::<usize>()
@@ -357,7 +358,7 @@ pub(crate) fn put_member_annotations(
 ) {
     for (list, name) in annotations.lists() {
         if !list.is_empty() {
-            let name_index = symbol_table.add_constant_utf8(name);
+            let name_index = symbol_table.add_attribute_name(name);
             put_annotations(list, name_index, output);
         }
     }
@@ -368,7 +369,7 @@ pub(crate) fn put_member_annotations(
 /// `computeParameterAnnotationsSize`).
 pub(crate) fn compute_parameter_annotations_size(
     symbol_table: &mut SymbolTable,
-    attribute_name: &JavaStr,
+    attribute_name: AttributeName,
     annotations: &[AnnotationList],
     annotable_parameter_count: usize,
 ) -> usize {
@@ -438,16 +439,18 @@ pub(crate) struct MemberAnnotations {
 
 impl MemberAnnotations {
     /// The lists, with their attribute names, in ASM's order.
-    fn lists(&self) -> [(&AnnotationList, &'static JavaStr); 4] {
-        use crate::constants::{
-            RUNTIME_INVISIBLE_ANNOTATIONS, RUNTIME_INVISIBLE_TYPE_ANNOTATIONS,
-            RUNTIME_VISIBLE_ANNOTATIONS, RUNTIME_VISIBLE_TYPE_ANNOTATIONS,
-        };
+    fn lists(&self) -> [(&AnnotationList, AttributeName); 4] {
         [
-            (&self.visible, RUNTIME_VISIBLE_ANNOTATIONS),
-            (&self.invisible, RUNTIME_INVISIBLE_ANNOTATIONS),
-            (&self.visible_type, RUNTIME_VISIBLE_TYPE_ANNOTATIONS),
-            (&self.invisible_type, RUNTIME_INVISIBLE_TYPE_ANNOTATIONS),
+            (&self.visible, AttributeName::RuntimeVisibleAnnotations),
+            (&self.invisible, AttributeName::RuntimeInvisibleAnnotations),
+            (
+                &self.visible_type,
+                AttributeName::RuntimeVisibleTypeAnnotations,
+            ),
+            (
+                &self.invisible_type,
+                AttributeName::RuntimeInvisibleTypeAnnotations,
+            ),
         ]
     }
 

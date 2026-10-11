@@ -51,6 +51,92 @@ pub(crate) const NEST_MEMBERS: &JavaStr = crate::jstr!("NestMembers");
 pub(crate) const PERMITTED_SUBCLASSES: &JavaStr = crate::jstr!("PermittedSubclasses");
 pub(crate) const RECORD: &JavaStr = crate::jstr!("Record");
 
+/// The attribute names that the class writer adds to the constant pool: each has a slot in the
+/// symbol table's cache of their constant pool indices (`SymbolTable::add_attribute_name`), so
+/// that the size and write passes look each name up once a class, not once per attribute.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum AttributeName {
+    ConstantValue,
+    Code,
+    StackMapTable,
+    /// The `StackMap` attribute of the CLDC (class files before version 50).
+    StackMap,
+    Exceptions,
+    InnerClasses,
+    EnclosingMethod,
+    Synthetic,
+    Signature,
+    SourceFile,
+    SourceDebugExtension,
+    LineNumberTable,
+    LocalVariableTable,
+    LocalVariableTypeTable,
+    Deprecated,
+    RuntimeVisibleAnnotations,
+    RuntimeInvisibleAnnotations,
+    RuntimeVisibleParameterAnnotations,
+    RuntimeInvisibleParameterAnnotations,
+    RuntimeVisibleTypeAnnotations,
+    RuntimeInvisibleTypeAnnotations,
+    AnnotationDefault,
+    BootstrapMethods,
+    MethodParameters,
+    Module,
+    ModulePackages,
+    ModuleMainClass,
+    NestHost,
+    NestMembers,
+    PermittedSubclasses,
+    Record,
+}
+
+impl AttributeName {
+    /// The number of attribute names.
+    pub(crate) const COUNT: usize = AttributeName::Record as usize + 1;
+
+    /// The attribute name.
+    pub(crate) const fn name(self) -> &'static JavaStr {
+        match self {
+            AttributeName::ConstantValue => CONSTANT_VALUE,
+            AttributeName::Code => CODE,
+            AttributeName::StackMapTable => STACK_MAP_TABLE,
+            AttributeName::StackMap => crate::jstr!("StackMap"),
+            AttributeName::Exceptions => EXCEPTIONS,
+            AttributeName::InnerClasses => INNER_CLASSES,
+            AttributeName::EnclosingMethod => ENCLOSING_METHOD,
+            AttributeName::Synthetic => SYNTHETIC,
+            AttributeName::Signature => SIGNATURE,
+            AttributeName::SourceFile => SOURCE_FILE,
+            AttributeName::SourceDebugExtension => SOURCE_DEBUG_EXTENSION,
+            AttributeName::LineNumberTable => LINE_NUMBER_TABLE,
+            AttributeName::LocalVariableTable => LOCAL_VARIABLE_TABLE,
+            AttributeName::LocalVariableTypeTable => LOCAL_VARIABLE_TYPE_TABLE,
+            AttributeName::Deprecated => DEPRECATED,
+            AttributeName::RuntimeVisibleAnnotations => RUNTIME_VISIBLE_ANNOTATIONS,
+            AttributeName::RuntimeInvisibleAnnotations => RUNTIME_INVISIBLE_ANNOTATIONS,
+            AttributeName::RuntimeVisibleParameterAnnotations => {
+                RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS
+            }
+            AttributeName::RuntimeInvisibleParameterAnnotations => {
+                RUNTIME_INVISIBLE_PARAMETER_ANNOTATIONS
+            }
+            AttributeName::RuntimeVisibleTypeAnnotations => RUNTIME_VISIBLE_TYPE_ANNOTATIONS,
+            AttributeName::RuntimeInvisibleTypeAnnotations => RUNTIME_INVISIBLE_TYPE_ANNOTATIONS,
+            AttributeName::AnnotationDefault => ANNOTATION_DEFAULT,
+            AttributeName::BootstrapMethods => BOOTSTRAP_METHODS,
+            AttributeName::MethodParameters => METHOD_PARAMETERS,
+            AttributeName::Module => MODULE,
+            AttributeName::ModulePackages => MODULE_PACKAGES,
+            AttributeName::ModuleMainClass => MODULE_MAIN_CLASS,
+            AttributeName::NestHost => NEST_HOST,
+            AttributeName::NestMembers => NEST_MEMBERS,
+            AttributeName::PermittedSubclasses => PERMITTED_SUBCLASSES,
+            AttributeName::Record => RECORD,
+        }
+    }
+}
+
 // ASM specific access flags.
 // WARNING: the 16 least significant bits must NOT be used, to avoid conflicts with standard
 // access flags, and also to make sure that these flags are automatically filtered out when

@@ -3,7 +3,7 @@
 
 use crate::attribute::Attribute;
 use crate::constant::Constant;
-use crate::constants;
+use crate::constants::AttributeName;
 use crate::jstr::JavaStr;
 use crate::opcodes;
 use crate::type_path::TypePath;
@@ -77,7 +77,7 @@ impl FieldWriterState {
         // JVMS.
         if self.constant_value_index != 0 {
             // ConstantValue attributes always use 8 bytes.
-            symbol_table.add_constant_utf8(constants::CONSTANT_VALUE);
+            symbol_table.add_attribute_name(AttributeName::ConstantValue);
             size += 8;
         }
         size +=
@@ -131,7 +131,7 @@ impl FieldWriterState {
         // For ease of reference, we use here the same attribute order as in Section 4.7 of the
         // JVMS.
         if self.constant_value_index != 0 {
-            let name_index = symbol_table.add_constant_utf8(constants::CONSTANT_VALUE);
+            let name_index = symbol_table.add_attribute_name(AttributeName::ConstantValue);
             output
                 .put_short(name_index)
                 .put_int(2)

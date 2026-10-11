@@ -1,7 +1,7 @@
 //! The `method_info` of a method writer: the method copy optimization (ADR-08), and ASM's
 //! `computeMethodInfoSize`, `putMethodInfo` and `collectAttributePrototypes`.
 
-use crate::constants;
+use crate::constants::AttributeName;
 use crate::error::WriteError;
 use crate::opcodes;
 use crate::visitor::MethodCopySource;
@@ -142,33 +142,33 @@ impl MethodWriterState {
                     code_size: self.code.size(),
                 });
             }
-            symbol_table.add_constant_utf8(constants::CODE);
+            symbol_table.add_attribute_name(AttributeName::Code);
             // The Code attribute has 6 header bytes, plus 2, 2, 4 and 2 bytes respectively for
             // max_stack, max_locals, code_length and attributes_count, plus the bytecode and the
             // exception table.
             size += 16 + self.code.size() + get_exception_table_size(&self.handlers);
             if let Some(stack_map_table_entries) = &self.stack_map_table_entries {
                 let use_stack_map_table = symbol_table.major_version() >= opcodes::V1_6 as i32;
-                symbol_table.add_constant_utf8(if use_stack_map_table {
-                    constants::STACK_MAP_TABLE
+                symbol_table.add_attribute_name(if use_stack_map_table {
+                    AttributeName::StackMapTable
                 } else {
-                    crate::jstr!("StackMap")
+                    AttributeName::StackMap
                 });
                 // 6 header bytes and 2 bytes for number_of_entries.
                 size += 8 + stack_map_table_entries.size();
             }
             if !self.line_number_table.is_empty() {
-                symbol_table.add_constant_utf8(constants::LINE_NUMBER_TABLE);
+                symbol_table.add_attribute_name(AttributeName::LineNumberTable);
                 // 6 header bytes and 2 bytes for line_number_table_length.
                 size += 8 + self.line_number_table.size(LINE_NUMBER_SIZE);
             }
             if !self.local_variable_table.is_empty() {
-                symbol_table.add_constant_utf8(constants::LOCAL_VARIABLE_TABLE);
+                symbol_table.add_attribute_name(AttributeName::LocalVariableTable);
                 // 6 header bytes and 2 bytes for local_variable_table_length.
                 size += 8 + self.local_variable_table.size(LOCAL_VARIABLE_SIZE);
             }
             if !self.local_variable_type_table.is_empty() {
-                symbol_table.add_constant_utf8(constants::LOCAL_VARIABLE_TYPE_TABLE);
+                symbol_table.add_attribute_name(AttributeName::LocalVariableTypeTable);
                 // 6 header bytes and 2 bytes for local_variable_type_table_length.
                 size += 8 + self.local_variable_type_table.size(LOCAL_VARIABLE_SIZE);
             }
@@ -176,14 +176,14 @@ impl MethodWriterState {
                 size += compute_annotations_size(
                     symbol_table,
                     &self.code_visible_type_annotations,
-                    Some(constants::RUNTIME_VISIBLE_TYPE_ANNOTATIONS),
+                    Some(AttributeName::RuntimeVisibleTypeAnnotations),
                 );
             }
             if !self.code_invisible_type_annotations.is_empty() {
                 size += compute_annotations_size(
                     symbol_table,
                     &self.code_invisible_type_annotations,
-                    Some(constants::RUNTIME_INVISIBLE_TYPE_ANNOTATIONS),
+                    Some(AttributeName::RuntimeInvisibleTypeAnnotations),
                 );
             }
             if !self.code_attributes.is_empty() {
@@ -197,7 +197,7 @@ impl MethodWriterState {
             }
         }
         if !self.exception_index_table.is_empty() {
-            symbol_table.add_constant_utf8(constants::EXCEPTIONS);
+            symbol_table.add_attribute_name(AttributeName::Exceptions);
             size += 8 + 2 * self.exception_index_table.len();
         }
         size +=
@@ -209,7 +209,7 @@ impl MethodWriterState {
             check_parameter_count(symbol_table, count, annotations.len());
             size += compute_parameter_annotations_size(
                 symbol_table,
-                constants::RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS,
+                AttributeName::RuntimeVisibleParameterAnnotations,
                 annotations,
                 count,
             );
@@ -220,17 +220,17 @@ impl MethodWriterState {
             check_parameter_count(symbol_table, count, annotations.len());
             size += compute_parameter_annotations_size(
                 symbol_table,
-                constants::RUNTIME_INVISIBLE_PARAMETER_ANNOTATIONS,
+                AttributeName::RuntimeInvisibleParameterAnnotations,
                 annotations,
                 count,
             );
         }
         if let Some(default_value) = &self.default_value {
-            symbol_table.add_constant_utf8(constants::ANNOTATION_DEFAULT);
+            symbol_table.add_attribute_name(AttributeName::AnnotationDefault);
             size += 6 + default_value.size();
         }
         if let Some(parameters) = &self.parameters {
-            symbol_table.add_constant_utf8(constants::METHOD_PARAMETERS);
+            symbol_table.add_attribute_name(AttributeName::MethodParameters);
             // 6 header bytes and 1 byte for parameters_count.
             size += 7 + parameters.size();
         }
@@ -329,7 +329,7 @@ impl MethodWriterState {
                 size += compute_annotations_size(
                     symbol_table,
                     &self.code_visible_type_annotations,
-                    Some(constants::RUNTIME_VISIBLE_TYPE_ANNOTATIONS),
+                    Some(AttributeName::RuntimeVisibleTypeAnnotations),
                 );
                 code_attribute_count += 1;
             }
@@ -337,7 +337,7 @@ impl MethodWriterState {
                 size += compute_annotations_size(
                     symbol_table,
                     &self.code_invisible_type_annotations,
-                    Some(constants::RUNTIME_INVISIBLE_TYPE_ANNOTATIONS),
+                    Some(AttributeName::RuntimeInvisibleTypeAnnotations),
                 );
                 code_attribute_count += 1;
             }
@@ -351,7 +351,7 @@ impl MethodWriterState {
                     .compute_attributes_size(symbol_table, Some(code));
                 code_attribute_count += self.code_attributes.len();
             }
-            let code_index = symbol_table.add_constant_utf8(constants::CODE);
+            let code_index = symbol_table.add_attribute_name(AttributeName::Code);
             output
                 .put_short(code_index)
                 .put_int(size as i32)
@@ -368,10 +368,10 @@ impl MethodWriterState {
             output.put_short(code_attribute_count as i32);
             if let Some(stack_map_table_entries) = &self.stack_map_table_entries {
                 let use_stack_map_table = symbol_table.major_version() >= opcodes::V1_6 as i32;
-                let name_index = symbol_table.add_constant_utf8(if use_stack_map_table {
-                    constants::STACK_MAP_TABLE
+                let name_index = symbol_table.add_attribute_name(if use_stack_map_table {
+                    AttributeName::StackMapTable
                 } else {
-                    crate::jstr!("StackMap")
+                    AttributeName::StackMap
                 });
                 output
                     .put_short(name_index)
@@ -380,7 +380,7 @@ impl MethodWriterState {
                     .put_byte_array(stack_map_table_entries.data());
             }
             if !self.line_number_table.is_empty() {
-                let name_index = symbol_table.add_constant_utf8(constants::LINE_NUMBER_TABLE);
+                let name_index = symbol_table.add_attribute_name(AttributeName::LineNumberTable);
                 let entries = self.line_number_table;
                 output
                     .put_short(name_index)
@@ -389,7 +389,7 @@ impl MethodWriterState {
                     .put_byte_array(entries.data(&debug_tables.line_numbers, LINE_NUMBER_SIZE));
             }
             if !self.local_variable_table.is_empty() {
-                let name_index = symbol_table.add_constant_utf8(constants::LOCAL_VARIABLE_TABLE);
+                let name_index = symbol_table.add_attribute_name(AttributeName::LocalVariableTable);
                 let entries = self.local_variable_table;
                 output
                     .put_short(name_index)
@@ -401,7 +401,7 @@ impl MethodWriterState {
             }
             if !self.local_variable_type_table.is_empty() {
                 let name_index =
-                    symbol_table.add_constant_utf8(constants::LOCAL_VARIABLE_TYPE_TABLE);
+                    symbol_table.add_attribute_name(AttributeName::LocalVariableTypeTable);
                 let entries = self.local_variable_type_table;
                 output
                     .put_short(name_index)
@@ -413,12 +413,12 @@ impl MethodWriterState {
             }
             if !self.code_visible_type_annotations.is_empty() {
                 let name_index =
-                    symbol_table.add_constant_utf8(constants::RUNTIME_VISIBLE_TYPE_ANNOTATIONS);
+                    symbol_table.add_attribute_name(AttributeName::RuntimeVisibleTypeAnnotations);
                 put_annotations(&self.code_visible_type_annotations, name_index, output);
             }
             if !self.code_invisible_type_annotations.is_empty() {
                 let name_index =
-                    symbol_table.add_constant_utf8(constants::RUNTIME_INVISIBLE_TYPE_ANNOTATIONS);
+                    symbol_table.add_attribute_name(AttributeName::RuntimeInvisibleTypeAnnotations);
                 put_annotations(&self.code_invisible_type_annotations, name_index, output);
             }
             if !self.code_attributes.is_empty() {
@@ -429,7 +429,7 @@ impl MethodWriterState {
             }
         }
         if !self.exception_index_table.is_empty() {
-            let name_index = symbol_table.add_constant_utf8(constants::EXCEPTIONS);
+            let name_index = symbol_table.add_attribute_name(AttributeName::Exceptions);
             output
                 .put_short(name_index)
                 .put_int(2 + 2 * self.exception_index_table.len() as i32)
@@ -447,27 +447,27 @@ impl MethodWriterState {
         put_member_annotations(symbol_table, &self.annotations, output);
         if let Some(annotations) = &self.visible_parameter_annotations {
             let name_index =
-                symbol_table.add_constant_utf8(constants::RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS);
+                symbol_table.add_attribute_name(AttributeName::RuntimeVisibleParameterAnnotations);
             let count =
                 annotable_parameter_count(self.visible_annotable_parameter_count, annotations);
             put_parameter_annotations(name_index, annotations, count, output);
         }
         if let Some(annotations) = &self.invisible_parameter_annotations {
-            let name_index =
-                symbol_table.add_constant_utf8(constants::RUNTIME_INVISIBLE_PARAMETER_ANNOTATIONS);
+            let name_index = symbol_table
+                .add_attribute_name(AttributeName::RuntimeInvisibleParameterAnnotations);
             let count =
                 annotable_parameter_count(self.invisible_annotable_parameter_count, annotations);
             put_parameter_annotations(name_index, annotations, count, output);
         }
         if let Some(default_value) = &self.default_value {
-            let name_index = symbol_table.add_constant_utf8(constants::ANNOTATION_DEFAULT);
+            let name_index = symbol_table.add_attribute_name(AttributeName::AnnotationDefault);
             output
                 .put_short(name_index)
                 .put_int(default_value.size() as i32)
                 .put_byte_array(default_value.data());
         }
         if let Some(parameters) = &self.parameters {
-            let name_index = symbol_table.add_constant_utf8(constants::METHOD_PARAMETERS);
+            let name_index = symbol_table.add_attribute_name(AttributeName::MethodParameters);
             output
                 .put_short(name_index)
                 .put_int(1 + parameters.size() as i32)
