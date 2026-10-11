@@ -520,7 +520,7 @@ impl<V: Value> Frame<V> {
                     return Err(cast_error(insn, "MultiANewArrayInsnNode"));
                 };
                 let start = self.stack_top_start(usize::from(dims))?;
-                let value = interpreter.nary_operation(insn, &self.values[start..]);
+                let value = interpreter.nary_operation(insn, &self.values[start..], None);
                 self.values.truncate(start);
                 self.push_result(value?, "naryOperation")?;
             }
@@ -600,7 +600,7 @@ impl<V: Value> Frame<V> {
                 return Err(AnalyzerError::runtime(e.message()));
             }
         };
-        let value = interpreter.nary_operation(insn, &self.values[start..]);
+        let value = interpreter.nary_operation(insn, &self.values[start..], Some(&return_type));
         self.values.truncate(start);
         let value = value?;
         if return_type.get_sort() != TypeSort::Void {

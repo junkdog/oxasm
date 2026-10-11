@@ -320,7 +320,8 @@ impl BasicVerifier {
         Ok(None)
     }
 
-    /// ASM's `BasicVerifier.naryOperation`.
+    /// ASM's `BasicVerifier.naryOperation`. `return_type` is passed on to
+    /// [`BasicInterpreter::nary_operation`].
     ///
     /// # Errors
     ///
@@ -329,6 +330,7 @@ impl BasicVerifier {
         this: &mut I,
         insn: InsnRef<'_>,
         values: &[BasicValue],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<BasicValue>, AnalyzerError> {
         let opcode = insn.opcode().ok_or_else(assertion_error)?;
         if opcode == MULTIANEWARRAY {
@@ -386,7 +388,7 @@ impl BasicVerifier {
                 }
             }
         }
-        BasicInterpreter::nary_operation(this, insn, values)
+        BasicInterpreter::nary_operation(this, insn, values, return_type)
     }
 
     /// ASM's `BasicVerifier.returnOperation`.
@@ -464,8 +466,9 @@ impl Interpreter for BasicVerifier {
         &mut self,
         insn: InsnRef<'_>,
         values: &[BasicValue],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<BasicValue>, AnalyzerError> {
-        BasicVerifier::nary_operation(self, insn, values)
+        BasicVerifier::nary_operation(self, insn, values, return_type)
     }
 
     fn return_operation(

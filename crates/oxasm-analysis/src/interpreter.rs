@@ -88,6 +88,9 @@ impl Deref for InsnRef<'_> {
 ///   caught.
 /// - **[`merge`](Self::merge) returns `None` when the merged value is `value1`,** which ASM's
 ///   contract requires to be returned as is: this saves a clone.
+/// - **[`nary_operation`](Self::nary_operation) is told an invoke's return type,** which the
+///   frame has already read from the descriptor to pop the arguments, so that the interpreter
+///   does not read it again.
 /// - **The loop of ASM's `Frame.merge` is [`merge_values`](Self::merge_values),** a provided
 ///   method, which an interpreter may override with a cheaper loop of the same result.
 /// - **Extension by delegation.** ASM's stock interpreters are extended by subclassing. Here, they
@@ -233,7 +236,8 @@ pub trait Interpreter {
 
     /// Interprets an instruction with a variable number of arguments: `INVOKEVIRTUAL`,
     /// `INVOKESPECIAL`, `INVOKESTATIC`, `INVOKEINTERFACE`, `MULTIANEWARRAY` and `INVOKEDYNAMIC`
-    /// (ASM's `naryOperation`).
+    /// (ASM's `naryOperation`). `return_type` is an invoke's return type, which the frame has
+    /// already read from its descriptor; it is `None` for `MULTIANEWARRAY`.
     ///
     /// # Errors
     ///
@@ -242,6 +246,7 @@ pub trait Interpreter {
         &mut self,
         insn: InsnRef<'_>,
         values: &[Self::V],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<Self::V>, AnalyzerError>;
 
     /// Interprets a return instruction: `IRETURN` ... `ARETURN` (ASM's `returnOperation`).
@@ -367,8 +372,9 @@ impl<I: Interpreter + ?Sized> Interpreter for &mut I {
         &mut self,
         insn: InsnRef<'_>,
         values: &[Self::V],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<Self::V>, AnalyzerError> {
-        (**self).nary_operation(insn, values)
+        (**self).nary_operation(insn, values, return_type)
     }
     fn return_operation(
         &mut self,

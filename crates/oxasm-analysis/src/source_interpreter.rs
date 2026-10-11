@@ -4,7 +4,7 @@ use oxasm::opcodes::*;
 use oxasm::{Type, TypeSort};
 use oxasm_tree::{Insn, SymConstant};
 
-use crate::basic_interpreter::{assertion_error, get_type, return_type};
+use crate::basic_interpreter::{assertion_error, get_return_type, get_type};
 use crate::error::AnalyzerError;
 use crate::frame::cast_error;
 use crate::interpreter::{InsnRef, Interpreter};
@@ -144,7 +144,9 @@ impl<'s> SourceInterpreter<'s> {
         SourceValue::of(1, insn.id.into())
     }
 
-    /// ASM's `SourceInterpreter.naryOperation`.
+    /// ASM's `SourceInterpreter.naryOperation`: a value of the size of the given `return_type`
+    /// (an invoke's, see [`Interpreter::nary_operation`]), or else of the type read from the
+    /// instruction's descriptor.
     ///
     /// # Errors
     ///
@@ -152,13 +154,17 @@ impl<'s> SourceInterpreter<'s> {
     pub fn nary_operation<'v, P: Producer>(
         insn: InsnRef<'_>,
         _values: &[SourceValue<'v, P>],
+        return_type: Option<&Type<'_>>,
     ) -> Result<SourceValue<'v, P>, AnalyzerError> {
+        if let Some(ty) = return_type {
+            return Ok(SourceValue::of(size(ty)?, insn.id.into()));
+        }
         let size = match &insn.insn {
             Insn::MultiANewArray { .. } => 1,
             Insn::InvokeDynamic(invoke_dynamic) => {
-                size(&return_type(insn.resolve(invoke_dynamic.desc))?)?
+                size(&get_return_type(insn.resolve(invoke_dynamic.desc))?)?
             }
-            Insn::Method { desc, .. } => size(&return_type(insn.resolve(*desc))?)?,
+            Insn::Method { desc, .. } => size(&get_return_type(insn.resolve(*desc))?)?,
             _ => return Err(cast_error(insn, "MethodInsnNode")),
         };
         Ok(SourceValue::of(size, insn.id.into()))
@@ -277,8 +283,9 @@ impl<'s> Interpreter for SourceInterpreter<'s> {
         &mut self,
         insn: InsnRef<'_>,
         values: &[SourceValue<'s>],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<SourceValue<'s>>, AnalyzerError> {
-        SourceInterpreter::nary_operation(insn, values).map(Some)
+        SourceInterpreter::nary_operation(insn, values, return_type).map(Some)
     }
 
     fn return_operation(

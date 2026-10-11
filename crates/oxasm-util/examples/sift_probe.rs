@@ -150,8 +150,9 @@ impl<'s> Interpreter for OriginSourceInterpreter<'s> {
         &mut self,
         insn: InsnRef<'_>,
         values: &[OriginValue<'s>],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<OriginValue<'s>>, AnalyzerError> {
-        SourceInterpreter::nary_operation(insn, values).map(Some)
+        SourceInterpreter::nary_operation(insn, values, return_type).map(Some)
     }
 
     fn return_operation(

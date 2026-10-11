@@ -21,7 +21,7 @@ use oxasm::opcodes::*;
 use oxasm::{ClassReader, Label, ParsingOptions, Type, jstr};
 use oxasm_analysis::{
     Analyzer, AnalyzerError, AnalyzerHooks, BasicInterpreter, BasicValue, Frame, Frames, InsnRef,
-    Interpreter,
+    Interpreter, SourceInterpreter, SourceValue,
 };
 use oxasm_testkit::PrecompiledClass;
 use oxasm_tree::{ClassNode, MethodNode, TryCatchBlockNode};
@@ -227,8 +227,9 @@ impl Interpreter for BadInterpreter {
         &mut self,
         insn: InsnRef<'_>,
         values: &[BasicValue],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<BasicValue>, AnalyzerError> {
-        self.0.nary_operation(insn, values)
+        self.0.nary_operation(insn, values, return_type)
     }
     fn return_operation(
         &mut self,
@@ -401,4 +402,118 @@ fn frames_are_a_view_and_copies_of_them_are_independent() {
         1
     );
     assert_eq!(printed(&taken), expected);
+}
+
+/// A BasicInterpreter that records the return types the frame passes to `nary_operation`, and
+/// checks that the stock interpreters' values are those of their own descriptor walk.
+struct ReturnTypeRecorder(BasicInterpreter, Vec<(u8, Option<String>)>);
+
+impl Interpreter for ReturnTypeRecorder {
+    type V = BasicValue;
+
+    fn new_value(&mut self, ty: Option<&Type>) -> Result<Option<BasicValue>, AnalyzerError> {
+        self.0.new_value(ty)
+    }
+    fn new_operation(&mut self, insn: InsnRef<'_>) -> Result<Option<BasicValue>, AnalyzerError> {
+        self.0.new_operation(insn)
+    }
+    fn copy_operation(
+        &mut self,
+        insn: InsnRef<'_>,
+        value: &BasicValue,
+    ) -> Result<BasicValue, AnalyzerError> {
+        self.0.copy_operation(insn, value)
+    }
+    fn unary_operation(
+        &mut self,
+        insn: InsnRef<'_>,
+        value: &BasicValue,
+    ) -> Result<Option<BasicValue>, AnalyzerError> {
+        self.0.unary_operation(insn, value)
+    }
+    fn binary_operation(
+        &mut self,
+        insn: InsnRef<'_>,
+        value1: &BasicValue,
+        value2: &BasicValue,
+    ) -> Result<Option<BasicValue>, AnalyzerError> {
+        self.0.binary_operation(insn, value1, value2)
+    }
+    fn ternary_operation(
+        &mut self,
+        insn: InsnRef<'_>,
+        value1: &BasicValue,
+        value2: &BasicValue,
+        value3: &BasicValue,
+    ) -> Result<Option<BasicValue>, AnalyzerError> {
+        self.0.ternary_operation(insn, value1, value2, value3)
+    }
+    fn nary_operation(
+        &mut self,
+        insn: InsnRef<'_>,
+        values: &[BasicValue],
+        return_type: Option<&Type<'_>>,
+    ) -> Result<Option<BasicValue>, AnalyzerError> {
+        self.1.push((
+            insn.opcode().unwrap(),
+            return_type.map(|ty| ty.get_descriptor().to_string()),
+        ));
+        let walked = BasicInterpreter::nary_operation(&mut self.0, insn, values, None)?;
+        let no_sources: &[SourceValue] = &[];
+        assert_eq!(
+            SourceInterpreter::nary_operation(insn, no_sources, return_type)?,
+            SourceInterpreter::nary_operation(insn, no_sources, None)?
+        );
+        let value = self.0.nary_operation(insn, values, return_type)?;
+        assert_eq!(value, walked);
+        Ok(value)
+    }
+    fn return_operation(
+        &mut self,
+        insn: InsnRef<'_>,
+        value: &BasicValue,
+        expected: Option<&BasicValue>,
+    ) -> Result<(), AnalyzerError> {
+        self.0.return_operation(insn, value, expected)
+    }
+    fn merge(
+        &mut self,
+        value1: &BasicValue,
+        value2: &BasicValue,
+    ) -> Result<Option<BasicValue>, AnalyzerError> {
+        self.0.merge(value1, value2)
+    }
+}
+
+/// The frame passes an invoke's return type to `nary_operation`, and `None` for a
+/// `MULTIANEWARRAY` (oxasm's own test: ASM's `naryOperation` has no such parameter).
+#[test]
+fn nary_operation_is_told_an_invokes_return_type() {
+    let method_node = MethodNodeBuilder::with_maxs(2, 1)
+        .iconst_0()
+        .iconst_0()
+        .multi_a_new_array_insn("[[I", 2)
+        .pop()
+        .iconst_0()
+        .method_insn(INVOKESTATIC, "C", "m", "(I)J", false)
+        .insn(POP2)
+        .method_insn(INVOKESTATIC, "C", "v", "()V", false)
+        .aload(0)
+        .iconst_0()
+        .method_insn(INVOKEVIRTUAL, "C", "s", "(I)Ljava/lang/String;", false)
+        .pop()
+        .vreturn()
+        .build();
+    let mut analyzer = Analyzer::new(ReturnTypeRecorder(BasicInterpreter::new(), Vec::new()));
+
+    analyzer.analyze(jstr!(CLASS_NAME), &method_node).unwrap();
+
+    let recorded = &analyzer.interpreter().1;
+    let expected: Vec<(u8, Option<String>)> = vec![
+        (MULTIANEWARRAY, None),
+        (INVOKESTATIC, Some("J".into())),
+        (INVOKESTATIC, Some("V".into())),
+        (INVOKEVIRTUAL, Some("Ljava/lang/String;".into())),
+    ];
+    assert_eq!(*recorded, expected);
 }

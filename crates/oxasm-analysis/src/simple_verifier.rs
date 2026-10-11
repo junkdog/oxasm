@@ -467,8 +467,9 @@ impl<H: ClassHierarchy> Interpreter for SimpleVerifier<H> {
         &mut self,
         insn: InsnRef<'_>,
         values: &[BasicValue],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<BasicValue>, AnalyzerError> {
-        BasicVerifier::nary_operation(self, insn, values)
+        BasicVerifier::nary_operation(self, insn, values, return_type)
     }
 
     fn return_operation(

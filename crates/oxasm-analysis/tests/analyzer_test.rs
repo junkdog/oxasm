@@ -1545,6 +1545,7 @@ impl Interpreter for MockInterpreter {
         &mut self,
         _insn: InsnRef<'_>,
         _values: &[MockValue],
+        _return_type: Option<&Type<'_>>,
     ) -> Result<Option<MockValue>, AnalyzerError> {
         Err(unsupported())
     }

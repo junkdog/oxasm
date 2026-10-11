@@ -244,7 +244,9 @@ impl BasicInterpreter {
         None
     }
 
-    /// ASM's `BasicInterpreter.naryOperation`, which calls `this.new_value`.
+    /// ASM's `BasicInterpreter.naryOperation`, which calls `this.new_value`: with the given
+    /// `return_type` (an invoke's, see [`Interpreter::nary_operation`]), or else the type read
+    /// from the instruction's descriptor.
     ///
     /// # Errors
     ///
@@ -253,14 +255,20 @@ impl BasicInterpreter {
         this: &mut I,
         insn: InsnRef<'_>,
         _values: &[BasicValue],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<BasicValue>, AnalyzerError>
     where
         I: Interpreter<V = BasicValue> + ?Sized,
     {
+        if let Some(ty) = return_type {
+            return this.new_value(Some(ty));
+        }
         let ty = match &insn.insn {
             Insn::MultiANewArray { desc, .. } => get_type(insn.resolve(*desc))?,
-            Insn::InvokeDynamic(invoke_dynamic) => return_type(insn.resolve(invoke_dynamic.desc))?,
-            Insn::Method { desc, .. } => return_type(insn.resolve(*desc))?,
+            Insn::InvokeDynamic(invoke_dynamic) => {
+                get_return_type(insn.resolve(invoke_dynamic.desc))?
+            }
+            Insn::Method { desc, .. } => get_return_type(insn.resolve(*desc))?,
             _ => return Err(cast_error(insn, "MethodInsnNode")),
         };
         this.new_value(Some(&ty))
@@ -323,8 +331,9 @@ impl Interpreter for BasicInterpreter {
         &mut self,
         insn: InsnRef<'_>,
         values: &[BasicValue],
+        return_type: Option<&Type<'_>>,
     ) -> Result<Option<BasicValue>, AnalyzerError> {
-        BasicInterpreter::nary_operation(self, insn, values)
+        BasicInterpreter::nary_operation(self, insn, values, return_type)
     }
 
     fn return_operation(
@@ -364,7 +373,7 @@ pub(crate) fn get_type(descriptor: &JavaStr) -> Result<Type<'_>, AnalyzerError> 
 }
 
 /// `Type.getReturnType(methodDescriptor)`, whose exceptions are runtime errors.
-pub(crate) fn return_type(method_descriptor: &JavaStr) -> Result<Type<'_>, AnalyzerError> {
+pub(crate) fn get_return_type(method_descriptor: &JavaStr) -> Result<Type<'_>, AnalyzerError> {
     Type::try_get_return_type_of(method_descriptor).map_err(|e| AnalyzerError::runtime(e.message()))
 }
 
