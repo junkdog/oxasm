@@ -29,11 +29,11 @@ impl<'b> ClassReader<'b> {
         // Read the module_name_index, module_flags and module_version_index fields and visit
         // them.
         let mut current_offset = module_offset;
-        let module_name = self.read_class_at(current_offset)?;
-        let module_flags = u32::from(self.u16_at(current_offset + 2)?);
-        let module_version = self.utf8_at(current_offset + 4)?;
+        let module_name = tri!(self.read_class_at(current_offset));
+        let module_flags = u32::from(tri!(self.u16_at(current_offset + 2)));
+        let module_version = tri!(self.utf8_at(current_offset + 4));
         current_offset += 6;
-        let module_name = required(module_name, module_offset)?;
+        let module_name = tri!(required(module_name, module_offset));
         let Some(mut module_visitor) =
             class_visitor.visit_module(module_name, module_flags, module_version)
         else {
@@ -47,26 +47,26 @@ impl<'b> ClassReader<'b> {
 
         // Visit the ModulePackages attribute.
         if module_packages_offset != 0 {
-            let package_count = self.u16_at(module_packages_offset)?;
+            let package_count = tri!(self.u16_at(module_packages_offset));
             let mut current_package_offset = module_packages_offset + 2;
             for _ in 0..package_count {
-                let package = self.read_class_at(current_package_offset)?;
-                module_visitor.visit_package(required(package, current_package_offset)?);
+                let package = tri!(self.read_class_at(current_package_offset));
+                module_visitor.visit_package(tri!(required(package, current_package_offset)));
                 current_package_offset += 2;
             }
         }
 
         // Read the 'requires_count' and 'requires' fields.
-        let requires_count = self.u16_at(current_offset)?;
+        let requires_count = tri!(self.u16_at(current_offset));
         current_offset += 2;
         for _ in 0..requires_count {
             // Read the requires_index, requires_flags and requires_version fields and visit
             // them.
-            let requires = self.read_class_at(current_offset)?;
-            let requires_flags = u32::from(self.u16_at(current_offset + 2)?);
-            let requires_version = self.utf8_at(current_offset + 4)?;
+            let requires = tri!(self.read_class_at(current_offset));
+            let requires_flags = u32::from(tri!(self.u16_at(current_offset + 2)));
+            let requires_version = tri!(self.utf8_at(current_offset + 4));
             module_visitor.visit_require(
-                required(requires, current_offset)?,
+                tri!(required(requires, current_offset)),
                 requires_flags,
                 requires_version,
             );
@@ -76,23 +76,23 @@ impl<'b> ClassReader<'b> {
         // Read the 'exports_count' and 'exports' fields, then the 'opens_count' and 'opens'
         // fields.
         for opens in [false, true] {
-            let count = self.u16_at(current_offset)?;
+            let count = tri!(self.u16_at(current_offset));
             current_offset += 2;
             for _ in 0..count {
                 // Read the exports_index (opens_index), exports_flags (opens_flags),
                 // exports_to_count (opens_to_count) and exports_to_index (opens_to_index) fields
                 // and visit them.
-                let package = self.read_class_at(current_offset)?;
-                let package = required(package, current_offset)?;
-                let flags = u32::from(self.u16_at(current_offset + 2)?);
-                let to_count = self.u16_at(current_offset + 4)?;
+                let package = tri!(self.read_class_at(current_offset));
+                let package = tri!(required(package, current_offset));
+                let flags = u32::from(tri!(self.u16_at(current_offset + 2)));
+                let to_count = tri!(self.u16_at(current_offset + 4));
                 current_offset += 6;
                 let mut to = Vec::with_capacity(usize::from(to_count));
                 for _ in 0..to_count {
-                    to.push(required(
-                        self.read_class_at(current_offset)?,
+                    to.push(tri!(required(
+                        tri!(self.read_class_at(current_offset)),
                         current_offset,
-                    )?);
+                    )));
                     current_offset += 2;
                 }
                 if opens {
@@ -104,31 +104,34 @@ impl<'b> ClassReader<'b> {
         }
 
         // Read the 'uses_count' and 'uses' fields.
-        let uses_count = self.u16_at(current_offset)?;
+        let uses_count = tri!(self.u16_at(current_offset));
         current_offset += 2;
         for _ in 0..uses_count {
-            module_visitor.visit_use(required(
-                self.read_class_at(current_offset)?,
+            module_visitor.visit_use(tri!(required(
+                tri!(self.read_class_at(current_offset)),
                 current_offset,
-            )?);
+            )));
             current_offset += 2;
         }
 
         // Read the 'provides_count' and 'provides' fields.
-        let provides_count = self.u16_at(current_offset)?;
+        let provides_count = tri!(self.u16_at(current_offset));
         current_offset += 2;
         for _ in 0..provides_count {
             // Read the provides_index, provides_with_count and provides_with_index fields and
             // visit them.
-            let provides = required(self.read_class_at(current_offset)?, current_offset)?;
-            let provides_with_count = self.u16_at(current_offset + 2)?;
+            let provides = tri!(required(
+                tri!(self.read_class_at(current_offset)),
+                current_offset
+            ));
+            let provides_with_count = tri!(self.u16_at(current_offset + 2));
             current_offset += 4;
             let mut provides_with = Vec::with_capacity(usize::from(provides_with_count));
             for _ in 0..provides_with_count {
-                provides_with.push(required(
-                    self.read_class_at(current_offset)?,
+                provides_with.push(tri!(required(
+                    tri!(self.read_class_at(current_offset)),
                     current_offset,
-                )?);
+                )));
                 current_offset += 2;
             }
             module_visitor.visit_provide(provides, &provides_with);
@@ -149,8 +152,8 @@ impl<'b> ClassReader<'b> {
         record_component_offset: i64,
     ) -> Result<i64, ReadError> {
         let mut current_offset = record_component_offset;
-        let name = self.utf8_at(current_offset)?;
-        let descriptor = self.utf8_at(current_offset + 2)?;
+        let name = tri!(self.utf8_at(current_offset));
+        let descriptor = tri!(self.utf8_at(current_offset + 2));
         current_offset += 4;
 
         // Read the record component attributes (the variables are ordered as in Section 4.7 of
@@ -172,19 +175,19 @@ impl<'b> ClassReader<'b> {
 
         let mut cycles = CursorCycles::new();
         let mut effects = 0;
-        let mut remaining = self.u16_at(current_offset)?;
+        let mut remaining = tri!(self.u16_at(current_offset));
         current_offset += 2;
         while remaining > 0 {
             remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
-            let attribute_name = self.utf8_at(current_offset)?;
-            let attribute_length = self.i32_at(current_offset + 2)?;
+            let attribute_name = tri!(self.utf8_at(current_offset));
+            let attribute_length = tri!(self.i32_at(current_offset + 2));
             current_offset += 6;
             // The tests are sorted in decreasing frequency order (based on frequencies observed
             // on typical classes).
             match attribute_name {
                 Some(n) if n == constants::SIGNATURE => {
-                    signature = self.utf8_at(current_offset)?;
+                    signature = tri!(self.utf8_at(current_offset));
                 }
                 Some(n) if n == constants::RUNTIME_VISIBLE_ANNOTATIONS => {
                     runtime_visible_annotations_offset = current_offset;
@@ -200,13 +203,13 @@ impl<'b> ClassReader<'b> {
                 }
                 _ => {
                     effects += 1;
-                    attributes.push(self.read_attribute(
+                    attributes.push(tri!(self.read_attribute(
                         context.codecs,
                         attribute_name,
                         current_offset,
                         attribute_length,
                         None,
-                    )?);
+                    )));
                 }
             }
             current_offset += i64::from(attribute_length);
@@ -216,8 +219,8 @@ impl<'b> ClassReader<'b> {
         }
 
         let Some(mut record_component_visitor) = class_visitor.visit_record_component(
-            required(name, record_component_offset)?,
-            required(descriptor, record_component_offset + 2)?,
+            tri!(required(name, record_component_offset)),
+            tri!(required(descriptor, record_component_offset + 2)),
             signature,
         ) else {
             return Ok(current_offset);
@@ -226,20 +229,20 @@ impl<'b> ClassReader<'b> {
 
         // Visit the RuntimeVisibleAnnotations and RuntimeInvisibleAnnotations attributes, then
         // the RuntimeVisibleTypeAnnotations and RuntimeInvisibleTypeAnnotations attributes.
-        self.read_annotations_attribute(visitor, runtime_visible_annotations_offset, true)?;
-        self.read_annotations_attribute(visitor, runtime_invisible_annotations_offset, false)?;
-        self.read_type_annotations_attribute(
+        tri!(self.read_annotations_attribute(visitor, runtime_visible_annotations_offset, true));
+        tri!(self.read_annotations_attribute(visitor, runtime_invisible_annotations_offset, false));
+        tri!(self.read_type_annotations_attribute(
             visitor,
             context,
             runtime_visible_type_annotations_offset,
             true,
-        )?;
-        self.read_type_annotations_attribute(
+        ));
+        tri!(self.read_type_annotations_attribute(
             visitor,
             context,
             runtime_invisible_type_annotations_offset,
             false,
-        )?;
+        ));
 
         // Visit the non standard attributes (ASM visits its reversed list from its head).
         for attribute in attributes.iter().rev() {
@@ -262,9 +265,9 @@ impl<'b> ClassReader<'b> {
     ) -> Result<i64, ReadError> {
         // Read the access_flags, name_index and descriptor_index fields.
         let mut current_offset = field_info_offset;
-        let mut access_flags = u32::from(self.u16_at(current_offset)?);
-        let name = self.utf8_at(current_offset + 2)?;
-        let descriptor = self.utf8_at(current_offset + 4)?;
+        let mut access_flags = u32::from(tri!(self.u16_at(current_offset)));
+        let name = tri!(self.utf8_at(current_offset + 2));
+        let descriptor = tri!(self.utf8_at(current_offset + 4));
         current_offset += 6;
 
         // Read the field attributes (the variables are ordered as in Section 4.7 of the JVMS).
@@ -286,27 +289,27 @@ impl<'b> ClassReader<'b> {
 
         let mut cycles = CursorCycles::new();
         let mut effects = 0;
-        let mut remaining = self.u16_at(current_offset)?;
+        let mut remaining = tri!(self.u16_at(current_offset));
         current_offset += 2;
         while remaining > 0 {
             remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
-            let attribute_name = self.utf8_at(current_offset)?;
-            let attribute_length = self.i32_at(current_offset + 2)?;
+            let attribute_name = tri!(self.utf8_at(current_offset));
+            let attribute_length = tri!(self.i32_at(current_offset + 2));
             current_offset += 6;
             // The tests are sorted in decreasing frequency order (based on frequencies observed
             // on typical classes).
             match attribute_name {
                 Some(n) if n == constants::CONSTANT_VALUE => {
-                    let constant_value_index = self.u16_at(current_offset)?;
+                    let constant_value_index = tri!(self.u16_at(current_offset));
                     constant_value = if constant_value_index == 0 {
                         None
                     } else {
-                        Some(self.const_at(usize::from(constant_value_index))?)
+                        Some(tri!(self.const_at(usize::from(constant_value_index))))
                     };
                 }
                 Some(n) if n == constants::SIGNATURE => {
-                    signature = self.utf8_at(current_offset)?;
+                    signature = tri!(self.utf8_at(current_offset));
                 }
                 Some(n) if n == constants::DEPRECATED => {
                     access_flags |= ACC_DEPRECATED;
@@ -328,13 +331,13 @@ impl<'b> ClassReader<'b> {
                 }
                 _ => {
                     effects += 1;
-                    attributes.push(self.read_attribute(
+                    attributes.push(tri!(self.read_attribute(
                         context.codecs,
                         attribute_name,
                         current_offset,
                         attribute_length,
                         None,
-                    )?);
+                    )));
                 }
             }
             current_offset += i64::from(attribute_length);
@@ -346,8 +349,8 @@ impl<'b> ClassReader<'b> {
         // Visit the field declaration.
         let Some(mut field_visitor) = class_visitor.visit_field(
             access_flags,
-            required(name, field_info_offset + 2)?,
-            required(descriptor, field_info_offset + 4)?,
+            tri!(required(name, field_info_offset + 2)),
+            tri!(required(descriptor, field_info_offset + 4)),
             signature,
             constant_value.as_ref(),
         ) else {
@@ -357,20 +360,20 @@ impl<'b> ClassReader<'b> {
 
         // Visit the RuntimeVisibleAnnotations and RuntimeInvisibleAnnotations attributes, then
         // the RuntimeVisibleTypeAnnotations and RuntimeInvisibleTypeAnnotations attributes.
-        self.read_annotations_attribute(visitor, runtime_visible_annotations_offset, true)?;
-        self.read_annotations_attribute(visitor, runtime_invisible_annotations_offset, false)?;
-        self.read_type_annotations_attribute(
+        tri!(self.read_annotations_attribute(visitor, runtime_visible_annotations_offset, true));
+        tri!(self.read_annotations_attribute(visitor, runtime_invisible_annotations_offset, false));
+        tri!(self.read_type_annotations_attribute(
             visitor,
             context,
             runtime_visible_type_annotations_offset,
             true,
-        )?;
-        self.read_type_annotations_attribute(
+        ));
+        tri!(self.read_type_annotations_attribute(
             visitor,
             context,
             runtime_invisible_type_annotations_offset,
             false,
-        )?;
+        ));
 
         // Visit the non standard attributes.
         for attribute in attributes.iter().rev() {
@@ -393,9 +396,9 @@ impl<'b> ClassReader<'b> {
     ) -> Result<i64, ReadError> {
         // Read the access_flags, name_index and descriptor_index fields.
         let mut current_offset = method_info_offset;
-        context.current_method_access_flags = u32::from(self.u16_at(current_offset)?);
-        context.current_method_name = self.utf8_at(current_offset + 2)?;
-        context.current_method_descriptor = self.utf8_at(current_offset + 4)?;
+        context.current_method_access_flags = u32::from(tri!(self.u16_at(current_offset)));
+        context.current_method_name = tri!(self.utf8_at(current_offset + 2));
+        context.current_method_descriptor = tri!(self.utf8_at(current_offset + 4));
         current_offset += 6;
 
         // Read the method attributes (the variables are ordered as in Section 4.7 of the JVMS).
@@ -431,13 +434,13 @@ impl<'b> ClassReader<'b> {
 
         let mut cycles = CursorCycles::new();
         let mut effects = 0;
-        let mut remaining = self.u16_at(current_offset)?;
+        let mut remaining = tri!(self.u16_at(current_offset));
         current_offset += 2;
         while remaining > 0 {
             remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
-            let attribute_name = self.utf8_at(current_offset)?;
-            let attribute_length = self.i32_at(current_offset + 2)?;
+            let attribute_name = tri!(self.utf8_at(current_offset));
+            let attribute_length = tri!(self.i32_at(current_offset + 2));
             current_offset += 6;
             // The tests are sorted in decreasing frequency order (based on frequencies observed
             // on typical classes).
@@ -449,19 +452,19 @@ impl<'b> ClassReader<'b> {
                 }
                 Some(n) if n == constants::EXCEPTIONS => {
                     exceptions_offset = current_offset;
-                    let number_of_exceptions = self.u16_at(exceptions_offset)?;
+                    let number_of_exceptions = tri!(self.u16_at(exceptions_offset));
                     exceptions = Vec::with_capacity(usize::from(number_of_exceptions));
                     let mut current_exception_offset = exceptions_offset + 2;
                     for _ in 0..number_of_exceptions {
-                        exceptions.push(required(
-                            self.read_class_at(current_exception_offset)?,
+                        exceptions.push(tri!(required(
+                            tri!(self.read_class_at(current_exception_offset)),
                             current_exception_offset,
-                        )?);
+                        )));
                         current_exception_offset += 2;
                     }
                 }
                 Some(n) if n == constants::SIGNATURE => {
-                    signature_index = self.u16_at(current_offset)?;
+                    signature_index = tri!(self.u16_at(current_offset));
                 }
                 Some(n) if n == constants::DEPRECATED => {
                     context.current_method_access_flags |= ACC_DEPRECATED;
@@ -496,13 +499,13 @@ impl<'b> ClassReader<'b> {
                 }
                 _ => {
                     effects += 1;
-                    attributes.push(self.read_attribute(
+                    attributes.push(tri!(self.read_attribute(
                         context.codecs,
                         attribute_name,
                         current_offset,
                         attribute_length,
                         None,
-                    )?);
+                    )));
                 }
             }
             current_offset += i64::from(attribute_length);
@@ -515,12 +518,18 @@ impl<'b> ClassReader<'b> {
         let signature = if signature_index == 0 {
             None
         } else {
-            Some(self.utf(usize::from(signature_index))?)
+            Some(tri!(self.utf(usize::from(signature_index))))
         };
         let Some(mut method_visitor) = class_visitor.visit_method(
             context.current_method_access_flags,
-            required(context.current_method_name, method_info_offset + 2)?,
-            required(context.current_method_descriptor, method_info_offset + 4)?,
+            tri!(required(
+                context.current_method_name,
+                method_info_offset + 2
+            )),
+            tri!(required(
+                context.current_method_descriptor,
+                method_info_offset + 4
+            )),
             signature,
             &exceptions,
         ) else {
@@ -536,7 +545,7 @@ impl<'b> ClassReader<'b> {
             reader: self,
             has_synthetic_attribute: synthetic,
             has_deprecated_attribute: (context.current_method_access_flags & ACC_DEPRECATED) != 0,
-            descriptor_index: self.u16_at(method_info_offset + 4)?,
+            descriptor_index: tri!(self.u16_at(method_info_offset + 4)),
             signature_index,
             exceptions_offset,
             method_info_offset,
@@ -550,12 +559,12 @@ impl<'b> ClassReader<'b> {
         if method_parameters_offset != 0
             && !context.parsing_options.contains(ParsingOptions::SKIP_DEBUG)
         {
-            let parameters_count = self.u8_at(method_parameters_offset)?;
+            let parameters_count = tri!(self.u8_at(method_parameters_offset));
             let mut current_parameter_offset = method_parameters_offset + 1;
             for _ in 0..parameters_count {
                 // Read the name_index and access_flags fields and visit them.
-                let name = self.utf8_at(current_parameter_offset)?;
-                let access = u32::from(self.u16_at(current_parameter_offset + 2)?);
+                let name = tri!(self.utf8_at(current_parameter_offset));
+                let access = u32::from(tri!(self.u16_at(current_parameter_offset + 2)));
                 visitor.visit_parameter(name, access);
                 current_parameter_offset += 4;
             }
@@ -564,12 +573,12 @@ impl<'b> ClassReader<'b> {
         // Visit the AnnotationDefault attribute.
         if annotation_default_offset != 0 {
             let mut annotation_visitor = visitor.visit_annotation_default();
-            self.read_element_value(
+            tri!(self.read_element_value(
                 annotation_visitor.as_deref_mut(),
                 annotation_default_offset,
                 None,
                 0,
-            )?;
+            ));
             if let Some(annotation_visitor) = annotation_visitor.as_deref_mut() {
                 annotation_visitor.visit_end();
             }
@@ -577,37 +586,37 @@ impl<'b> ClassReader<'b> {
 
         // Visit the RuntimeVisibleAnnotations and RuntimeInvisibleAnnotations attributes, then
         // the RuntimeVisibleTypeAnnotations and RuntimeInvisibleTypeAnnotations attributes.
-        self.read_annotations_attribute(visitor, runtime_visible_annotations_offset, true)?;
-        self.read_annotations_attribute(visitor, runtime_invisible_annotations_offset, false)?;
-        self.read_type_annotations_attribute(
+        tri!(self.read_annotations_attribute(visitor, runtime_visible_annotations_offset, true));
+        tri!(self.read_annotations_attribute(visitor, runtime_invisible_annotations_offset, false));
+        tri!(self.read_type_annotations_attribute(
             visitor,
             context,
             runtime_visible_type_annotations_offset,
             true,
-        )?;
-        self.read_type_annotations_attribute(
+        ));
+        tri!(self.read_type_annotations_attribute(
             visitor,
             context,
             runtime_invisible_type_annotations_offset,
             false,
-        )?;
+        ));
 
         // Visit the RuntimeVisibleParameterAnnotations attribute.
         if runtime_visible_parameter_annotations_offset != 0 {
-            self.read_parameter_annotations(
+            tri!(self.read_parameter_annotations(
                 visitor,
                 runtime_visible_parameter_annotations_offset,
                 /* visible= */ true,
-            )?;
+            ));
         }
 
         // Visit the RuntimeInvisibleParameterAnnotations attribute.
         if runtime_invisible_parameter_annotations_offset != 0 {
-            self.read_parameter_annotations(
+            tri!(self.read_parameter_annotations(
                 visitor,
                 runtime_invisible_parameter_annotations_offset,
                 /* visible= */ false,
-            )?;
+            ));
         }
 
         // Visit the non standard attributes.
@@ -618,7 +627,7 @@ impl<'b> ClassReader<'b> {
         // Visit the Code attribute.
         if code_offset != 0 {
             visitor.visit_code();
-            self.read_code(visitor, context, code_offset)?;
+            tri!(self.read_code(visitor, context, code_offset));
         }
 
         // Visit the end of the method.

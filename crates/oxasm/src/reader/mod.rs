@@ -32,6 +32,29 @@
 
 #![allow(clippy::cast_possible_truncation)] // Java's narrowing casts are the specification here.
 
+/// `expr?` on a `Result`, with its error branch marked cold: the reader's hot code uses it for
+/// `?`.
+///
+/// Without a profile, LLVM weighs the two branches of a `?` on a call that isn't inlined the
+/// same, so the estimated frequency of the code halves at every `?`: in `read_code` most call
+/// sites then count as cold to the inliner, which stops inlining them, `#[inline]` or not. A
+/// `#[cold]` error constructor in the callee doesn't help, since the caller's branch on the
+/// returned value is a separate one. With `tri!`, the reader's `#[inline(always)]` functions
+/// (`read_utf`, `const_at`, ...) are those a profile-guided build inlines, whose size exceeds
+/// any threshold without a profile (`read` −6.5% together, −3% for `tri!` alone: experiment
+/// 51 in the optimization log). Closures keep `?`.
+macro_rules! tri {
+    ($e:expr) => {
+        match $e {
+            ::core::result::Result::Ok(v) => v,
+            ::core::result::Result::Err(e) => {
+                ::std::hint::cold_path();
+                return ::core::result::Result::Err(::core::convert::From::from(e));
+            }
+        }
+    };
+}
+
 mod annotations;
 mod code;
 mod constant_pool;
@@ -233,7 +256,7 @@ impl<'b> ClassReader<'b> {
         // Check the class' major_version. This field is after the magic and minor_version
         // fields, which use 4 and 2 bytes respectively.
         if check_class_version {
-            let major_version = reader.i16_at(6)?;
+            let major_version = tri!(reader.i16_at(6));
             if i32::from(major_version) > opcodes::V27 as i32 {
                 return Err(ReadError::new(
                     6,
@@ -243,7 +266,7 @@ impl<'b> ClassReader<'b> {
         }
         // Create the constant pool array. The constant_pool_count field is after the magic,
         // minor_version and major_version fields, which use 4, 2 and 2 bytes respectively.
-        let constant_pool_count = usize::from(reader.u16_at(8)?);
+        let constant_pool_count = usize::from(tri!(reader.u16_at(8)));
         let mut cp_info_entries = Box::<[AtomicU64]>::new_uninit_slice(constant_pool_count);
         if let Some(entry) = cp_info_entries.first_mut() {
             entry.write(AtomicU64::new(0));
@@ -347,7 +370,7 @@ impl<'b> ClassReader<'b> {
 
         // Read the BootstrapMethods attribute, if any (only get the offset of each method).
         if has_bootstrap_methods {
-            reader.bootstrap_method_offsets = Some(reader.read_bootstrap_methods_attribute()?);
+            reader.bootstrap_method_offsets = Some(tri!(reader.read_bootstrap_methods_attribute()));
         }
         Ok(reader)
     }
@@ -383,7 +406,7 @@ impl<'b> ClassReader<'b> {
     ///
     /// If the class file is truncated.
     pub fn get_access(&self) -> Result<u32, ReadError> {
-        Ok(u32::from(self.u16_at(self.header)?))
+        Ok(u32::from(tri!(self.u16_at(self.header))))
     }
 
     /// Returns the internal name of the class (see
@@ -395,7 +418,7 @@ impl<'b> ClassReader<'b> {
     /// `null`).
     pub fn get_class_name(&self) -> Result<&JavaStr, ReadError> {
         // this_class is just after the access_flags field (using 2 bytes).
-        required(self.read_class_at(self.header + 2)?, self.header + 2)
+        required(tri!(self.read_class_at(self.header + 2)), self.header + 2)
     }
 
     /// Returns the internal name of the super class (see
@@ -420,14 +443,14 @@ impl<'b> ClassReader<'b> {
         // interfaces_count is after the access_flags, this_class and super_class fields (2 bytes
         // each).
         let mut current_offset = self.header + 6;
-        let interfaces_count = self.u16_at(current_offset)?;
+        let interfaces_count = tri!(self.u16_at(current_offset));
         let mut interfaces = Vec::with_capacity(usize::from(interfaces_count));
         for _ in 0..interfaces_count {
             current_offset += 2;
-            interfaces.push(required(
-                self.read_class_at(current_offset)?,
+            interfaces.push(tri!(required(
+                tri!(self.read_class_at(current_offset)),
                 current_offset,
-            )?);
+            )));
         }
         Ok(interfaces)
     }
@@ -493,17 +516,17 @@ impl<'b> ClassReader<'b> {
 
         // Read the access_flags, this_class, super_class, interface_count and interfaces fields.
         let mut current_offset = self.header;
-        let mut access_flags = u32::from(self.u16_at(current_offset)?);
-        let this_class = self.read_class_at(current_offset + 2)?;
-        let super_class = self.read_class_at(current_offset + 4)?;
-        let interfaces_count = self.u16_at(current_offset + 6)?;
+        let mut access_flags = u32::from(tri!(self.u16_at(current_offset)));
+        let this_class = tri!(self.read_class_at(current_offset + 2));
+        let super_class = tri!(self.read_class_at(current_offset + 4));
+        let interfaces_count = tri!(self.u16_at(current_offset + 6));
         let mut interfaces = Vec::with_capacity(usize::from(interfaces_count));
         current_offset += 8;
         for _ in 0..interfaces_count {
-            interfaces.push(required(
-                self.read_class_at(current_offset)?,
+            interfaces.push(tri!(required(
+                tri!(self.read_class_at(current_offset)),
                 current_offset,
-            )?);
+            )));
             current_offset += 2;
         }
 
@@ -546,21 +569,21 @@ impl<'b> ClassReader<'b> {
         let mut attributes = Vec::new();
 
         let (fields_count, methods_count, mut current_attribute_offset) =
-            self.get_member_counts_and_first_attribute_offset()?;
+            tri!(self.get_member_counts_and_first_attribute_offset());
         let mut cycles = CursorCycles::new();
         let mut effects = 0;
-        let mut remaining = self.u16_at(current_attribute_offset - 2)?;
+        let mut remaining = tri!(self.u16_at(current_attribute_offset - 2));
         while remaining > 0 {
             remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
-            let attribute_name = self.utf8_at(current_attribute_offset)?;
-            let attribute_length = self.i32_at(current_attribute_offset + 2)?;
+            let attribute_name = tri!(self.utf8_at(current_attribute_offset));
+            let attribute_length = tri!(self.i32_at(current_attribute_offset + 2));
             current_attribute_offset += 6;
             // The tests are sorted in decreasing frequency order (based on frequencies observed
             // on typical classes).
             match attribute_name {
                 Some(n) if n == constants::SOURCE_FILE => {
-                    source_file = self.utf8_at(current_attribute_offset)?;
+                    source_file = tri!(self.utf8_at(current_attribute_offset));
                 }
                 Some(n) if n == constants::INNER_CLASSES => {
                     inner_classes_offset = current_attribute_offset;
@@ -569,7 +592,7 @@ impl<'b> ClassReader<'b> {
                     enclosing_method_offset = current_attribute_offset;
                 }
                 Some(n) if n == constants::NEST_HOST => {
-                    nest_host_class = self.read_class_at(current_attribute_offset)?;
+                    nest_host_class = tri!(self.read_class_at(current_attribute_offset));
                 }
                 Some(n) if n == constants::NEST_MEMBERS => {
                     nest_members_offset = current_attribute_offset;
@@ -578,7 +601,7 @@ impl<'b> ClassReader<'b> {
                     permitted_subclasses_offset = current_attribute_offset;
                 }
                 Some(n) if n == constants::SIGNATURE => {
-                    signature = self.utf8_at(current_attribute_offset)?;
+                    signature = tri!(self.utf8_at(current_attribute_offset));
                 }
                 Some(n) if n == constants::RUNTIME_VISIBLE_ANNOTATIONS => {
                     runtime_visible_annotations_offset = current_attribute_offset;
@@ -608,11 +631,11 @@ impl<'b> ClassReader<'b> {
                             ReadErrorKind::InvalidLength(attribute_length.into()),
                         ));
                     }
-                    source_debug_extension = Some(self.read_utf(
+                    source_debug_extension = Some(tri!(self.read_utf(
                         current_attribute_offset,
                         attribute_length,
                         attribute_length as usize,
-                    )?);
+                    )));
                 }
                 Some(n) if n == constants::RUNTIME_INVISIBLE_ANNOTATIONS => {
                     runtime_invisible_annotations_offset = current_attribute_offset;
@@ -628,7 +651,7 @@ impl<'b> ClassReader<'b> {
                     module_offset = current_attribute_offset;
                 }
                 Some(n) if n == constants::MODULE_MAIN_CLASS => {
-                    module_main_class = self.read_class_at(current_attribute_offset)?;
+                    module_main_class = tri!(self.read_class_at(current_attribute_offset));
                 }
                 Some(n) if n == constants::MODULE_PACKAGES => {
                     module_packages_offset = current_attribute_offset;
@@ -637,13 +660,13 @@ impl<'b> ClassReader<'b> {
                 Some(n) if n == constants::BOOTSTRAP_METHODS => {}
                 _ => {
                     effects += 1;
-                    attributes.push(self.read_attribute(
+                    attributes.push(tri!(self.read_attribute(
                         context.codecs,
                         attribute_name,
                         current_attribute_offset,
                         attribute_length,
                         None,
-                    )?);
+                    )));
                 }
             }
             current_attribute_offset += i64::from(attribute_length);
@@ -655,11 +678,11 @@ impl<'b> ClassReader<'b> {
         // Visit the class declaration. The minor_version and major_version fields start 6 bytes
         // before the first constant pool entry, which itself starts at cp_info_offset(1) - 1
         // (by definition).
-        let version_offset = self.cp_info_offset(1)? - 7;
+        let version_offset = tri!(self.cp_info_offset(1)) - 7;
         class_visitor.visit(
-            self.i32_at(version_offset)? as u32,
+            tri!(self.i32_at(version_offset)) as u32,
             access_flags,
-            required(this_class, self.header + 2)?,
+            tri!(required(this_class, self.header + 2)),
             signature,
             super_class,
             &interfaces,
@@ -682,12 +705,12 @@ impl<'b> ClassReader<'b> {
 
         // Visit the Module, ModulePackages and ModuleMainClass attributes.
         if module_offset != 0 {
-            self.read_module_attributes(
+            tri!(self.read_module_attributes(
                 class_visitor,
                 module_offset,
                 module_packages_offset,
                 module_main_class,
-            )?;
+            ));
         }
 
         // Visit the NestHost attribute.
@@ -697,19 +720,19 @@ impl<'b> ClassReader<'b> {
 
         // Visit the EnclosingMethod attribute.
         if enclosing_method_offset != 0 {
-            let class_name = self.read_class_at(enclosing_method_offset)?;
-            let method_index = self.u16_at(enclosing_method_offset + 2)?;
+            let class_name = tri!(self.read_class_at(enclosing_method_offset));
+            let method_index = tri!(self.u16_at(enclosing_method_offset + 2));
             let (name, type_) = if method_index == 0 {
                 (None, None)
             } else {
-                let name_and_type_offset = self.cp_info_offset(method_index.into())?;
+                let name_and_type_offset = tri!(self.cp_info_offset(method_index.into()));
                 (
-                    self.utf8_at(name_and_type_offset)?,
-                    self.utf8_at(name_and_type_offset + 2)?,
+                    tri!(self.utf8_at(name_and_type_offset)),
+                    tri!(self.utf8_at(name_and_type_offset + 2)),
                 )
             };
             class_visitor.visit_outer_class(
-                required(class_name, enclosing_method_offset)?,
+                tri!(required(class_name, enclosing_method_offset)),
                 name,
                 type_,
             );
@@ -717,24 +740,28 @@ impl<'b> ClassReader<'b> {
 
         // Visit the RuntimeVisibleAnnotations and RuntimeInvisibleAnnotations attributes, then
         // the RuntimeVisibleTypeAnnotations and RuntimeInvisibleTypeAnnotations attributes.
-        self.read_annotations_attribute(class_visitor, runtime_visible_annotations_offset, true)?;
-        self.read_annotations_attribute(
+        tri!(self.read_annotations_attribute(
+            class_visitor,
+            runtime_visible_annotations_offset,
+            true
+        ));
+        tri!(self.read_annotations_attribute(
             class_visitor,
             runtime_invisible_annotations_offset,
             false,
-        )?;
-        self.read_type_annotations_attribute(
+        ));
+        tri!(self.read_type_annotations_attribute(
             class_visitor,
             &mut context,
             runtime_visible_type_annotations_offset,
             true,
-        )?;
-        self.read_type_annotations_attribute(
+        ));
+        tri!(self.read_type_annotations_attribute(
             class_visitor,
             &mut context,
             runtime_invisible_type_annotations_offset,
             false,
-        )?;
+        ));
 
         // Visit the non standard attributes.
         for attribute in attributes.iter().rev() {
@@ -744,11 +771,11 @@ impl<'b> ClassReader<'b> {
         // Visit the NestedMembers attribute.
         if nest_members_offset != 0 {
             let mut current_nest_member_offset = nest_members_offset + 2;
-            for _ in 0..self.u16_at(nest_members_offset)? {
-                class_visitor.visit_nest_member(required(
-                    self.read_class_at(current_nest_member_offset)?,
+            for _ in 0..tri!(self.u16_at(nest_members_offset)) {
+                class_visitor.visit_nest_member(tri!(required(
+                    tri!(self.read_class_at(current_nest_member_offset)),
                     current_nest_member_offset,
-                )?);
+                )));
                 current_nest_member_offset += 2;
             }
         }
@@ -756,11 +783,11 @@ impl<'b> ClassReader<'b> {
         // Visit the PermittedSubclasses attribute.
         if permitted_subclasses_offset != 0 {
             let mut current_permitted_subclasses_offset = permitted_subclasses_offset + 2;
-            for _ in 0..self.u16_at(permitted_subclasses_offset)? {
-                class_visitor.visit_permitted_subclass(required(
-                    self.read_class_at(current_permitted_subclasses_offset)?,
+            for _ in 0..tri!(self.u16_at(permitted_subclasses_offset)) {
+                class_visitor.visit_permitted_subclass(tri!(required(
+                    tri!(self.read_class_at(current_permitted_subclasses_offset)),
                     current_permitted_subclasses_offset,
-                )?);
+                )));
                 current_permitted_subclasses_offset += 2;
             }
         }
@@ -768,13 +795,13 @@ impl<'b> ClassReader<'b> {
         // Visit the InnerClasses attribute.
         if inner_classes_offset != 0 {
             let mut current_classes_offset = inner_classes_offset + 2;
-            for _ in 0..self.u16_at(inner_classes_offset)? {
-                let name = self.read_class_at(current_classes_offset)?;
-                let outer_name = self.read_class_at(current_classes_offset + 2)?;
-                let inner_name = self.utf8_at(current_classes_offset + 4)?;
-                let access = self.u16_at(current_classes_offset + 6)?;
+            for _ in 0..tri!(self.u16_at(inner_classes_offset)) {
+                let name = tri!(self.read_class_at(current_classes_offset));
+                let outer_name = tri!(self.read_class_at(current_classes_offset + 2));
+                let inner_name = tri!(self.utf8_at(current_classes_offset + 4));
+                let access = tri!(self.u16_at(current_classes_offset + 6));
                 class_visitor.visit_inner_class(
-                    required(name, current_classes_offset)?,
+                    tri!(required(name, current_classes_offset)),
                     outer_name,
                     inner_name,
                     u32::from(access),
@@ -785,24 +812,24 @@ impl<'b> ClassReader<'b> {
 
         // Visit Record components.
         if record_offset != 0 {
-            let record_components_count = self.u16_at(record_offset)?;
+            let record_components_count = tri!(self.u16_at(record_offset));
             record_offset += 2;
             for _ in 0..record_components_count {
                 record_offset =
-                    self.read_record_component(class_visitor, &mut context, record_offset)?;
+                    tri!(self.read_record_component(class_visitor, &mut context, record_offset));
             }
         }
 
         // Visit the fields and methods.
-        let fields_count = self.u16_at(current_offset)?;
+        let fields_count = tri!(self.u16_at(current_offset));
         current_offset += 2;
         for _ in 0..fields_count {
-            current_offset = self.read_field(class_visitor, &mut context, current_offset)?;
+            current_offset = tri!(self.read_field(class_visitor, &mut context, current_offset));
         }
-        let methods_count = self.u16_at(current_offset)?;
+        let methods_count = tri!(self.u16_at(current_offset));
         current_offset += 2;
         for _ in 0..methods_count {
-            current_offset = self.read_method(class_visitor, &mut context, current_offset)?;
+            current_offset = tri!(self.read_method(class_visitor, &mut context, current_offset));
         }
 
         // Visit the end of the class.
@@ -817,7 +844,7 @@ impl<'b> ClassReader<'b> {
     /// Returns the offset in `class_file` of the first `ClassFile`'s 'attributes' array field
     /// entry.
     pub(crate) fn get_first_attribute_offset(&self) -> Result<i64, ReadError> {
-        Ok(self.get_member_counts_and_first_attribute_offset()?.2)
+        Ok(tri!(self.get_member_counts_and_first_attribute_offset()).2)
     }
 
     /// Returns the `fields_count` and `methods_count` of the `ClassFile`, and the offset in
@@ -825,13 +852,14 @@ impl<'b> ClassReader<'b> {
     fn get_member_counts_and_first_attribute_offset(&self) -> Result<(u16, u16, i64), ReadError> {
         // Skip the access_flags, this_class, super_class, and interfaces_count fields (using 2
         // bytes each), as well as the interfaces array field (2 bytes per interface).
-        let mut current_offset = self.header + 8 + i64::from(self.u16_at(self.header + 6)?) * 2;
+        let mut current_offset =
+            self.header + 8 + i64::from(tri!(self.u16_at(self.header + 6))) * 2;
 
         // Read the fields_count field, then skip the 'fields' and 'methods' array fields.
         // Nothing here has an effect, so every cycle of a cursor is skipped (`CursorCycles`).
         let mut members_counts = [0; 2];
         for count in &mut members_counts {
-            let members_count = self.u16_at(current_offset)?;
+            let members_count = tri!(self.u16_at(current_offset));
             *count = members_count;
             current_offset += 2;
             let mut member_cycles = CursorCycles::new();
@@ -842,7 +870,7 @@ impl<'b> ClassReader<'b> {
                 // Invariant: current_offset is the offset of a field_info or method_info
                 // structure. Skip the access_flags, name_index and descriptor_index fields (2
                 // bytes each), and read the attributes_count field.
-                let mut remaining_attributes = self.u16_at(current_offset + 6)?;
+                let mut remaining_attributes = tri!(self.u16_at(current_offset + 6));
                 current_offset += 8;
                 // Skip the 'attributes' array field.
                 let mut attribute_cycles = CursorCycles::new();
@@ -853,7 +881,7 @@ impl<'b> ClassReader<'b> {
                     // attribute_info) and skip this many bytes, plus 6 for the
                     // attribute_name_index and attribute_length fields (yielding the total size
                     // of the attribute_info structure).
-                    let attribute_length = self.i32_at(current_offset + 2)?;
+                    let attribute_length = tri!(self.i32_at(current_offset + 2));
                     current_offset += 6 + i64::from(attribute_length);
                     if attribute_length <= -6 {
                         remaining_attributes =
@@ -873,15 +901,15 @@ impl<'b> ClassReader<'b> {
 
     /// Reads the BootstrapMethods attribute to compute the offset of each bootstrap method.
     fn read_bootstrap_methods_attribute(&self) -> Result<Box<[u32]>, ReadError> {
-        let mut current_attribute_offset = self.get_first_attribute_offset()?;
-        for _ in 0..self.u16_at(current_attribute_offset - 2)? {
+        let mut current_attribute_offset = tri!(self.get_first_attribute_offset());
+        for _ in 0..tri!(self.u16_at(current_attribute_offset - 2)) {
             // Read the attribute_info's attribute_name and attribute_length fields.
-            let attribute_name = self.utf8_at(current_attribute_offset)?;
-            let attribute_length = self.i32_at(current_attribute_offset + 2)?;
+            let attribute_name = tri!(self.utf8_at(current_attribute_offset));
+            let attribute_length = tri!(self.i32_at(current_attribute_offset + 2));
             current_attribute_offset += 6;
             if attribute_name.is_some_and(|n| n == constants::BOOTSTRAP_METHODS) {
                 // Read the num_bootstrap_methods field and create an array of this size.
-                let num_bootstrap_methods = self.u16_at(current_attribute_offset)?;
+                let num_bootstrap_methods = tri!(self.u16_at(current_attribute_offset));
                 let mut result = Vec::with_capacity(usize::from(num_bootstrap_methods));
                 // Compute and store the offset of each 'bootstrap_methods' array field entry.
                 let mut current_bootstrap_method_offset = current_attribute_offset + 2;
@@ -891,7 +919,7 @@ impl<'b> ClassReader<'b> {
                     // each), as well as the bootstrap_arguments array field (of size
                     // num_bootstrap_arguments * 2).
                     current_bootstrap_method_offset +=
-                        4 + i64::from(self.u16_at(current_bootstrap_method_offset + 2)?) * 2;
+                        4 + i64::from(tri!(self.u16_at(current_bootstrap_method_offset + 2))) * 2;
                 }
                 return Ok(result.into_boxed_slice());
             }
@@ -926,9 +954,9 @@ impl<'b> ClassReader<'b> {
         // `new Attribute(null)` is a valid unknown attribute though.
         let codec = name.and_then(|name| codecs.iter().find(|c| c.name() == name));
         let Some(codec) = codec else {
-            let content = self.slice_at(offset, length)?;
+            let content = tri!(self.slice_at(offset, length));
             return Ok(Attribute::Unknown(UnknownAttribute {
-                name: required(name, offset - 6)?.to_owned(),
+                name: tri!(required(name, offset - 6)).to_owned(),
                 content: content.to_vec(),
             }));
         };
@@ -950,7 +978,7 @@ impl<'b> ClassReader<'b> {
             code_attribute_offset,
             labels,
         };
-        let attribute: Box<dyn CustomAttribute> = codec.read(&mut cx)?;
+        let attribute: Box<dyn CustomAttribute> = tri!(codec.read(&mut cx));
         Ok(Attribute::Custom(attribute))
     }
 }
@@ -1011,12 +1039,12 @@ impl<'b> AttributeReadContext<'_, 'b> {
     /// If this is not a Code attribute, or the offset is outside of the method code.
     pub fn read_label(&mut self, bytecode_offset: usize) -> Result<Label, ReadError> {
         let offset = self.offset;
-        let labels = self.labels.as_deref_mut().ok_or_else(|| {
+        let labels = tri!(self.labels.as_deref_mut().ok_or_else(|| {
             ReadError::new(
                 offset,
                 ReadErrorKind::InvalidAttribute("labels read outside of a Code attribute".into()),
             )
-        })?;
+        }));
         labels.read_label(bytecode_offset as i64)
     }
 }

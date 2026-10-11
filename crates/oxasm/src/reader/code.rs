@@ -83,6 +83,7 @@ impl MethodLabels {
     /// The thread's label table (a new one if another reader of this thread has it), with no
     /// bytecode offset until the class's first Code attribute: ASM's `null`, which the type
     /// annotations of the class, or of a method before it, may still read.
+    #[inline(always)]
     pub(super) fn take() -> MethodLabels {
         let mut labels = THREAD_METHOD_LABELS
             .try_with(Cell::take)
@@ -105,6 +106,7 @@ impl MethodLabels {
 
     /// Empties the table and its line number list for a method with `len` bytecode offsets (its
     /// code length + 1).
+    #[inline(always)]
     pub(super) fn reset(&mut self, len: usize) {
         for &i in &self.filled {
             self.slots[i] = None;
@@ -135,7 +137,7 @@ impl MethodLabels {
 
     /// The label of `bytecode_offset`, whose slot must exist (ASM's `labels[bytecodeOffset]`).
     pub(super) fn slot(&self, bytecode_offset: i64) -> Result<Option<Label>, ReadError> {
-        Ok(self.slots[self.index(bytecode_offset)?])
+        Ok(self.slots[tri!(self.index(bytecode_offset))])
     }
 
     /// The label of `bytecode_offset`'s slot `i`, created (as `new_label`) if there is none.
@@ -152,7 +154,7 @@ impl MethodLabels {
     /// of this method creates a label for the given offset if it has not been already created
     /// (ASM's `readLabel`).
     pub(super) fn read_label(&mut self, bytecode_offset: i64) -> Result<Label, ReadError> {
-        let i = self.index(bytecode_offset)?;
+        let i = tri!(self.index(bytecode_offset));
         Ok(*self.get_or_create(i, Label::new))
     }
 
@@ -161,7 +163,7 @@ impl MethodLabels {
     /// flag is cleared.
     #[inline]
     pub(super) fn create_label(&mut self, bytecode_offset: i64) -> Result<Label, ReadError> {
-        let i = self.index(bytecode_offset)?;
+        let i = tri!(self.index(bytecode_offset));
         let label = self.get_or_create(i, Label::new);
         *label = label.with_debug_only(false);
         Ok(*label)
@@ -172,7 +174,7 @@ impl MethodLabels {
     /// call to [`read_label`](Self::read_label).
     #[inline]
     fn create_debug_label(&mut self, bytecode_offset: i64) -> Result<(), ReadError> {
-        let i = self.index(bytecode_offset)?;
+        let i = tri!(self.index(bytecode_offset));
         self.get_or_create(i, || Label::new().with_debug_only(true));
         Ok(())
     }
@@ -356,27 +358,27 @@ impl Bytecode<'_> {
 
     #[inline(always)]
     fn u8_at(&self, bytecode_offset: usize) -> Result<u8, ReadError> {
-        Ok(self.bytes_at::<1>(bytecode_offset)?[0])
+        Ok(tri!(self.bytes_at::<1>(bytecode_offset))[0])
     }
 
     #[inline(always)]
     fn i8_at(&self, bytecode_offset: usize) -> Result<i8, ReadError> {
-        Ok(self.u8_at(bytecode_offset)? as i8)
+        Ok(tri!(self.u8_at(bytecode_offset)) as i8)
     }
 
     #[inline(always)]
     fn u16_at(&self, bytecode_offset: usize) -> Result<u16, ReadError> {
-        Ok(u16::from_be_bytes(self.bytes_at(bytecode_offset)?))
+        Ok(u16::from_be_bytes(tri!(self.bytes_at(bytecode_offset))))
     }
 
     #[inline(always)]
     fn i16_at(&self, bytecode_offset: usize) -> Result<i16, ReadError> {
-        Ok(i16::from_be_bytes(self.bytes_at(bytecode_offset)?))
+        Ok(i16::from_be_bytes(tri!(self.bytes_at(bytecode_offset))))
     }
 
     #[inline(always)]
     fn i32_at(&self, bytecode_offset: usize) -> Result<i32, ReadError> {
-        Ok(i32::from_be_bytes(self.bytes_at(bytecode_offset)?))
+        Ok(i32::from_be_bytes(tri!(self.bytes_at(bytecode_offset))))
     }
 }
 
@@ -390,8 +392,10 @@ fn array_capacity(
     offset: i64,
 ) -> Result<usize, ReadError> {
     // Java: NegativeArraySizeException.
-    let count_usize = usize::try_from(count)
-        .map_err(|_| ReadError::new(offset, ReadErrorKind::InvalidLength(count.into())))?;
+    let count_usize = tri!(
+        usize::try_from(count)
+            .map_err(|_| ReadError::new(offset, ReadErrorKind::InvalidLength(count.into())))
+    );
     let available = (reader.class_file.len() as i64 - offset).max(0) / element_size;
     Ok(count_usize.min(available as usize))
 }
@@ -410,9 +414,9 @@ impl<'b> ClassReader<'b> {
         let mut current_offset = code_offset;
 
         // Read the max_stack, max_locals and code_length fields.
-        let max_stack = self.u16_at(current_offset)?;
-        let max_locals = self.u16_at(current_offset + 2)?;
-        let code_length = self.i32_at(current_offset + 4)?;
+        let max_stack = tri!(self.u16_at(current_offset));
+        let max_locals = tri!(self.u16_at(current_offset + 2));
+        let code_length = tri!(self.i32_at(current_offset + 4));
         current_offset += 8;
         if i64::from(code_length) > self.class_file.len() as i64 - current_offset {
             return Err(ReadError::new(
@@ -425,12 +429,12 @@ impl<'b> ClassReader<'b> {
         // Read the bytecode 'code' array to create a label for each referenced instruction.
         let bytecode_start_offset = current_offset;
         // `new Label[codeLength + 1]`.
-        let labels_length = usize::try_from(code_length + 1).map_err(|_| {
+        let labels_length = tri!(usize::try_from(code_length + 1).map_err(|_| {
             ReadError::new(
                 current_offset - 4,
                 ReadErrorKind::InvalidLength(code_length),
             )
-        })?;
+        }));
         // The code array is in the class file (checked above), so its offsets are `usize`s. A
         // code_length of -1 (`new Label[0]`) has no instruction, as in ASM's loops.
         let bytecode_length = usize::try_from(code_length).unwrap_or(0);
@@ -445,27 +449,27 @@ impl<'b> ClassReader<'b> {
         let mut pc: usize = 0;
         while pc < bytecode_length {
             let bytecode_offset = pc as i64;
-            let opcode = code.u8_at(pc)?;
+            let opcode = tri!(code.u8_at(pc));
             match FIRST_PASS_KINDS[usize::from(opcode)] {
                 length @ 1..=5 => {
                     pc += usize::from(length);
                 }
                 FIRST_PASS_JUMP => {
-                    let branch = i64::from(code.i16_at(pc + 1)?);
-                    labels.create_label(bytecode_offset + branch)?;
+                    let branch = i64::from(tri!(code.i16_at(pc + 1)));
+                    tri!(labels.create_label(bytecode_offset + branch));
                     pc += 3;
                 }
                 FIRST_PASS_ASM_JUMP => {
-                    let branch = i64::from(code.u16_at(pc + 1)?);
-                    labels.create_label(bytecode_offset + branch)?;
+                    let branch = i64::from(tri!(code.u16_at(pc + 1)));
+                    tri!(labels.create_label(bytecode_offset + branch));
                     pc += 3;
                 }
                 FIRST_PASS_WIDE_JUMP => {
-                    let branch = i64::from(code.i32_at(pc + 1)?);
-                    labels.create_label(bytecode_offset + branch)?;
+                    let branch = i64::from(tri!(code.i32_at(pc + 1)));
+                    tri!(labels.create_label(bytecode_offset + branch));
                     pc += 5;
                 }
-                FIRST_PASS_WIDE => match code.u8_at(pc + 1)? {
+                FIRST_PASS_WIDE => match tri!(code.u8_at(pc + 1)) {
                     ILOAD..=ALOAD | ISTORE..=ASTORE | RET => {
                         pc += 4;
                     }
@@ -483,17 +487,17 @@ impl<'b> ClassReader<'b> {
                     // Skip 0 to 3 padding bytes.
                     pc += 4 - (pc & 3);
                     // Read the default label and the number of table entries.
-                    let default = i64::from(code.i32_at(pc)?);
-                    labels.create_label(bytecode_offset + default)?;
-                    let high = code.i32_at(pc + 8)?;
-                    let low = code.i32_at(pc + 4)?;
+                    let default = i64::from(tri!(code.i32_at(pc)));
+                    tri!(labels.create_label(bytecode_offset + default));
+                    let high = tri!(code.i32_at(pc + 8));
+                    let low = tri!(code.i32_at(pc + 4));
                     let mut num_table_entries = high.wrapping_sub(low).wrapping_add(1);
                     pc += 12;
                     // Read the table labels.
                     while num_table_entries > 0 {
                         num_table_entries -= 1;
-                        let branch = i64::from(code.i32_at(pc)?);
-                        labels.create_label(bytecode_offset + branch)?;
+                        let branch = i64::from(tri!(code.i32_at(pc)));
+                        tri!(labels.create_label(bytecode_offset + branch));
                         pc += 4;
                     }
                 }
@@ -501,15 +505,15 @@ impl<'b> ClassReader<'b> {
                     // Skip 0 to 3 padding bytes.
                     pc += 4 - (pc & 3);
                     // Read the default label and the number of switch cases.
-                    let default = i64::from(code.i32_at(pc)?);
-                    labels.create_label(bytecode_offset + default)?;
-                    let mut num_switch_cases = code.i32_at(pc + 4)?;
+                    let default = i64::from(tri!(code.i32_at(pc)));
+                    tri!(labels.create_label(bytecode_offset + default));
+                    let mut num_switch_cases = tri!(code.i32_at(pc + 4));
                     pc += 8;
                     // Read the switch labels.
                     while num_switch_cases > 0 {
                         num_switch_cases -= 1;
-                        let branch = i64::from(code.i32_at(pc + 4)?);
-                        labels.create_label(bytecode_offset + branch)?;
+                        let branch = i64::from(tri!(code.i32_at(pc + 4)));
+                        tri!(labels.create_label(bytecode_offset + branch));
                         pc += 8;
                     }
                 }
@@ -526,14 +530,14 @@ impl<'b> ClassReader<'b> {
         // Read the 'exception_table_length' and 'exception_table' field to create a label for
         // each referenced instruction, and to make method_visitor visit the corresponding try
         // catch blocks.
-        let exception_table_length = self.u16_at(current_offset)?;
+        let exception_table_length = tri!(self.u16_at(current_offset));
         current_offset += 2;
         for _ in 0..exception_table_length {
-            let start = labels.create_label(self.u16_at(current_offset)?.into())?;
-            let end = labels.create_label(self.u16_at(current_offset + 2)?.into())?;
-            let handler = labels.create_label(self.u16_at(current_offset + 4)?.into())?;
-            let catch_type_index = usize::from(self.u16_at(current_offset + 6)?);
-            let catch_type = self.utf8_at(self.cp_info_offset(catch_type_index)?)?;
+            let start = tri!(labels.create_label(tri!(self.u16_at(current_offset)).into()));
+            let end = tri!(labels.create_label(tri!(self.u16_at(current_offset + 2)).into()));
+            let handler = tri!(labels.create_label(tri!(self.u16_at(current_offset + 4)).into()));
+            let catch_type_index = usize::from(tri!(self.u16_at(current_offset + 6)));
+            let catch_type = tri!(self.utf8_at(tri!(self.cp_info_offset(catch_type_index))));
             current_offset += 8;
             method_visitor.visit_try_catch_block(start, end, handler, catch_type);
         }
@@ -567,13 +571,13 @@ impl<'b> ClassReader<'b> {
         let skip_frames = parsing_options.contains(ParsingOptions::SKIP_FRAMES);
         let mut cycles = CursorCycles::new();
         let mut effects = 0;
-        let mut remaining = self.u16_at(current_offset)?;
+        let mut remaining = tri!(self.u16_at(current_offset));
         current_offset += 2;
         while remaining > 0 {
             remaining -= 1;
             // Read the attribute_info's attribute_name and attribute_length fields.
-            let attribute_name = self.utf8_at(current_offset)?;
-            let attribute_length = self.i32_at(current_offset + 2)?;
+            let attribute_name = tri!(self.utf8_at(current_offset));
+            let attribute_length = tri!(self.i32_at(current_offset + 2));
             current_offset += 6;
             match attribute_name {
                 Some(n) if n == constants::LOCAL_VARIABLE_TABLE => {
@@ -582,17 +586,20 @@ impl<'b> ClassReader<'b> {
                         // Parse the attribute to find the corresponding (debug only) labels.
                         let mut current_local_variable_table_offset = current_offset;
                         let local_variable_table_length =
-                            self.u16_at(current_local_variable_table_offset)?;
+                            tri!(self.u16_at(current_local_variable_table_offset));
                         current_local_variable_table_offset += 2;
                         for _ in 0..local_variable_table_length {
                             let start_pc =
-                                i64::from(self.u16_at(current_local_variable_table_offset)?);
-                            context.current_method_labels.create_debug_label(start_pc)?;
-                            let length =
-                                i64::from(self.u16_at(current_local_variable_table_offset + 2)?);
-                            context
-                                .current_method_labels
-                                .create_debug_label(start_pc + length)?;
+                                i64::from(tri!(self.u16_at(current_local_variable_table_offset)));
+                            tri!(context.current_method_labels.create_debug_label(start_pc));
+                            let length = i64::from(tri!(
+                                self.u16_at(current_local_variable_table_offset + 2)
+                            ));
+                            tri!(
+                                context
+                                    .current_method_labels
+                                    .create_debug_label(start_pc + length)
+                            );
                             // Skip the name_index, descriptor_index and index fields (2 bytes
                             // each).
                             current_local_variable_table_offset += 10;
@@ -611,15 +618,18 @@ impl<'b> ClassReader<'b> {
                         // Parse the attribute to find the corresponding (debug only) labels.
                         let mut current_line_number_table_offset = current_offset;
                         let line_number_table_length =
-                            self.u16_at(current_line_number_table_offset)?;
+                            tri!(self.u16_at(current_line_number_table_offset));
                         current_line_number_table_offset += 2;
                         for _ in 0..line_number_table_length {
-                            let start_pc = self.u16_at(current_line_number_table_offset)?;
-                            let line_number = self.u16_at(current_line_number_table_offset + 2)?;
+                            let start_pc = tri!(self.u16_at(current_line_number_table_offset));
+                            let line_number =
+                                tri!(self.u16_at(current_line_number_table_offset + 2));
                             current_line_number_table_offset += 4;
-                            context
-                                .current_method_labels
-                                .create_debug_label(i64::from(start_pc))?;
+                            tri!(
+                                context
+                                    .current_method_labels
+                                    .create_debug_label(i64::from(start_pc))
+                            );
                             context
                                 .current_method_labels
                                 .line_numbers
@@ -630,12 +640,12 @@ impl<'b> ClassReader<'b> {
                 Some(n) if n == constants::RUNTIME_VISIBLE_TYPE_ANNOTATIONS => {
                     // Visits the exception parameters' annotations.
                     effects += 1;
-                    visible_type_annotation_offsets = Some(self.read_type_annotations(
+                    visible_type_annotation_offsets = Some(tri!(self.read_type_annotations(
                         method_visitor,
                         context,
                         current_offset,
                         /* visible= */ true,
-                    )?);
+                    )));
                     // Here we do not extract the labels corresponding to the attribute content.
                     // This would require a full parsing of the attribute, which would need to be
                     // repeated when parsing the bytecode instructions (see below). Instead, the
@@ -647,12 +657,12 @@ impl<'b> ClassReader<'b> {
                 Some(n) if n == constants::RUNTIME_INVISIBLE_TYPE_ANNOTATIONS => {
                     // Visits the exception parameters' annotations.
                     effects += 1;
-                    invisible_type_annotation_offsets = Some(self.read_type_annotations(
+                    invisible_type_annotation_offsets = Some(tri!(self.read_type_annotations(
                         method_visitor,
                         context,
                         current_offset,
                         /* visible= */ false,
-                    )?);
+                    )));
                     // Same comment as above for the RuntimeVisibleTypeAnnotations attribute.
                 }
                 Some(n) if n == constants::STACK_MAP_TABLE => {
@@ -685,13 +695,13 @@ impl<'b> ClassReader<'b> {
                 }
                 _ => {
                     effects += 1;
-                    attributes.push(self.read_attribute(
+                    attributes.push(tri!(self.read_attribute(
                         context.codecs,
                         attribute_name,
                         current_offset,
                         attribute_length,
                         Some((code_offset, &mut context.current_method_labels)),
-                    )?);
+                    )));
                 }
             }
             current_offset += i64::from(attribute_length);
@@ -723,7 +733,7 @@ impl<'b> ClassReader<'b> {
             context.current_frame_stack_types.clear();
             context.current_frame_stack_capacity = usize::from(max_stack);
             if expand_frames {
-                self.compute_implicit_frame(context, code_offset)?;
+                tri!(self.compute_implicit_frame(context, code_offset));
             }
             // Find the labels for UNINITIALIZED frame types. Instead of decoding each element of
             // the stack map table, we look for 3 consecutive bytes that "look like" an
@@ -734,14 +744,17 @@ impl<'b> ClassReader<'b> {
             // NEW instruction, and faster than fully decoding the whole stack map table.
             let mut offset = stack_map_frame_offset;
             while offset < stack_map_table_end_offset - 2 {
-                if self.u8_at(offset)? == ITEM_UNINITIALIZED {
-                    let potential_bytecode_offset = i64::from(self.u16_at(offset + 1)?);
+                if tri!(self.u8_at(offset)) == ITEM_UNINITIALIZED {
+                    let potential_bytecode_offset = i64::from(tri!(self.u16_at(offset + 1)));
                     if potential_bytecode_offset < code_length
-                        && self.u8_at(bytecode_start_offset + potential_bytecode_offset)? == NEW
+                        && tri!(self.u8_at(bytecode_start_offset + potential_bytecode_offset))
+                            == NEW
                     {
-                        context
-                            .current_method_labels
-                            .create_label(potential_bytecode_offset)?;
+                        tri!(
+                            context
+                                .current_method_labels
+                                .create_label(potential_bytecode_offset)
+                        );
                     }
                 }
                 offset += 1;
@@ -766,14 +779,18 @@ impl<'b> ClassReader<'b> {
         // visible_type_annotation_offsets array).
         let mut current_visible_type_annotation_index = 0;
         // The bytecode offset of the next runtime visible type annotation to read, or -1.
-        let mut current_visible_type_annotation_bytecode_offset = self
-            .get_type_annotation_bytecode_offset(visible_type_annotation_offsets.as_deref(), 0)?;
+        let mut current_visible_type_annotation_bytecode_offset = tri!(
+            self.get_type_annotation_bytecode_offset(visible_type_annotation_offsets.as_deref(), 0)
+        );
         // Index of the next runtime invisible type annotation to read (in the
         // invisible_type_annotation_offsets array).
         let mut current_invisible_type_annotation_index = 0;
         // The bytecode offset of the next runtime invisible type annotation to read, or -1.
-        let mut current_invisible_type_annotation_bytecode_offset = self
-            .get_type_annotation_bytecode_offset(invisible_type_annotation_offsets.as_deref(), 0)?;
+        let mut current_invisible_type_annotation_bytecode_offset =
+            tri!(self.get_type_annotation_bytecode_offset(
+                invisible_type_annotation_offsets.as_deref(),
+                0
+            ));
 
         // Whether the instructions have type annotations to visit.
         let has_insn_annotations = visible_type_annotation_offsets.is_some()
@@ -825,18 +842,22 @@ impl<'b> ClassReader<'b> {
                 // If there is a stack map frame for this offset, make method_visitor visit it,
                 // and read the next stack map frame if there is one.
                 if context.current_frame_offset != -1 {
-                    visit_frame(method_visitor, context, !compressed_frames || expand_frames)?;
+                    tri!(visit_frame(
+                        method_visitor,
+                        context,
+                        !compressed_frames || expand_frames
+                    ));
                     // Since there is already a stack map frame for this bytecode offset, there is
                     // no need to insert a new one.
                     insert_frame = false;
                 }
                 if stack_map_frame_offset < stack_map_table_end_offset {
-                    stack_map_frame_offset = self.read_stack_map_frame(
+                    stack_map_frame_offset = tri!(self.read_stack_map_frame(
                         stack_map_frame_offset,
                         compressed_frames,
                         expand_frames,
                         context,
-                    )?;
+                    ));
                 } else {
                     stack_map_frame_offset = 0;
                 }
@@ -854,7 +875,7 @@ impl<'b> ClassReader<'b> {
 
             // Visit the instruction at this bytecode offset.
             let labels = &context.current_method_labels;
-            let opcode = code.u8_at(pc)?;
+            let opcode = tri!(code.u8_at(pc));
             match SECOND_PASS_KINDS[usize::from(opcode)] {
                 InsnKind::Insn => {
                     method_visitor.visit_insn(opcode);
@@ -871,14 +892,14 @@ impl<'b> ClassReader<'b> {
                     pc += 1;
                 }
                 InsnKind::Jump => {
-                    let branch = i64::from(code.i16_at(pc + 1)?);
-                    let label = labels.label_at(current_bytecode_offset + branch)?;
+                    let branch = i64::from(tri!(code.i16_at(pc + 1)));
+                    let label = tri!(labels.label_at(current_bytecode_offset + branch));
                     method_visitor.visit_jump_insn(opcode, label);
                     pc += 3;
                 }
                 InsnKind::WideJump => {
-                    let branch = i64::from(code.i32_at(pc + 1)?);
-                    let label = labels.label_at(current_bytecode_offset + branch)?;
+                    let branch = i64::from(tri!(code.i32_at(pc + 1)));
+                    let label = tri!(labels.label_at(current_bytecode_offset + branch));
                     method_visitor.visit_jump_insn(opcode - wide_jump_opcode_delta, label);
                     pc += 5;
                 }
@@ -895,8 +916,8 @@ impl<'b> ClassReader<'b> {
                     } else {
                         opcode - ASM_IFNULL_OPCODE_DELTA
                     };
-                    let branch = i64::from(code.u16_at(pc + 1)?);
-                    let target = labels.label_at(current_bytecode_offset + branch)?;
+                    let branch = i64::from(tri!(code.u16_at(pc + 1)));
+                    let target = tri!(labels.label_at(current_bytecode_offset + branch));
                     if opcode == GOTO || opcode == JSR {
                         // Replace GOTO with GOTO_W and JSR with JSR_W.
                         method_visitor.visit_jump_insn(opcode + WIDE_JUMP_OPCODE_DELTA, target);
@@ -909,9 +930,11 @@ impl<'b> ClassReader<'b> {
                         } else {
                             opcode ^ 1
                         };
-                        let endif = context
-                            .current_method_labels
-                            .create_label(current_bytecode_offset + 3)?;
+                        let endif = tri!(
+                            context
+                                .current_method_labels
+                                .create_label(current_bytecode_offset + 3)
+                        );
                         method_visitor.visit_jump_insn(opcode, endif);
                         method_visitor.visit_jump_insn(GOTO_W, target);
                         // endif designates the instruction just after GOTO_W, and is visited as
@@ -923,8 +946,8 @@ impl<'b> ClassReader<'b> {
                 }
                 InsnKind::AsmGotoW => {
                     // Replace ASM_GOTO_W with GOTO_W.
-                    let branch = i64::from(code.i32_at(pc + 1)?);
-                    let label = labels.label_at(current_bytecode_offset + branch)?;
+                    let branch = i64::from(tri!(code.i32_at(pc + 1)));
+                    let label = tri!(labels.label_at(current_bytecode_offset + branch));
                     method_visitor.visit_jump_insn(GOTO_W, label);
                     // The instruction just after is a jump target (because ASM_GOTO_W is used in
                     // patterns IFNOTxxx <L> ASM_GOTO_W <l> L:..., see MethodWriter), so we need
@@ -933,12 +956,13 @@ impl<'b> ClassReader<'b> {
                     pc += 5;
                 }
                 InsnKind::Wide => {
-                    let opcode = code.u8_at(pc + 1)?;
+                    let opcode = tri!(code.u8_at(pc + 1));
                     if opcode == IINC {
-                        method_visitor.visit_iinc_insn(code.u16_at(pc + 2)?, code.i16_at(pc + 4)?);
+                        method_visitor
+                            .visit_iinc_insn(tri!(code.u16_at(pc + 2)), tri!(code.i16_at(pc + 4)));
                         pc += 6;
                     } else {
-                        method_visitor.visit_var_insn(opcode, code.u16_at(pc + 2)?);
+                        method_visitor.visit_var_insn(opcode, tri!(code.u16_at(pc + 2)));
                         pc += 4;
                     }
                 }
@@ -946,21 +970,21 @@ impl<'b> ClassReader<'b> {
                     // Skip 0 to 3 padding bytes.
                     pc += 4 - (pc & 3);
                     // Read the instruction.
-                    let default = i64::from(code.i32_at(pc)?);
-                    let default_label = labels.label_at(current_bytecode_offset + default)?;
-                    let low = code.i32_at(pc + 4)?;
-                    let high = code.i32_at(pc + 8)?;
+                    let default = i64::from(tri!(code.i32_at(pc)));
+                    let default_label = tri!(labels.label_at(current_bytecode_offset + default));
+                    let low = tri!(code.i32_at(pc + 4));
+                    let high = tri!(code.i32_at(pc + 8));
                     pc += 12;
                     let length = high.wrapping_sub(low).wrapping_add(1);
-                    let mut table = Vec::with_capacity(array_capacity(
+                    let mut table = Vec::with_capacity(tri!(array_capacity(
                         self,
                         length,
                         4,
                         bytecode_start_offset + pc as i64,
-                    )?);
+                    )));
                     for _ in 0..length {
-                        let branch = i64::from(code.i32_at(pc)?);
-                        table.push(labels.label_at(current_bytecode_offset + branch)?);
+                        let branch = i64::from(tri!(code.i32_at(pc)));
+                        table.push(tri!(labels.label_at(current_bytecode_offset + branch)));
                         pc += 4;
                     }
                     method_visitor.visit_table_switch_insn(low, high, default_label, &table);
@@ -969,59 +993,65 @@ impl<'b> ClassReader<'b> {
                     // Skip 0 to 3 padding bytes.
                     pc += 4 - (pc & 3);
                     // Read the instruction.
-                    let default = i64::from(code.i32_at(pc)?);
-                    let default_label = labels.label_at(current_bytecode_offset + default)?;
-                    let num_pairs = code.i32_at(pc + 4)?;
+                    let default = i64::from(tri!(code.i32_at(pc)));
+                    let default_label = tri!(labels.label_at(current_bytecode_offset + default));
+                    let num_pairs = tri!(code.i32_at(pc + 4));
                     pc += 8;
-                    let capacity =
-                        array_capacity(self, num_pairs, 8, bytecode_start_offset + pc as i64)?;
+                    let capacity = tri!(array_capacity(
+                        self,
+                        num_pairs,
+                        8,
+                        bytecode_start_offset + pc as i64
+                    ));
                     let mut keys = Vec::with_capacity(capacity);
                     let mut values = Vec::with_capacity(capacity);
                     for _ in 0..num_pairs {
-                        keys.push(code.i32_at(pc)?);
-                        let branch = i64::from(code.i32_at(pc + 4)?);
-                        values.push(labels.label_at(current_bytecode_offset + branch)?);
+                        keys.push(tri!(code.i32_at(pc)));
+                        let branch = i64::from(tri!(code.i32_at(pc + 4)));
+                        values.push(tri!(labels.label_at(current_bytecode_offset + branch)));
                         pc += 8;
                     }
                     method_visitor.visit_lookup_switch_insn(default_label, &keys, &values);
                 }
                 InsnKind::Var => {
-                    method_visitor.visit_var_insn(opcode, u16::from(code.u8_at(pc + 1)?));
+                    method_visitor.visit_var_insn(opcode, u16::from(tri!(code.u8_at(pc + 1))));
                     pc += 2;
                 }
                 InsnKind::Int8 => {
-                    method_visitor.visit_int_insn(opcode, i32::from(code.i8_at(pc + 1)?));
+                    method_visitor.visit_int_insn(opcode, i32::from(tri!(code.i8_at(pc + 1))));
                     pc += 2;
                 }
                 InsnKind::Int16 => {
-                    method_visitor.visit_int_insn(opcode, i32::from(code.i16_at(pc + 1)?));
+                    method_visitor.visit_int_insn(opcode, i32::from(tri!(code.i16_at(pc + 1))));
                     pc += 3;
                 }
                 InsnKind::Ldc => {
-                    let index = usize::from(code.u8_at(pc + 1)?);
-                    method_visitor.visit_ldc_insn(&self.const_at(index)?);
+                    let index = usize::from(tri!(code.u8_at(pc + 1)));
+                    method_visitor.visit_ldc_insn(&tri!(self.const_at(index)));
                     pc += 2;
                 }
                 InsnKind::LdcW => {
-                    let index = usize::from(code.u16_at(pc + 1)?);
-                    method_visitor.visit_ldc_insn(&self.const_at(index)?);
+                    let index = usize::from(tri!(code.u16_at(pc + 1)));
+                    method_visitor.visit_ldc_insn(&tri!(self.const_at(index)));
                     pc += 3;
                 }
                 InsnKind::Member => {
-                    let cp_info_offset = self.cp_info_offset(usize::from(code.u16_at(pc + 1)?))?;
-                    let name_and_type_cp_info_offset =
-                        self.cp_info_offset(usize::from(self.u16_at(cp_info_offset + 2)?))?;
-                    let owner = self.read_class_at(cp_info_offset)?;
-                    let name = self.utf8_at(name_and_type_cp_info_offset)?;
-                    let descriptor = self.utf8_at(name_and_type_cp_info_offset + 2)?;
-                    let owner = required(owner, cp_info_offset)?;
-                    let name = required(name, name_and_type_cp_info_offset)?;
-                    let descriptor = required(descriptor, name_and_type_cp_info_offset + 2)?;
+                    let cp_info_offset =
+                        tri!(self.cp_info_offset(usize::from(tri!(code.u16_at(pc + 1)))));
+                    let name_and_type_cp_info_offset = tri!(
+                        self.cp_info_offset(usize::from(tri!(self.u16_at(cp_info_offset + 2))))
+                    );
+                    let owner = tri!(self.read_class_at(cp_info_offset));
+                    let name = tri!(self.utf8_at(name_and_type_cp_info_offset));
+                    let descriptor = tri!(self.utf8_at(name_and_type_cp_info_offset + 2));
+                    let owner = tri!(required(owner, cp_info_offset));
+                    let name = tri!(required(name, name_and_type_cp_info_offset));
+                    let descriptor = tri!(required(descriptor, name_and_type_cp_info_offset + 2));
                     if opcode < INVOKEVIRTUAL {
                         method_visitor.visit_field_insn(opcode, owner, name, descriptor);
                     } else {
-                        let is_interface =
-                            self.u8_at(cp_info_offset - 1)? == CONSTANT_INTERFACE_METHODREF_TAG;
+                        let is_interface = tri!(self.u8_at(cp_info_offset - 1))
+                            == CONSTANT_INTERFACE_METHODREF_TAG;
                         method_visitor.visit_method_insn(
                             opcode,
                             owner,
@@ -1037,54 +1067,60 @@ impl<'b> ClassReader<'b> {
                     }
                 }
                 InsnKind::InvokeDynamic => {
-                    let cp_info_offset = self.cp_info_offset(usize::from(code.u16_at(pc + 1)?))?;
-                    let name_and_type_cp_info_offset =
-                        self.cp_info_offset(usize::from(self.u16_at(cp_info_offset + 2)?))?;
-                    let name = self.utf8_at(name_and_type_cp_info_offset)?;
-                    let descriptor = self.utf8_at(name_and_type_cp_info_offset + 2)?;
-                    let mut bootstrap_method_offset =
-                        self.bootstrap_method_offset(self.u16_at(cp_info_offset)?, current_offset)?;
-                    let handle_index = usize::from(self.u16_at(bootstrap_method_offset)?);
-                    let Constant::Handle(handle) = self.const_at(handle_index)? else {
+                    let cp_info_offset =
+                        tri!(self.cp_info_offset(usize::from(tri!(code.u16_at(pc + 1)))));
+                    let name_and_type_cp_info_offset = tri!(
+                        self.cp_info_offset(usize::from(tri!(self.u16_at(cp_info_offset + 2))))
+                    );
+                    let name = tri!(self.utf8_at(name_and_type_cp_info_offset));
+                    let descriptor = tri!(self.utf8_at(name_and_type_cp_info_offset + 2));
+                    let mut bootstrap_method_offset = tri!(self.bootstrap_method_offset(
+                        tri!(self.u16_at(cp_info_offset)),
+                        current_offset
+                    ));
+                    let handle_index = usize::from(tri!(self.u16_at(bootstrap_method_offset)));
+                    let Constant::Handle(handle) = tri!(self.const_at(handle_index)) else {
                         return Err(ReadError::new(
                             bootstrap_method_offset,
                             ReadErrorKind::InvalidConstant(handle_index as u16),
                         ));
                     };
-                    let num_arguments = self.u16_at(bootstrap_method_offset + 2)?;
+                    let num_arguments = tri!(self.u16_at(bootstrap_method_offset + 2));
                     let mut bootstrap_method_arguments =
                         Vec::with_capacity(usize::from(num_arguments));
                     bootstrap_method_offset += 4;
                     for _ in 0..num_arguments {
-                        let argument_index = usize::from(self.u16_at(bootstrap_method_offset)?);
-                        bootstrap_method_arguments.push(self.const_at(argument_index)?);
+                        let argument_index =
+                            usize::from(tri!(self.u16_at(bootstrap_method_offset)));
+                        bootstrap_method_arguments.push(tri!(self.const_at(argument_index)));
                         bootstrap_method_offset += 2;
                     }
                     method_visitor.visit_invoke_dynamic_insn(
-                        required(name, name_and_type_cp_info_offset)?,
-                        required(descriptor, name_and_type_cp_info_offset + 2)?,
+                        tri!(required(name, name_and_type_cp_info_offset)),
+                        tri!(required(descriptor, name_and_type_cp_info_offset + 2)),
                         &handle,
                         &bootstrap_method_arguments,
                     );
                     pc += 5;
                 }
                 InsnKind::Type => {
-                    let type_ = self.read_class_at(current_offset + 1)?;
-                    method_visitor.visit_type_insn(opcode, required(type_, current_offset + 1)?);
+                    let type_ = tri!(self.read_class_at(current_offset + 1));
+                    method_visitor
+                        .visit_type_insn(opcode, tri!(required(type_, current_offset + 1)));
                     pc += 3;
                 }
                 InsnKind::Iinc => {
                     method_visitor.visit_iinc_insn(
-                        u16::from(code.u8_at(pc + 1)?),
-                        i16::from(code.i8_at(pc + 2)?),
+                        u16::from(tri!(code.u8_at(pc + 1))),
+                        i16::from(tri!(code.i8_at(pc + 2))),
                     );
                     pc += 3;
                 }
                 InsnKind::MultiANewArray => {
-                    let descriptor = self.read_class_at(current_offset + 1)?;
+                    let descriptor = tri!(self.read_class_at(current_offset + 1));
                     method_visitor.visit_multi_a_new_array_insn(
-                        required(descriptor, current_offset + 1)?,
-                        code.u8_at(pc + 3)?,
+                        tri!(required(descriptor, current_offset + 1)),
+                        tri!(code.u8_at(pc + 3)),
                     );
                     pc += 4;
                 }
@@ -1121,11 +1157,12 @@ impl<'b> ClassReader<'b> {
                         if i64::from(*bytecode_offset) == current_bytecode_offset {
                             // Parse the target_type, target_info and target_path fields.
                             let mut current_annotation_offset =
-                                self.read_type_annotation_target(context, offsets[*index])?;
+                                tri!(self.read_type_annotation_target(context, offsets[*index]));
                             // Parse the type_index field.
-                            let annotation_descriptor = self.utf8_at(current_annotation_offset)?;
                             let annotation_descriptor =
-                                required(annotation_descriptor, current_annotation_offset)?;
+                                tri!(self.utf8_at(current_annotation_offset));
+                            let annotation_descriptor =
+                                tri!(required(annotation_descriptor, current_annotation_offset));
                             current_annotation_offset += 2;
                             // Parse num_element_value_pairs and element_value_pairs and visit these
                             // values.
@@ -1135,21 +1172,21 @@ impl<'b> ClassReader<'b> {
                                 annotation_descriptor,
                                 visible,
                             );
-                            self.read_element_values(
+                            tri!(self.read_element_values(
                                 annotation_visitor.as_deref_mut(),
                                 current_annotation_offset,
                                 /* named= */ true,
                                 0,
-                            )?;
+                            ));
                         }
                         *index += 1;
                         *bytecode_offset =
-                            self.get_type_annotation_bytecode_offset(Some(offsets), *index)?;
+                            tri!(self.get_type_annotation_bytecode_offset(Some(offsets), *index));
                     }
                 }
             }
         }
-        if let Some(label) = context.current_method_labels.slot(code_length)? {
+        if let Some(label) = tri!(context.current_method_labels.slot(code_length)) {
             method_visitor.visit_label(label);
         }
 
@@ -1159,27 +1196,27 @@ impl<'b> ClassReader<'b> {
             // LocalVariableTypeTable.
             let mut type_table = Vec::new();
             if local_variable_type_table_offset != 0 {
-                let length = self.u16_at(local_variable_type_table_offset)?;
+                let length = tri!(self.u16_at(local_variable_type_table_offset));
                 type_table.reserve(usize::from(length));
                 current_offset = local_variable_type_table_offset + 2;
                 for _ in 0..length {
                     // Store the offset of 'signature_index', and the value of 'index' and
                     // 'start_pc'.
-                    let index = self.u16_at(current_offset + 8)?;
-                    let start_pc = self.u16_at(current_offset)?;
+                    let index = tri!(self.u16_at(current_offset + 8));
+                    let start_pc = tri!(self.u16_at(current_offset));
                     type_table.push((start_pc, index, current_offset + 6));
                     current_offset += 10;
                 }
             }
-            let local_variable_table_length = self.u16_at(local_variable_table_offset)?;
+            let local_variable_table_length = tri!(self.u16_at(local_variable_table_offset));
             method_visitor.visit_local_variable_count(local_variable_table_length);
             current_offset = local_variable_table_offset + 2;
             for _ in 0..local_variable_table_length {
-                let start_pc = self.u16_at(current_offset)?;
-                let length = self.u16_at(current_offset + 2)?;
-                let name = self.utf8_at(current_offset + 4)?;
-                let descriptor = self.utf8_at(current_offset + 6)?;
-                let index = self.u16_at(current_offset + 8)?;
+                let start_pc = tri!(self.u16_at(current_offset));
+                let length = tri!(self.u16_at(current_offset + 2));
+                let name = tri!(self.utf8_at(current_offset + 4));
+                let descriptor = tri!(self.utf8_at(current_offset + 6));
+                let index = tri!(self.u16_at(current_offset + 8));
                 current_offset += 10;
                 // ASM stores the type table in reverse order, and takes the first match.
                 let mut signature = None;
@@ -1191,14 +1228,14 @@ impl<'b> ClassReader<'b> {
                             type_start_pc == start_pc && type_index == index
                         })
                 {
-                    signature = self.utf8_at(signature_offset)?;
+                    signature = tri!(self.utf8_at(signature_offset));
                 }
                 let labels = &context.current_method_labels;
-                let start = labels.label_at(start_pc.into())?;
-                let end = labels.label_at(i64::from(start_pc) + i64::from(length))?;
+                let start = tri!(labels.label_at(start_pc.into()));
+                let end = tri!(labels.label_at(i64::from(start_pc) + i64::from(length)));
                 method_visitor.visit_local_variable(
-                    required(name, current_offset - 6)?,
-                    required(descriptor, current_offset - 4)?,
+                    tri!(required(name, current_offset - 6)),
+                    tri!(required(descriptor, current_offset - 4)),
                     signature,
                     start,
                     end,
@@ -1214,16 +1251,17 @@ impl<'b> ClassReader<'b> {
             (invisible_type_annotation_offsets.as_deref(), false),
         ] {
             for &type_annotation_offset in offsets.unwrap_or_default() {
-                let target_type = self.u8_at(type_annotation_offset)?;
+                let target_type = tri!(self.u8_at(type_annotation_offset));
                 if target_type == TypeReference::LOCAL_VARIABLE
                     || target_type == TypeReference::RESOURCE_VARIABLE
                 {
                     // Parse the target_type, target_info and target_path fields.
                     current_offset =
-                        self.read_type_annotation_target(context, type_annotation_offset)?;
+                        tri!(self.read_type_annotation_target(context, type_annotation_offset));
                     // Parse the type_index field.
-                    let annotation_descriptor = self.utf8_at(current_offset)?;
-                    let annotation_descriptor = required(annotation_descriptor, current_offset)?;
+                    let annotation_descriptor = tri!(self.utf8_at(current_offset));
+                    let annotation_descriptor =
+                        tri!(required(annotation_descriptor, current_offset));
                     current_offset += 2;
                     // Parse num_element_value_pairs and element_value_pairs and visit these
                     // values.
@@ -1236,12 +1274,12 @@ impl<'b> ClassReader<'b> {
                         annotation_descriptor,
                         visible,
                     );
-                    self.read_element_values(
+                    tri!(self.read_element_values(
                         annotation_visitor.as_deref_mut(),
                         current_offset,
                         /* named= */ true,
                         0,
-                    )?;
+                    ));
                 }
             }
         }

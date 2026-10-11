@@ -74,37 +74,37 @@ impl<'b> ClassReader<'b> {
     /// The byte at `offset` (ASM's `readByte`, or `classFileBuffer[offset] & 0xFF`).
     #[inline]
     pub(crate) fn u8_at(&self, offset: i64) -> Result<u8, ReadError> {
-        Ok(self.bytes_at::<1>(offset)?[0])
+        Ok(tri!(self.bytes_at::<1>(offset))[0])
     }
 
     /// The signed byte at `offset` (ASM's `classFileBuffer[offset]`).
     #[inline]
     pub(crate) fn i8_at(&self, offset: i64) -> Result<i8, ReadError> {
-        Ok(self.u8_at(offset)? as i8)
+        Ok(tri!(self.u8_at(offset)) as i8)
     }
 
     /// ASM's `readUnsignedShort`.
     #[inline]
     pub(crate) fn u16_at(&self, offset: i64) -> Result<u16, ReadError> {
-        Ok(u16::from_be_bytes(self.bytes_at(offset)?))
+        Ok(u16::from_be_bytes(tri!(self.bytes_at(offset))))
     }
 
     /// ASM's `readShort`.
     #[inline]
     pub(crate) fn i16_at(&self, offset: i64) -> Result<i16, ReadError> {
-        Ok(i16::from_be_bytes(self.bytes_at(offset)?))
+        Ok(i16::from_be_bytes(tri!(self.bytes_at(offset))))
     }
 
     /// ASM's `readInt`.
     #[inline]
     pub(crate) fn i32_at(&self, offset: i64) -> Result<i32, ReadError> {
-        Ok(i32::from_be_bytes(self.bytes_at(offset)?))
+        Ok(i32::from_be_bytes(tri!(self.bytes_at(offset))))
     }
 
     /// ASM's `readLong`.
     #[inline]
     pub(crate) fn i64_at(&self, offset: i64) -> Result<i64, ReadError> {
-        Ok(i64::from_be_bytes(self.bytes_at(offset)?))
+        Ok(i64::from_be_bytes(tri!(self.bytes_at(offset))))
     }
 
     /// `cpInfoOffsets[index]`: the offset of constant pool entry `index`, plus one (0 for entry 0
@@ -140,7 +140,7 @@ impl<'b> ClassReader<'b> {
     ///
     /// If `constant_pool_entry_index` is out of the constant pool.
     pub fn get_item(&self, constant_pool_entry_index: usize) -> Result<usize, ReadError> {
-        Ok(self.cp_info_offset(constant_pool_entry_index)? as usize)
+        Ok(tri!(self.cp_info_offset(constant_pool_entry_index)) as usize)
     }
 
     /// Returns a conservative estimate of the maximum length of the strings contained in the
@@ -267,7 +267,7 @@ impl<'b> ClassReader<'b> {
     /// `offset` or this index is 0.
     #[inline]
     pub(crate) fn utf8_at(&self, offset: i64) -> Result<Option<&JavaStr>, ReadError> {
-        let constant_pool_entry_index = self.u16_at(offset)?;
+        let constant_pool_entry_index = tri!(self.u16_at(offset));
         if offset == 0 || constant_pool_entry_index == 0 {
             return Ok(None);
         }
@@ -327,11 +327,11 @@ impl<'b> ClassReader<'b> {
         }
         let cp_info_offset = (state & CP_INFO_OFFSET) as i64;
         let utf_offset = cp_info_offset + 2;
-        let value = self.read_utf(
+        let value = tri!(self.read_utf(
             utf_offset,
-            i32::from(self.u16_at(cp_info_offset)?),
+            i32::from(tri!(self.u16_at(cp_info_offset))),
             self.max_string_length,
-        )?;
+        ));
         match value {
             Cow::Borrowed(value) => {
                 debug_assert!(std::ptr::eq(
@@ -367,6 +367,7 @@ impl<'b> ClassReader<'b> {
     /// read past `utf_length` for a truncated sequence). This is ported as is, into UTF-16 units
     /// that become a `JavaString`. When the bytes are valid UTF-8 without 4 bytes sequences,
     /// both decodings agree, and the string is borrowed from the class file instead.
+    #[inline(always)]
     pub(crate) fn read_utf(
         &self,
         utf_offset: i64,
@@ -400,17 +401,17 @@ impl<'b> ClassReader<'b> {
                     ReadErrorKind::InvalidLength(utf_length.into()),
                 ));
             }
-            let current_byte = i32::from(self.i8_at(current_offset)?);
+            let current_byte = i32::from(tri!(self.i8_at(current_offset)));
             current_offset += 1;
             let c = if (current_byte & 0x80) == 0 {
                 (current_byte & 0x7F) as u16
             } else if (current_byte & 0xE0) == 0xC0 {
-                let b1 = i32::from(self.u8_at(current_offset)?);
+                let b1 = i32::from(tri!(self.u8_at(current_offset)));
                 current_offset += 1;
                 (((current_byte & 0x1F) << 6) + (b1 & 0x3F)) as u16
             } else {
-                let b1 = i32::from(self.u8_at(current_offset)?);
-                let b2 = i32::from(self.u8_at(current_offset + 1)?);
+                let b1 = i32::from(tri!(self.u8_at(current_offset)));
+                let b2 = i32::from(tri!(self.u8_at(current_offset + 1)));
                 current_offset += 2;
                 (((current_byte & 0xF) << 12) + ((b1 & 0x3F) << 6) + (b2 & 0x3F)) as u16
             };
@@ -421,10 +422,11 @@ impl<'b> ClassReader<'b> {
 
     /// ASM's `readStringish` (and `readClass`, `readModule`, `readPackage`): the `CONSTANT_Utf8`
     /// entry referenced by the entry whose index is at `offset`.
+    #[inline(always)]
     pub(crate) fn read_class_at(&self, offset: i64) -> Result<Option<&JavaStr>, ReadError> {
         // Get the start offset of the cp_info structure (plus one), and read the CONSTANT_Utf8
         // entry designated by the first two bytes of this cp_info.
-        let cp_info_offset = self.cp_info_offset(usize::from(self.u16_at(offset)?))?;
+        let cp_info_offset = tri!(self.cp_info_offset(usize::from(tri!(self.u16_at(offset)))));
         self.utf8_at(cp_info_offset)
     }
 
@@ -433,41 +435,45 @@ impl<'b> ClassReader<'b> {
     // ---------------------------------------------------------------------------------------------
 
     /// ASM's `readConst`.
+    #[inline(always)]
     pub(crate) fn const_at(
         &self,
         constant_pool_entry_index: usize,
     ) -> Result<Constant<'_>, ReadError> {
-        let cp_info_offset = self.cp_info_offset(constant_pool_entry_index)?;
-        let tag = self.u8_at(cp_info_offset - 1)?;
+        let cp_info_offset = tri!(self.cp_info_offset(constant_pool_entry_index));
+        let tag = tri!(self.u8_at(cp_info_offset - 1));
         Ok(match tag {
-            CONSTANT_INTEGER_TAG => Constant::Integer(self.i32_at(cp_info_offset)?),
+            CONSTANT_INTEGER_TAG => Constant::Integer(tri!(self.i32_at(cp_info_offset))),
             CONSTANT_FLOAT_TAG => {
-                Constant::Float(f32::from_bits(self.i32_at(cp_info_offset)? as u32))
+                Constant::Float(f32::from_bits(tri!(self.i32_at(cp_info_offset)) as u32))
             }
-            CONSTANT_LONG_TAG => Constant::Long(self.i64_at(cp_info_offset)?),
+            CONSTANT_LONG_TAG => Constant::Long(tri!(self.i64_at(cp_info_offset))),
             CONSTANT_DOUBLE_TAG => {
-                Constant::Double(f64::from_bits(self.i64_at(cp_info_offset)? as u64))
+                Constant::Double(f64::from_bits(tri!(self.i64_at(cp_info_offset)) as u64))
             }
             CONSTANT_CLASS_TAG => {
-                let internal_name = self.utf8_at(cp_info_offset)?;
+                let internal_name = tri!(self.utf8_at(cp_info_offset));
                 // Type.getObjectType reads internalName.charAt(0).
                 match internal_name {
                     Some(name) if !name.is_empty() => Constant::Type(Type::get_object_type(name)),
                     _ => return Err(invalid_constant(cp_info_offset, constant_pool_entry_index)),
                 }
             }
-            CONSTANT_STRING_TAG => match self.utf8_at(cp_info_offset)? {
+            CONSTANT_STRING_TAG => match tri!(self.utf8_at(cp_info_offset)) {
                 Some(value) => Constant::String(Cow::Borrowed(value)),
                 None => return Err(invalid_constant(cp_info_offset, constant_pool_entry_index)),
             },
-            CONSTANT_METHOD_TYPE_TAG => match self.utf8_at(cp_info_offset)? {
+            CONSTANT_METHOD_TYPE_TAG => match tri!(self.utf8_at(cp_info_offset)) {
                 Some(descriptor) => Constant::Type(Type::get_method_type(descriptor)),
                 None => return Err(invalid_constant(cp_info_offset, constant_pool_entry_index)),
             },
-            CONSTANT_METHOD_HANDLE_TAG => Constant::Handle(self.read_handle(cp_info_offset)?),
+            CONSTANT_METHOD_HANDLE_TAG => Constant::Handle(tri!(self.read_handle(cp_info_offset))),
             CONSTANT_DYNAMIC_TAG => {
-                let (constant_dynamic, tree_size) = self
-                    .read_constant_dynamic(constant_pool_entry_index, MAX_CONSTANT_DYNAMIC_DEPTH)?;
+                let (constant_dynamic, tree_size) =
+                    tri!(self.read_constant_dynamic(
+                        constant_pool_entry_index,
+                        MAX_CONSTANT_DYNAMIC_DEPTH
+                    ));
                 if tree_size > MAX_CONSTANT_DYNAMIC_TREE_SIZE {
                     return Err(ReadError::new(
                         cp_info_offset,
@@ -483,23 +489,23 @@ impl<'b> ClassReader<'b> {
     /// The `CONSTANT_MethodHandle` entry at `cp_info_offset` (the `CONSTANT_METHOD_HANDLE_TAG`
     /// case of ASM's `readConst`).
     fn read_handle(&self, cp_info_offset: i64) -> Result<Handle, ReadError> {
-        let reference_kind = self.u8_at(cp_info_offset)?;
+        let reference_kind = tri!(self.u8_at(cp_info_offset));
         let reference_cp_info_offset =
-            self.cp_info_offset(usize::from(self.u16_at(cp_info_offset + 1)?))?;
+            tri!(self.cp_info_offset(usize::from(tri!(self.u16_at(cp_info_offset + 1)))));
         let name_and_type_cp_info_offset =
-            self.cp_info_offset(usize::from(self.u16_at(reference_cp_info_offset + 2)?))?;
-        let owner = self.read_class_at(reference_cp_info_offset)?;
-        let name = self.utf8_at(name_and_type_cp_info_offset)?;
-        let descriptor = self.utf8_at(name_and_type_cp_info_offset + 2)?;
+            tri!(self.cp_info_offset(usize::from(tri!(self.u16_at(reference_cp_info_offset + 2)))));
+        let owner = tri!(self.read_class_at(reference_cp_info_offset));
+        let name = tri!(self.utf8_at(name_and_type_cp_info_offset));
+        let descriptor = tri!(self.utf8_at(name_and_type_cp_info_offset + 2));
         let is_interface =
-            self.u8_at(reference_cp_info_offset - 1)? == CONSTANT_INTERFACE_METHODREF_TAG;
+            tri!(self.u8_at(reference_cp_info_offset - 1)) == CONSTANT_INTERFACE_METHODREF_TAG;
         // ADR-09: ASM accepts any reference kind, and fails later on the invalid ones.
-        let tag = HandleKind::from_tag(reference_kind).ok_or_else(|| {
+        let tag = tri!(HandleKind::from_tag(reference_kind).ok_or_else(|| {
             ReadError::new(
                 cp_info_offset,
                 ReadErrorKind::InvalidHandleKind(reference_kind),
             )
-        })?;
+        }));
         let (Some(owner), Some(name), Some(descriptor)) = (owner, name, descriptor) else {
             return Err(ReadError::new(
                 cp_info_offset,
@@ -512,8 +518,8 @@ impl<'b> ClassReader<'b> {
     /// Whether the constant pool entry of the given index is a `CONSTANT_Dynamic` (ASM 9.11's
     /// `isConstantDynamic`).
     fn is_constant_dynamic(&self, constant_pool_entry_index: usize) -> Result<bool, ReadError> {
-        let cp_info_offset = self.cp_info_offset(constant_pool_entry_index)?;
-        Ok(self.u8_at(cp_info_offset - 1)? == CONSTANT_DYNAMIC_TAG)
+        let cp_info_offset = tri!(self.cp_info_offset(constant_pool_entry_index));
+        Ok(tri!(self.u8_at(cp_info_offset - 1)) == CONSTANT_DYNAMIC_TAG)
     }
 
     /// ASM's `readConstantDynamic`, with ASM 9.11's bounds: at most `depth_limit` more levels of
@@ -532,30 +538,30 @@ impl<'b> ClassReader<'b> {
         if let Some((value, size)) = cell.and_then(OnceLock::get) {
             return Ok((value.clone(), *size));
         }
-        let cp_info_offset = self.cp_info_offset(constant_pool_entry_index)?;
+        let cp_info_offset = tri!(self.cp_info_offset(constant_pool_entry_index));
         let name_and_type_cp_info_offset =
-            self.cp_info_offset(usize::from(self.u16_at(cp_info_offset + 2)?))?;
-        let name = self.utf8_at(name_and_type_cp_info_offset)?;
-        let descriptor = self.utf8_at(name_and_type_cp_info_offset + 2)?;
+            tri!(self.cp_info_offset(usize::from(tri!(self.u16_at(cp_info_offset + 2)))));
+        let name = tri!(self.utf8_at(name_and_type_cp_info_offset));
+        let descriptor = tri!(self.utf8_at(name_and_type_cp_info_offset + 2));
         let mut bootstrap_method_offset =
-            self.bootstrap_method_offset(self.u16_at(cp_info_offset)?, cp_info_offset)?;
-        let handle_cp_index = usize::from(self.u16_at(bootstrap_method_offset)?);
-        if self.is_constant_dynamic(handle_cp_index)? {
+            tri!(self.bootstrap_method_offset(tri!(self.u16_at(cp_info_offset)), cp_info_offset));
+        let handle_cp_index = usize::from(tri!(self.u16_at(bootstrap_method_offset)));
+        if tri!(self.is_constant_dynamic(handle_cp_index)) {
             // ASM 9.11: "ConstantDynamic cannot be cast to Handle".
             return Err(invalid_constant(bootstrap_method_offset, handle_cp_index));
         }
-        let Constant::Handle(handle) = self.const_at(handle_cp_index)? else {
+        let Constant::Handle(handle) = tri!(self.const_at(handle_cp_index)) else {
             return Err(invalid_constant(bootstrap_method_offset, handle_cp_index));
         };
-        let num_bootstrap_arguments = self.u16_at(bootstrap_method_offset + 2)?;
+        let num_bootstrap_arguments = tri!(self.u16_at(bootstrap_method_offset + 2));
         let mut bootstrap_method_arguments = Vec::with_capacity(num_bootstrap_arguments.into());
         let mut tree_size = 1;
         bootstrap_method_offset += 4;
         for _ in 0..num_bootstrap_arguments {
-            let argument_cp_index = usize::from(self.u16_at(bootstrap_method_offset)?);
-            let argument = if self.is_constant_dynamic(argument_cp_index)? {
+            let argument_cp_index = usize::from(tri!(self.u16_at(bootstrap_method_offset)));
+            let argument = if tri!(self.is_constant_dynamic(argument_cp_index)) {
                 let (argument, size) =
-                    self.read_constant_dynamic(argument_cp_index, depth_limit - 1)?;
+                    tri!(self.read_constant_dynamic(argument_cp_index, depth_limit - 1));
                 tree_size += size;
                 if tree_size > MAX_CONSTANT_DYNAMIC_TREE_SIZE {
                     return Err(ReadError::new(
@@ -565,7 +571,7 @@ impl<'b> ClassReader<'b> {
                 }
                 Constant::Dynamic(Box::new(argument))
             } else {
-                self.const_at(argument_cp_index)?.into_owned()
+                tri!(self.const_at(argument_cp_index)).into_owned()
             };
             bootstrap_method_arguments.push(argument);
             bootstrap_method_offset += 2;

@@ -31,6 +31,7 @@ pub(super) const F_SAME1: i32 = 4;
 
 /// `array[index] = value` for ASM's `new Object[capacity]` array, failing as Java does for an
 /// index out of the array. The array grows on demand: only the written prefix is ever visited.
+#[inline(always)]
 fn store<'a>(
     array: &mut Vec<FrameValue<'a>>,
     capacity: usize,
@@ -38,10 +39,12 @@ fn store<'a>(
     value: FrameValue<'a>,
     offset: i64,
 ) -> Result<(), ReadError> {
-    let index = usize::try_from(index)
-        .ok()
-        .filter(|&i| i < capacity)
-        .ok_or_else(|| ReadError::new(offset, ReadErrorKind::InvalidLength(index.into())))?;
+    let index = tri!(
+        usize::try_from(index)
+            .ok()
+            .filter(|&i| i < capacity)
+            .ok_or_else(|| ReadError::new(offset, ReadErrorKind::InvalidLength(index.into())))
+    );
     if index >= array.len() {
         array.resize(index + 1, FrameValue::Top);
     }
@@ -57,25 +60,25 @@ impl<'b> ClassReader<'b> {
         context: &mut Context<'s>,
         code_offset: i64,
     ) -> Result<(), ReadError> {
-        let method_descriptor = required(context.current_method_descriptor, code_offset)?;
+        let method_descriptor = tri!(required(context.current_method_descriptor, code_offset));
         let descriptor = Descriptor::new(method_descriptor);
         let locals = &mut context.current_frame_local_types;
         let capacity = context.current_frame_local_capacity;
         let mut num_local = 0;
         if (context.current_method_access_flags & ACC_STATIC) == 0 {
             if context.current_method_name.is_some_and(|n| n == "<init>") {
-                store(
+                tri!(store(
                     locals,
                     capacity,
                     num_local,
                     FrameValue::UninitializedThis,
                     code_offset,
-                )?;
+                ));
             } else {
-                let this_class = self.read_class_at(self.header + 2)?;
-                let this_class = required(this_class, self.header + 2)?;
+                let this_class = tri!(self.read_class_at(self.header + 2));
+                let this_class = tri!(required(this_class, self.header + 2));
                 let value = FrameValue::Object(Cow::Borrowed(this_class));
-                store(locals, capacity, num_local, value, code_offset)?;
+                tri!(store(locals, capacity, num_local, value, code_offset));
             }
             num_local += 1;
         }
@@ -85,7 +88,7 @@ impl<'b> ClassReader<'b> {
         let mut current_method_descriptor_offset = 1;
         loop {
             let current_argument_descriptor_start_offset = current_method_descriptor_offset;
-            let c = char_at(current_method_descriptor_offset)?;
+            let c = tri!(char_at(current_method_descriptor_offset));
             current_method_descriptor_offset += 1;
             let value = match c {
                 Z | C | B | S | I => FrameValue::Integer,
@@ -93,12 +96,12 @@ impl<'b> ClassReader<'b> {
                 J => FrameValue::Long,
                 D => FrameValue::Double,
                 ARRAY => {
-                    while char_at(current_method_descriptor_offset)? == ARRAY {
+                    while tri!(char_at(current_method_descriptor_offset)) == ARRAY {
                         current_method_descriptor_offset += 1;
                     }
-                    if char_at(current_method_descriptor_offset)? == L {
+                    if tri!(char_at(current_method_descriptor_offset)) == L {
                         current_method_descriptor_offset += 1;
-                        while char_at(current_method_descriptor_offset)? != SEMICOLON {
+                        while tri!(char_at(current_method_descriptor_offset)) != SEMICOLON {
                             current_method_descriptor_offset += 1;
                         }
                     }
@@ -109,7 +112,7 @@ impl<'b> ClassReader<'b> {
                     ))
                 }
                 L => {
-                    while char_at(current_method_descriptor_offset)? != SEMICOLON {
+                    while tri!(char_at(current_method_descriptor_offset)) != SEMICOLON {
                         current_method_descriptor_offset += 1;
                     }
                     let value = FrameValue::Object(descriptor.substring(
@@ -124,7 +127,7 @@ impl<'b> ClassReader<'b> {
                     return Ok(());
                 }
             };
-            store(locals, capacity, num_local, value, code_offset)?;
+            tri!(store(locals, capacity, num_local, value, code_offset));
             num_local += 1;
         }
     }
@@ -148,7 +151,7 @@ impl<'b> ClassReader<'b> {
         let mut current_offset = stack_map_frame_offset;
         let frame_type = if compressed {
             // Read the frame_type field.
-            let frame_type = self.u8_at(current_offset)?;
+            let frame_type = tri!(self.u8_at(current_offset));
             current_offset += 1;
             frame_type
         } else {
@@ -163,16 +166,24 @@ impl<'b> ClassReader<'b> {
             context.current_frame_stack_count = 0;
         } else if frame_type < RESERVED {
             offset_delta = i32::from(frame_type - SAME_LOCALS_1_STACK_ITEM_FRAME);
-            current_offset =
-                self.read_verification_type_info(current_offset, FrameSlot::Stack, 0, context)?;
+            current_offset = tri!(self.read_verification_type_info(
+                current_offset,
+                FrameSlot::Stack,
+                0,
+                context
+            ));
             context.current_frame_type = F_SAME1;
             context.current_frame_stack_count = 1;
         } else if frame_type >= SAME_LOCALS_1_STACK_ITEM_FRAME_EXTENDED {
-            offset_delta = i32::from(self.u16_at(current_offset)?);
+            offset_delta = i32::from(tri!(self.u16_at(current_offset)));
             current_offset += 2;
             if frame_type == SAME_LOCALS_1_STACK_ITEM_FRAME_EXTENDED {
-                current_offset =
-                    self.read_verification_type_info(current_offset, FrameSlot::Stack, 0, context)?;
+                current_offset = tri!(self.read_verification_type_info(
+                    current_offset,
+                    FrameSlot::Stack,
+                    0,
+                    context
+                ));
                 context.current_frame_type = F_SAME1;
                 context.current_frame_stack_count = 1;
             } else if (CHOP_FRAME..SAME_FRAME_EXTENDED).contains(&frame_type) {
@@ -192,12 +203,12 @@ impl<'b> ClassReader<'b> {
                 };
                 let count = i32::from(frame_type - SAME_FRAME_EXTENDED);
                 for local in first_local..first_local + count {
-                    current_offset = self.read_verification_type_info(
+                    current_offset = tri!(self.read_verification_type_info(
                         current_offset,
                         FrameSlot::Local,
                         local,
                         context,
-                    )?;
+                    ));
                 }
                 context.current_frame_type = F_APPEND;
                 context.current_frame_local_count_delta =
@@ -205,29 +216,29 @@ impl<'b> ClassReader<'b> {
                 context.current_frame_local_count += context.current_frame_local_count_delta;
                 context.current_frame_stack_count = 0;
             } else {
-                let number_of_locals = i32::from(self.u16_at(current_offset)?);
+                let number_of_locals = i32::from(tri!(self.u16_at(current_offset)));
                 current_offset += 2;
                 context.current_frame_type = F_FULL;
                 context.current_frame_local_count_delta = number_of_locals;
                 context.current_frame_local_count = number_of_locals;
                 for local in 0..number_of_locals {
-                    current_offset = self.read_verification_type_info(
+                    current_offset = tri!(self.read_verification_type_info(
                         current_offset,
                         FrameSlot::Local,
                         local,
                         context,
-                    )?;
+                    ));
                 }
-                let number_of_stack_items = i32::from(self.u16_at(current_offset)?);
+                let number_of_stack_items = i32::from(tri!(self.u16_at(current_offset)));
                 current_offset += 2;
                 context.current_frame_stack_count = number_of_stack_items;
                 for stack in 0..number_of_stack_items {
-                    current_offset = self.read_verification_type_info(
+                    current_offset = tri!(self.read_verification_type_info(
                         current_offset,
                         FrameSlot::Stack,
                         stack,
                         context,
-                    )?;
+                    ));
                 }
             }
         } else {
@@ -237,9 +248,11 @@ impl<'b> ClassReader<'b> {
             ));
         }
         context.current_frame_offset = context.current_frame_offset.wrapping_add(offset_delta + 1);
-        context
-            .current_method_labels
-            .create_label(i64::from(context.current_frame_offset))?;
+        tri!(
+            context
+                .current_method_labels
+                .create_label(i64::from(context.current_frame_offset))
+        );
         Ok(current_offset)
     }
 
@@ -247,6 +260,7 @@ impl<'b> ClassReader<'b> {
     /// given array.
     ///
     /// Returns the end offset of the JVMS 'verification_type_info' structure.
+    #[inline(always)]
     fn read_verification_type_info<'s>(
         &'s self,
         verification_type_info_offset: i64,
@@ -255,7 +269,7 @@ impl<'b> ClassReader<'b> {
         context: &mut Context<'s>,
     ) -> Result<i64, ReadError> {
         let mut current_offset = verification_type_info_offset;
-        let tag = self.u8_at(current_offset)?;
+        let tag = tri!(self.u8_at(current_offset));
         current_offset += 1;
         let value = match tag {
             ITEM_TOP => FrameValue::Top,
@@ -266,15 +280,14 @@ impl<'b> ClassReader<'b> {
             ITEM_NULL => FrameValue::Null,
             ITEM_UNINITIALIZED_THIS => FrameValue::UninitializedThis,
             ITEM_OBJECT => {
-                let class = self.read_class_at(current_offset)?;
+                let class = tri!(self.read_class_at(current_offset));
                 current_offset += 2;
-                FrameValue::Object(Cow::Borrowed(required(class, current_offset - 2)?))
+                FrameValue::Object(Cow::Borrowed(tri!(required(class, current_offset - 2))))
             }
             ITEM_UNINITIALIZED => {
-                let bytecode_offset = i64::from(self.u16_at(current_offset)?);
-                let label: Label = context
-                    .current_method_labels
-                    .create_label(bytecode_offset)?;
+                let bytecode_offset = i64::from(tri!(self.u16_at(current_offset)));
+                let label: Label =
+                    tri!(context.current_method_labels.create_label(bytecode_offset));
                 current_offset += 2;
                 FrameValue::Uninitialized(label)
             }
@@ -295,7 +308,13 @@ impl<'b> ClassReader<'b> {
                 context.current_frame_stack_capacity,
             ),
         };
-        store(frame, capacity, index, value, verification_type_info_offset)?;
+        tri!(store(
+            frame,
+            capacity,
+            index,
+            value,
+            verification_type_info_offset
+        ));
         Ok(current_offset)
     }
 }

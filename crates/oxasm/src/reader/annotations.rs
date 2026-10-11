@@ -79,21 +79,22 @@ impl<'b> ClassReader<'b> {
         if offset == 0 {
             return Ok(());
         }
-        let num_annotations = self.u16_at(offset)?;
+        let num_annotations = tri!(self.u16_at(offset));
         let mut current_annotation_offset = offset + 2;
         for _ in 0..num_annotations {
             // Parse the type_index field.
-            let annotation_descriptor = self.utf8_at(current_annotation_offset)?;
-            let annotation_descriptor = required(annotation_descriptor, current_annotation_offset)?;
+            let annotation_descriptor = tri!(self.utf8_at(current_annotation_offset));
+            let annotation_descriptor =
+                tri!(required(annotation_descriptor, current_annotation_offset));
             current_annotation_offset += 2;
             // Parse num_element_value_pairs and element_value_pairs and visit these values.
             let mut annotation_visitor = host.host_visit_annotation(annotation_descriptor, visible);
-            current_annotation_offset = self.read_element_values(
+            current_annotation_offset = tri!(self.read_element_values(
                 annotation_visitor.as_deref_mut(),
                 current_annotation_offset,
                 /* named= */ true,
                 0,
-            )?;
+            ));
         }
         Ok(())
     }
@@ -110,15 +111,16 @@ impl<'b> ClassReader<'b> {
         if offset == 0 {
             return Ok(());
         }
-        let num_annotations = self.u16_at(offset)?;
+        let num_annotations = tri!(self.u16_at(offset));
         let mut current_annotation_offset = offset + 2;
         for _ in 0..num_annotations {
             // Parse the target_type, target_info and target_path fields.
             current_annotation_offset =
-                self.read_type_annotation_target(context, current_annotation_offset)?;
+                tri!(self.read_type_annotation_target(context, current_annotation_offset));
             // Parse the type_index field.
-            let annotation_descriptor = self.utf8_at(current_annotation_offset)?;
-            let annotation_descriptor = required(annotation_descriptor, current_annotation_offset)?;
+            let annotation_descriptor = tri!(self.utf8_at(current_annotation_offset));
+            let annotation_descriptor =
+                tri!(required(annotation_descriptor, current_annotation_offset));
             current_annotation_offset += 2;
             // Parse num_element_value_pairs and element_value_pairs and visit these values.
             let mut annotation_visitor = host.host_visit_type_annotation(
@@ -127,12 +129,12 @@ impl<'b> ClassReader<'b> {
                 annotation_descriptor,
                 visible,
             );
-            current_annotation_offset = self.read_element_values(
+            current_annotation_offset = tri!(self.read_element_values(
                 annotation_visitor.as_deref_mut(),
                 current_annotation_offset,
                 /* named= */ true,
                 0,
-            )?;
+            ));
         }
         Ok(())
     }
@@ -153,7 +155,7 @@ impl<'b> ClassReader<'b> {
         let mut current_offset = runtime_type_annotations_offset;
         // Read the num_annotations field and create an array to store the type_annotation
         // offsets.
-        let num_annotations = self.u16_at(current_offset)?;
+        let num_annotations = tri!(self.u16_at(current_offset));
         let mut type_annotations_offsets = Vec::with_capacity(usize::from(num_annotations));
         current_offset += 2;
         // Parse the 'annotations' array field.
@@ -161,23 +163,25 @@ impl<'b> ClassReader<'b> {
             type_annotations_offsets.push(current_offset);
             // Parse the type_annotation's target_type and the target_info fields. The size of the
             // target_info field depends on the value of target_type.
-            let target_type = self.i32_at(current_offset)? as u32;
+            let target_type = tri!(self.i32_at(current_offset)) as u32;
             match (target_type >> 24) as u8 {
                 TypeReference::LOCAL_VARIABLE | TypeReference::RESOURCE_VARIABLE => {
                     // A localvar_target has a variable size, which depends on the value of their
                     // table_length field. It also references bytecode offsets, for which we need
                     // labels.
-                    let table_length = self.u16_at(current_offset + 1)?;
+                    let table_length = tri!(self.u16_at(current_offset + 1));
                     current_offset += 3;
                     for _ in 0..table_length {
-                        let start_pc = i64::from(self.u16_at(current_offset)?);
-                        let length = i64::from(self.u16_at(current_offset + 2)?);
+                        let start_pc = i64::from(tri!(self.u16_at(current_offset)));
+                        let length = i64::from(tri!(self.u16_at(current_offset + 2)));
                         // Skip the index field (2 bytes).
                         current_offset += 6;
-                        context.current_method_labels.create_label(start_pc)?;
-                        context
-                            .current_method_labels
-                            .create_label(start_pc + length)?;
+                        tri!(context.current_method_labels.create_label(start_pc));
+                        tri!(
+                            context
+                                .current_method_labels
+                                .create_label(start_pc + length)
+                        );
                     }
                 }
                 TypeReference::CAST
@@ -204,14 +208,14 @@ impl<'b> ClassReader<'b> {
             }
             // Parse the rest of the type_annotation structure, starting with the target_path
             // structure (whose size depends on its path_length field).
-            let path_length = i64::from(self.u8_at(current_offset)?);
+            let path_length = i64::from(tri!(self.u8_at(current_offset)));
             if (target_type >> 24) as u8 == TypeReference::EXCEPTION_PARAMETER {
                 // Parse the target_path structure and create a corresponding TypePath.
-                let path = self.type_path_at(current_offset, path_length)?;
+                let path = tri!(self.type_path_at(current_offset, path_length));
                 current_offset += 1 + 2 * path_length;
                 // Parse the type_index field.
-                let annotation_descriptor = self.utf8_at(current_offset)?;
-                let annotation_descriptor = required(annotation_descriptor, current_offset)?;
+                let annotation_descriptor = tri!(self.utf8_at(current_offset));
+                let annotation_descriptor = tri!(required(annotation_descriptor, current_offset));
                 current_offset += 2;
                 // Parse num_element_value_pairs and element_value_pairs and visit these values.
                 let mut annotation_visitor = method_visitor.visit_try_catch_annotation(
@@ -220,12 +224,12 @@ impl<'b> ClassReader<'b> {
                     annotation_descriptor,
                     visible,
                 );
-                current_offset = self.read_element_values(
+                current_offset = tri!(self.read_element_values(
                     annotation_visitor.as_deref_mut(),
                     current_offset,
                     /* named= */ true,
                     0,
-                )?;
+                ));
             } else {
                 // We don't want to visit the other target_type annotations, so we just skip them
                 // (which requires some parsing because the element_value_pairs array has a
@@ -233,12 +237,12 @@ impl<'b> ClassReader<'b> {
                 current_offset += 3 + 2 * path_length;
                 // Then skip the num_element_value_pairs and element_value_pairs fields (by
                 // reading them with a null AnnotationVisitor).
-                current_offset = self.read_element_values(
+                current_offset = tri!(self.read_element_values(
                     /* annotation_visitor= */ None,
                     current_offset,
                     /* named= */ true,
                     0,
-                )?;
+                ));
             }
         }
         Ok(type_annotations_offsets)
@@ -256,10 +260,10 @@ impl<'b> ClassReader<'b> {
         else {
             return Ok(-1);
         };
-        if self.u8_at(offset)? < TypeReference::INSTANCEOF {
+        if tri!(self.u8_at(offset)) < TypeReference::INSTANCEOF {
             return Ok(-1);
         }
-        Ok(i32::from(self.u16_at(offset + 1)?))
+        Ok(i32::from(tri!(self.u16_at(offset + 1))))
     }
 
     /// Parses the header of a JVMS type_annotation structure to extract its target_type,
@@ -272,7 +276,7 @@ impl<'b> ClassReader<'b> {
     ) -> Result<i64, ReadError> {
         let mut current_offset = type_annotation_offset;
         // Parse and store the target_type structure.
-        let mut target_type = self.i32_at(type_annotation_offset)? as u32;
+        let mut target_type = tri!(self.i32_at(type_annotation_offset)) as u32;
         match (target_type >> 24) as u8 {
             TypeReference::CLASS_TYPE_PARAMETER
             | TypeReference::METHOD_TYPE_PARAMETER
@@ -288,22 +292,22 @@ impl<'b> ClassReader<'b> {
             }
             TypeReference::LOCAL_VARIABLE | TypeReference::RESOURCE_VARIABLE => {
                 target_type &= 0xFF00_0000;
-                let table_length = self.u16_at(current_offset + 1)?;
+                let table_length = tri!(self.u16_at(current_offset + 1));
                 current_offset += 3;
                 let mut starts = Vec::with_capacity(usize::from(table_length));
                 let mut ends = Vec::with_capacity(usize::from(table_length));
                 let mut indices = Vec::with_capacity(usize::from(table_length));
                 for _ in 0..table_length {
-                    let start_pc = i64::from(self.u16_at(current_offset)?);
-                    let length = i64::from(self.u16_at(current_offset + 2)?);
-                    let index = self.u16_at(current_offset + 4)?;
+                    let start_pc = i64::from(tri!(self.u16_at(current_offset)));
+                    let length = i64::from(tri!(self.u16_at(current_offset + 2)));
+                    let index = tri!(self.u16_at(current_offset + 4));
                     current_offset += 6;
-                    starts.push(context.current_method_labels.create_label(start_pc)?);
-                    ends.push(
+                    starts.push(tri!(context.current_method_labels.create_label(start_pc)));
+                    ends.push(tri!(
                         context
                             .current_method_labels
-                            .create_label(start_pc + length)?,
-                    );
+                            .create_label(start_pc + length)
+                    ));
                     indices.push(index);
                 }
                 context.current_local_variable_annotation_range_starts = starts;
@@ -342,9 +346,9 @@ impl<'b> ClassReader<'b> {
         }
         context.current_type_annotation_target = target_type;
         // Parse and store the target_path structure.
-        let path_length = i64::from(self.u8_at(current_offset)?);
+        let path_length = i64::from(tri!(self.u8_at(current_offset)));
         context.current_type_annotation_target_path =
-            self.type_path_at(current_offset, path_length)?;
+            tri!(self.type_path_at(current_offset, path_length));
         // Return the start offset of the rest of the type_annotation structure.
         Ok(current_offset + 1 + 2 * path_length)
     }
@@ -358,7 +362,7 @@ impl<'b> ClassReader<'b> {
         if path_length == 0 {
             return Ok(None);
         }
-        let structure = self.slice_at(offset, 1 + 2 * path_length)?;
+        let structure = tri!(self.slice_at(offset, 1 + 2 * path_length));
         Ok(TypePath::from_structure(structure))
     }
 
@@ -371,26 +375,26 @@ impl<'b> ClassReader<'b> {
         visible: bool,
     ) -> Result<(), ReadError> {
         let mut current_offset = runtime_parameter_annotations_offset;
-        let num_parameters = self.u8_at(current_offset)?;
+        let num_parameters = tri!(self.u8_at(current_offset));
         current_offset += 1;
         method_visitor.visit_annotable_parameter_count(num_parameters, visible);
         for i in 0..num_parameters {
-            let num_annotations = self.u16_at(current_offset)?;
+            let num_annotations = tri!(self.u16_at(current_offset));
             current_offset += 2;
             for _ in 0..num_annotations {
                 // Parse the type_index field.
-                let annotation_descriptor = self.utf8_at(current_offset)?;
-                let annotation_descriptor = required(annotation_descriptor, current_offset)?;
+                let annotation_descriptor = tri!(self.utf8_at(current_offset));
+                let annotation_descriptor = tri!(required(annotation_descriptor, current_offset));
                 current_offset += 2;
                 // Parse num_element_value_pairs and element_value_pairs and visit these values.
                 let mut annotation_visitor =
                     method_visitor.visit_parameter_annotation(i, annotation_descriptor, visible);
-                current_offset = self.read_element_values(
+                current_offset = tri!(self.read_element_values(
                     annotation_visitor.as_deref_mut(),
                     current_offset,
                     /* named= */ true,
                     0,
-                )?;
+                ));
             }
         }
         Ok(())
@@ -424,28 +428,28 @@ impl<'b> ClassReader<'b> {
         }
         let mut current_offset = annotation_offset;
         // Read the num_element_value_pairs field (or num_values field for an array_value).
-        let num_element_value_pairs = self.u16_at(current_offset)?;
+        let num_element_value_pairs = tri!(self.u16_at(current_offset));
         current_offset += 2;
         if named {
             // Parse the element_value_pairs array.
             for _ in 0..num_element_value_pairs {
-                let element_name = self.utf8_at(current_offset)?;
-                current_offset = self.read_element_value(
+                let element_name = tri!(self.utf8_at(current_offset));
+                current_offset = tri!(self.read_element_value(
                     annotation_visitor.as_deref_mut(),
                     current_offset + 2,
                     element_name,
                     depth,
-                )?;
+                ));
             }
         } else {
             // Parse the array_value array.
             for _ in 0..num_element_value_pairs {
-                current_offset = self.read_element_value(
+                current_offset = tri!(self.read_element_value(
                     annotation_visitor.as_deref_mut(),
                     current_offset,
                     /* element_name= */ None,
                     depth,
-                )?;
+                ));
             }
         }
         if let Some(annotation_visitor) = annotation_visitor {
@@ -466,92 +470,96 @@ impl<'b> ClassReader<'b> {
     ) -> Result<i64, ReadError> {
         let mut current_offset = element_value_offset;
         let Some(annotation_visitor) = annotation_visitor else {
-            return Ok(match self.u8_at(current_offset)? {
+            return Ok(match tri!(self.u8_at(current_offset)) {
                 // enum_const_value
                 b'e' => current_offset + 5,
                 // annotation_value
-                b'@' => self.read_element_values(None, current_offset + 3, true, depth + 1)?,
+                b'@' => tri!(self.read_element_values(None, current_offset + 3, true, depth + 1)),
                 // array_value
-                b'[' => self.read_element_values(None, current_offset + 1, false, depth + 1)?,
+                b'[' => tri!(self.read_element_values(None, current_offset + 1, false, depth + 1)),
                 _ => current_offset + 3,
             });
         };
-        let tag = self.u8_at(current_offset)?;
+        let tag = tri!(self.u8_at(current_offset));
         current_offset += 1;
         match tag {
             // const_value_index, CONSTANT_Integer
             b'B' => {
-                let value = self.int_constant_at(current_offset)? as i8;
+                let value = tri!(self.int_constant_at(current_offset)) as i8;
                 annotation_visitor.visit(element_name, &AnnotationValue::Byte(value));
                 current_offset += 2;
             }
             // const_value_index, CONSTANT_Integer
             b'C' => {
-                let value = self.int_constant_at(current_offset)? as u16;
+                let value = tri!(self.int_constant_at(current_offset)) as u16;
                 annotation_visitor.visit(element_name, &AnnotationValue::Char(value));
                 current_offset += 2;
             }
             // const_value_index, CONSTANT_Double, CONSTANT_Float, CONSTANT_Integer or
             // CONSTANT_Long
             b'D' | b'F' | b'I' | b'J' => {
-                let index = usize::from(self.u16_at(current_offset)?);
-                let value = annotation_value(self.const_at(index)?, current_offset, index)?;
+                let index = usize::from(tri!(self.u16_at(current_offset)));
+                let value = tri!(annotation_value(
+                    tri!(self.const_at(index)),
+                    current_offset,
+                    index
+                ));
                 annotation_visitor.visit(element_name, &value);
                 current_offset += 2;
             }
             // const_value_index, CONSTANT_Integer
             b'S' => {
-                let value = self.int_constant_at(current_offset)? as i16;
+                let value = tri!(self.int_constant_at(current_offset)) as i16;
                 annotation_visitor.visit(element_name, &AnnotationValue::Short(value));
                 current_offset += 2;
             }
             // const_value_index, CONSTANT_Integer
             b'Z' => {
-                let value = self.int_constant_at(current_offset)? != 0;
+                let value = tri!(self.int_constant_at(current_offset)) != 0;
                 annotation_visitor.visit(element_name, &AnnotationValue::Boolean(value));
                 current_offset += 2;
             }
             // const_value_index, CONSTANT_Utf8
             b's' => {
-                let value = required(self.utf8_at(current_offset)?, current_offset)?;
+                let value = tri!(required(tri!(self.utf8_at(current_offset)), current_offset));
                 annotation_visitor
                     .visit(element_name, &AnnotationValue::String(Cow::Borrowed(value)));
                 current_offset += 2;
             }
             // enum_const_value
             b'e' => {
-                let descriptor = self.utf8_at(current_offset)?;
-                let value = self.utf8_at(current_offset + 2)?;
+                let descriptor = tri!(self.utf8_at(current_offset));
+                let value = tri!(self.utf8_at(current_offset + 2));
                 annotation_visitor.visit_enum(
                     element_name,
-                    required(descriptor, current_offset)?,
-                    required(value, current_offset + 2)?,
+                    tri!(required(descriptor, current_offset)),
+                    tri!(required(value, current_offset + 2)),
                 );
                 current_offset += 4;
             }
             // class_info
             b'c' => {
-                let descriptor = required(self.utf8_at(current_offset)?, current_offset)?;
-                let value = Type::try_get_type(descriptor).map_err(|_| {
+                let descriptor = tri!(required(tri!(self.utf8_at(current_offset)), current_offset));
+                let value = tri!(Type::try_get_type(descriptor).map_err(|_| {
                     ReadError::new(current_offset, ReadErrorKind::InvalidElementValueTag(tag))
-                })?;
+                }));
                 annotation_visitor.visit(element_name, &AnnotationValue::Type(value));
                 current_offset += 2;
             }
             // annotation_value
             b'@' => {
-                let descriptor = required(self.utf8_at(current_offset)?, current_offset)?;
+                let descriptor = tri!(required(tri!(self.utf8_at(current_offset)), current_offset));
                 let mut nested = annotation_visitor.visit_annotation(element_name, descriptor);
-                current_offset = self.read_element_values(
+                current_offset = tri!(self.read_element_values(
                     nested.as_deref_mut(),
                     current_offset + 2,
                     true,
                     depth + 1,
-                )?;
+                ));
             }
             // array_value
             b'[' => {
-                let num_values = self.u16_at(current_offset)?;
+                let num_values = tri!(self.u16_at(current_offset));
                 current_offset += 2;
                 if num_values == 0 {
                     let mut array = annotation_visitor.visit_array(element_name);
@@ -563,11 +571,11 @@ impl<'b> ClassReader<'b> {
                     );
                 }
                 let n = usize::from(num_values);
-                let value = match self.u8_at(current_offset)? {
+                let value = match tri!(self.u8_at(current_offset)) {
                     b'B' => {
                         let mut values = Vec::with_capacity(n);
                         for _ in 0..n {
-                            values.push(self.int_constant_at(current_offset + 1)? as i8);
+                            values.push(tri!(self.int_constant_at(current_offset + 1)) as i8);
                             current_offset += 3;
                         }
                         AnnotationValue::ByteArray(Cow::Owned(values))
@@ -575,7 +583,7 @@ impl<'b> ClassReader<'b> {
                     b'Z' => {
                         let mut values = Vec::with_capacity(n);
                         for _ in 0..n {
-                            values.push(self.int_constant_at(current_offset + 1)? != 0);
+                            values.push(tri!(self.int_constant_at(current_offset + 1)) != 0);
                             current_offset += 3;
                         }
                         AnnotationValue::BooleanArray(Cow::Owned(values))
@@ -583,7 +591,7 @@ impl<'b> ClassReader<'b> {
                     b'S' => {
                         let mut values = Vec::with_capacity(n);
                         for _ in 0..n {
-                            values.push(self.int_constant_at(current_offset + 1)? as i16);
+                            values.push(tri!(self.int_constant_at(current_offset + 1)) as i16);
                             current_offset += 3;
                         }
                         AnnotationValue::ShortArray(Cow::Owned(values))
@@ -591,7 +599,7 @@ impl<'b> ClassReader<'b> {
                     b'C' => {
                         let mut values = Vec::with_capacity(n);
                         for _ in 0..n {
-                            values.push(self.int_constant_at(current_offset + 1)? as u16);
+                            values.push(tri!(self.int_constant_at(current_offset + 1)) as u16);
                             current_offset += 3;
                         }
                         AnnotationValue::CharArray(Cow::Owned(values))
@@ -599,7 +607,7 @@ impl<'b> ClassReader<'b> {
                     b'I' => {
                         let mut values = Vec::with_capacity(n);
                         for _ in 0..n {
-                            values.push(self.int_constant_at(current_offset + 1)?);
+                            values.push(tri!(self.int_constant_at(current_offset + 1)));
                             current_offset += 3;
                         }
                         AnnotationValue::IntArray(Cow::Owned(values))
@@ -607,7 +615,7 @@ impl<'b> ClassReader<'b> {
                     b'J' => {
                         let mut values = Vec::with_capacity(n);
                         for _ in 0..n {
-                            values.push(self.long_constant_at(current_offset + 1)?);
+                            values.push(tri!(self.long_constant_at(current_offset + 1)));
                             current_offset += 3;
                         }
                         AnnotationValue::LongArray(Cow::Owned(values))
@@ -615,7 +623,7 @@ impl<'b> ClassReader<'b> {
                     b'F' => {
                         let mut values = Vec::with_capacity(n);
                         for _ in 0..n {
-                            let bits = self.int_constant_at(current_offset + 1)?;
+                            let bits = tri!(self.int_constant_at(current_offset + 1));
                             values.push(f32::from_bits(bits as u32));
                             current_offset += 3;
                         }
@@ -624,7 +632,7 @@ impl<'b> ClassReader<'b> {
                     b'D' => {
                         let mut values = Vec::with_capacity(n);
                         for _ in 0..n {
-                            let bits = self.long_constant_at(current_offset + 1)?;
+                            let bits = tri!(self.long_constant_at(current_offset + 1));
                             values.push(f64::from_bits(bits as u64));
                             current_offset += 3;
                         }
@@ -655,12 +663,16 @@ impl<'b> ClassReader<'b> {
     /// `readInt(cpInfoOffsets[readUnsignedShort(offset)])`: the int at the constant pool entry
     /// whose index is at `offset` (whatever its tag).
     fn int_constant_at(&self, offset: i64) -> Result<i32, ReadError> {
-        self.i32_at(self.cp_info_offset(usize::from(self.u16_at(offset)?))?)
+        self.i32_at(tri!(
+            self.cp_info_offset(usize::from(tri!(self.u16_at(offset))))
+        ))
     }
 
     /// `readLong(cpInfoOffsets[readUnsignedShort(offset)])`.
     fn long_constant_at(&self, offset: i64) -> Result<i64, ReadError> {
-        self.i64_at(self.cp_info_offset(usize::from(self.u16_at(offset)?))?)
+        self.i64_at(tri!(
+            self.cp_info_offset(usize::from(tri!(self.u16_at(offset))))
+        ))
     }
 }
 
