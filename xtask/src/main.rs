@@ -55,7 +55,7 @@ tasks:
         taskset), then a table of the time per op and the ratios; the classes are T0 and a
         2000-class T1 sample by default, filtered to those every scenario accepts and packed
         under target/bench/<set>/ (--prepare rebuilds the pack and stops, e.g. for
-        `cargo bench -p oxasm-bench`); results go to target/bench/<set>/summary-*.txt and
+        `cargo bench -p oxasm-bench`); results go to bench-results/<set>/summary-*.txt and
         runs-*.tsv. The summary counts each side's transparent huge page faults that fell back to
         4 KiB pages, and warns above 5%; --drop-caches runs `sudo -n
         /usr/local/sbin/oxasm-drop-caches` (drop the page cache, compact memory) before each

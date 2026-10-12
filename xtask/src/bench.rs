@@ -99,7 +99,8 @@ pub fn cli(mut args: Args) -> Result<()> {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
-    let raw_path = set.dir.join(format!("runs-{stamp}.tsv"));
+    fs::create_dir_all(&set.results)?;
+    let raw_path = set.results.join(format!("runs-{stamp}.tsv"));
     let mut raw = String::from("round\tside\tscenario\tpass\tops\tnanos\tcheck\n");
     let mut samples: BTreeMap<(Side, &str), Vec<Pass>> = BTreeMap::new();
 
@@ -194,7 +195,7 @@ pub fn cli(mut args: Args) -> Result<()> {
         free_huge_blocks(),
     )?);
     print!("{summary}");
-    let summary_path = set.dir.join(format!("summary-{stamp}.txt"));
+    let summary_path = set.results.join(format!("summary-{stamp}.txt"));
     fs::write(&summary_path, &summary)?;
     eprintln!(
         "xtask: wrote {} and {}",
@@ -246,13 +247,15 @@ impl Pass {
     }
 }
 
-/// The classes a bench runs on: `target/bench/<name>/classes.pack` and `hierarchy.tsv`.
+/// The classes a bench runs on: `target/bench/<name>/classes.pack` and `hierarchy.tsv`. Its
+/// results go to `bench-results/<name>/`, outside `target` so that `cargo clean` keeps them.
 #[derive(Debug)]
 struct Set {
     /// `None` for the default set (T0 and a T1 sample).
     tier: Option<String>,
     sample: Option<usize>,
     dir: PathBuf,
+    results: PathBuf,
 }
 
 impl Set {
@@ -265,7 +268,8 @@ impl Set {
         Set {
             tier,
             sample,
-            dir: root_path("target/bench").join(name),
+            dir: root_path("target/bench").join(&name),
+            results: root_path("bench-results").join(name),
         }
     }
 

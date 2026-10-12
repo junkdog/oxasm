@@ -1,0 +1,19 @@
+oxasm against ASM 9.10.1 on T0 and a 2000-class T1 sample: 20 rounds of 20 measured passes per side, pinned to CPUs 0-15
+time per op (class, generated class or descriptor); ratio = oxasm / ASM; gate: p25 ratio ≤ 1.5
+
+scenario                      ops  oxasm min  oxasm p25    asm min    asm p25   min×   p25×  gate
+read_write                   2054   21.40 µs   21.65 µs   21.68 µs   22.15 µs   0.99   0.98  ok
+read_write_copy_pool         2054    6.94 µs    7.03 µs    7.27 µs    7.68 µs   0.95   0.92  ok
+read_write_compute_maxs      2054   22.67 µs   22.95 µs   22.78 µs   23.40 µs   1.00   0.98  ok
+read_write_compute_frames    2054   33.28 µs   33.73 µs   31.66 µs   32.10 µs   1.05   1.05  ok
+read_tree_write              2054   34.66 µs   35.04 µs   26.16 µs   26.77 µs   1.33   1.31  ok
+generate_hello_world        10000   778.9 ns   783.7 ns   477.2 ns   518.9 ns   1.63   1.51  OVER
+
+transparent huge pages: faults while each side ran (system-wide), and the share that fell back to 4 KiB pages; caches dropped before each process; free 2 MiB blocks 10954 at the start, 12975 at the end
+scenario                   oxasm faults  fallback   asm faults  fallback
+read_write                          122      0.0%        12462      0.0%
+read_write_copy_pool                126      0.0%         9793      0.0%
+read_write_compute_maxs             124      0.0%        12461      0.0%
+read_write_compute_frames           123      0.0%        12461      0.0%
+read_tree_write                     123      0.0%        12464      0.0%
+generate_hello_world                119      0.0%         8575      0.0%

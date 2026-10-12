@@ -1,0 +1,6 @@
+oxasm against ASM 9.10.1 on T0 and a 2000-class T1 sample: 20 rounds of 20 measured passes per side, pinned to CPUs 0-15
+time per op (class, generated class or descriptor); ratio = oxasm / ASM; gate: p25 ratio ≤ 1.5
+
+scenario                      ops  oxasm min  oxasm p25    asm min    asm p25   min×   p25×  gate
+analyze_basic                2054   80.32 µs   81.32 µs   42.90 µs   43.87 µs   1.87   1.85  OVER
+analyze_source               2054  187.59 µs  190.22 µs   98.75 µs  101.65 µs   1.90   1.87  OVER

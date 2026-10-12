@@ -1,0 +1,15 @@
+oxasm against ASM 9.10.1 on T0 and a 2000-class T1 sample: 20 rounds of 20 measured passes per side, pinned to CPUs 0-15
+time per op (class, generated class or descriptor); ratio = oxasm / ASM; gate: p25 ratio ≤ 1.5
+
+scenario                      ops  oxasm min  oxasm p25    asm min    asm p25   min×   p25×  gate
+read_tree                    2054   15.40 µs   15.54 µs   11.35 µs   11.58 µs   1.36   1.34  ok
+read_tree_shared             2054   14.69 µs   14.79 µs   11.35 µs   11.58 µs   1.29   1.28  ok
+read_tree_warm               2054   13.12 µs   13.23 µs   11.35 µs   11.58 µs   1.16   1.14  ok
+read_tree_write              2054   33.13 µs   33.28 µs   26.40 µs   26.79 µs   1.25   1.24  ok
+
+transparent huge pages: faults while each side ran (system-wide), and the share that fell back to 4 KiB pages; caches dropped before each process; free 2 MiB blocks 5841 at the start, 6791 at the end
+scenario                   oxasm faults  fallback   asm faults  fallback
+read_tree                           127      0.0%         9875      0.0%
+read_tree_shared                    122      0.0%         9875      0.0%
+read_tree_warm                      122      0.0%         9875      0.0%
+read_tree_write                     272      0.0%        12465      0.0%

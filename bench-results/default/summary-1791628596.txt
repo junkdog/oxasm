@@ -1,0 +1,8 @@
+oxasm against ASM 9.10.1 on T0 and a 2000-class T1 sample: 20 rounds of 20 measured passes per side, pinned to CPUs 0-15
+time per op (class, generated class or descriptor); ratio = oxasm / ASM; gate: p25 ratio ≤ 1.5
+
+scenario                      ops  oxasm min  oxasm p25    asm min    asm p25   min×   p25×  gate
+read_tree                    2054   16.92 µs   17.15 µs   11.46 µs   11.92 µs   1.48   1.44  ok
+read_tree_shared             2054   16.48 µs   16.70 µs   11.46 µs   11.92 µs   1.44   1.40  ok
+read_tree_warm               2054   14.77 µs   15.00 µs   11.46 µs   11.92 µs   1.29   1.26  ok
+read_tree_write              2054   35.14 µs   35.43 µs   26.76 µs   27.26 µs   1.31   1.30  ok

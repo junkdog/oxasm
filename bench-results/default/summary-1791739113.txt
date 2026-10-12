@@ -1,0 +1,11 @@
+oxasm against ASM 9.10.1 on T0 and a 2000-class T1 sample: 20 rounds of 20 measured passes per side, pinned to CPUs 0-15
+time per op (class, generated class or descriptor); ratio = oxasm / ASM; gate: p25 ratio ≤ 1.5
+
+scenario                      ops  oxasm min  oxasm p25    asm min    asm p25   min×   p25×  gate
+analyze_basic                2054   23.59 µs   23.93 µs   42.08 µs   42.96 µs   0.56   0.56  ok
+analyze_source               2054   57.23 µs   58.02 µs   97.37 µs   99.99 µs   0.59   0.58  ok
+
+transparent huge pages: faults while each side ran (system-wide), and the share that fell back to 4 KiB pages; caches dropped before each process; free 2 MiB blocks 5530 at the start, 7360 at the end
+scenario                   oxasm faults  fallback   asm faults  fallback
+analyze_basic                       826      0.0%        13142      0.0%
+analyze_source                   150121      0.0%        13624      0.0%
