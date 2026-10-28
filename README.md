@@ -200,7 +200,7 @@ classes the tests write.
 
 ## Minimum supported Rust version
 
-Rust 1.99, edition 2024.
+Rust 1.95, edition 2024.
 
 ## Development
 
