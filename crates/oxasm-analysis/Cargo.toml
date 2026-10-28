@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+keywords = ["jvm", "bytecode", "dataflow", "static-analysis", "asm"]
+categories = ["development-tools", "compilers"]
 
 [dependencies]
 oxasm.workspace = true
